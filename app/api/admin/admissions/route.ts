@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
 
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(supabaseUrl, serviceRoleKey, {
+    global: {
+      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
+    },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -32,7 +36,7 @@ export async function GET() {
         submitted_at,
         created_at,
         updated_at,
-        applicant:applicant_id(id, full_name, email, phone_number)
+        applicant:applicant_id(id, full_name, email, phone)
       `)
       .order("created_at", { ascending: false });
 
@@ -86,7 +90,7 @@ export async function GET() {
         "applicant@university.edu.gh";
       const candidatePhone =
         personalInfo.phone ||
-        app.applicant?.phone_number ||
+        app.applicant?.phone ||
         "+233 20 000 0000";
 
       return {
@@ -193,33 +197,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Resolve or insert applicant profile
+    // 2. Resolve or insert applicant profile (profiles.id references auth.users.id)
+    const normalizedEmail = candidate_email.trim().toLowerCase();
     let applicantId: string | null = null;
     const { data: existingProfile } = await supabase
       .from("profiles")
       .select("id")
-      .eq("email", candidate_email.trim().toLowerCase())
+      .eq("email", normalizedEmail)
       .maybeSingle();
 
     if (existingProfile) {
       applicantId = existingProfile.id;
     } else {
-      // Create profile record
-      const { data: newProfile, error: profErr } = await supabase
-        .from("profiles")
-        .insert({
-          email: candidate_email.trim().toLowerCase(),
+      const tempPassword = `Applicant@${Math.floor(100000 + Math.random() * 900000)}`;
+      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+        email: normalizedEmail,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
           full_name: candidate_name.trim(),
-          phone_number: candidate_phone?.trim() || null,
-        })
-        .select("id")
-        .single();
+          role: "applicant",
+        },
+      });
+
+      if (authErr || !authData?.user) {
+        console.error("Applicant auth user creation error:", authErr);
+        return NextResponse.json(
+          { error: authErr?.message || "Failed to provision applicant user account." },
+          { status: 500 }
+        );
+      }
+
+      applicantId = authData.user.id;
+
+      // Upsert profile record (handles both trigger-created and manual profile rows)
+      const { error: profErr } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: applicantId,
+            email: normalizedEmail,
+            full_name: candidate_name.trim(),
+            phone: candidate_phone?.trim() || null,
+            account_status: "active",
+          },
+          { onConflict: "id" }
+        );
 
       if (profErr) {
         console.error("Profile creation error:", profErr);
         return NextResponse.json({ error: profErr.message }, { status: 500 });
       }
-      applicantId = newProfile.id;
     }
 
     // 3. Generate application number if not provided
@@ -364,7 +392,7 @@ export async function PUT(req: NextRequest) {
       const profUpdate: any = {};
       if (candidate_name) profUpdate.full_name = candidate_name.trim();
       if (candidate_email) profUpdate.email = candidate_email.trim().toLowerCase();
-      if (candidate_phone) profUpdate.phone_number = candidate_phone.trim();
+      if (candidate_phone) profUpdate.phone = candidate_phone.trim();
 
       await supabase.from("profiles").update(profUpdate).eq("id", currentApp.applicant_id);
     }

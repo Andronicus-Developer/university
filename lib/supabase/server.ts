@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { Database } from "@/types/database.types";
+import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
 
 /**
  * Creates a server-side Supabase client for Server Components, Server Actions,
- * and API Route Handlers with secure cookie persistence.
+ * and API Route Handlers with secure cookie persistence and retry resilience.
  */
 export async function createClient() {
   const cookieStore = await cookies();
@@ -12,6 +13,9 @@ export async function createClient() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
   return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+    global: {
+      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

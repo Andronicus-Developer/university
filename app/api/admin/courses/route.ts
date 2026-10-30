@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
 
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(supabaseUrl, serviceRoleKey, {
+    global: {
+      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
+    },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -244,7 +248,7 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE: Delete a course
+// DELETE: Delete a course and clean up dependent academic references
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -256,6 +260,59 @@ export async function DELETE(req: NextRequest) {
 
     const supabase = getAdminClient();
 
+    // 1. Delete associated curriculum requirements (ON DELETE RESTRICT)
+    const { error: currErr } = await supabase
+      .from("curriculum_requirements")
+      .delete()
+      .eq("course_id", id);
+
+    if (currErr) {
+      console.warn("Warning deleting linked curriculum_requirements:", currErr.message);
+    }
+
+    // 2. Delete associated prerequisites referencing this course
+    const { error: prereqErr } = await supabase
+      .from("prerequisites")
+      .delete()
+      .or(`course_id.eq.${id},prerequisite_course_id.eq.${id}`);
+
+    if (prereqErr) {
+      console.warn("Warning deleting linked prerequisites:", prereqErr.message);
+    }
+
+    // 3. Delete associated course offerings and their restricted enrolments
+    const { data: offerings } = await supabase
+      .from("course_offerings")
+      .select("id")
+      .eq("course_id", id);
+
+    if (offerings && offerings.length > 0) {
+      const offeringIds = offerings.map((o: { id: string }) => o.id);
+
+      // course_enrolments has ON DELETE RESTRICT on course_offering_id;
+      // its children (enrolment_overrides, assessment_marks, published_results) cascade automatically
+      const { error: enrolErr } = await supabase
+        .from("course_enrolments")
+        .delete()
+        .in("course_offering_id", offeringIds);
+
+      if (enrolErr) {
+        console.warn("Warning deleting linked course_enrolments:", enrolErr.message);
+      }
+
+      // Other course_offerings children (teaching_assignments, timetable_events, class_sessions,
+      // assessment_components, result_submissions) have ON DELETE CASCADE
+      const { error: offErr } = await supabase
+        .from("course_offerings")
+        .delete()
+        .in("id", offeringIds);
+
+      if (offErr) {
+        console.warn("Warning deleting linked course_offerings:", offErr.message);
+      }
+    }
+
+    // 4. Delete the course itself
     const { error: deleteErr } = await supabase
       .from("courses")
       .delete()

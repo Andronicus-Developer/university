@@ -39,17 +39,28 @@ export default function Home() {
       }
 
       if (data?.user) {
-        // Query user's roles
-        const { data: userRoles } = await supabase.rpc("get_user_roles", {
-          p_user_id: data.user.id,
-        });
+        const metaRole =
+          data.user.user_metadata?.role ||
+          data.user.user_metadata?.default_role ||
+          (data.user.email === "admin@university.edu.gh" ? "system_admin" : undefined);
 
-        const rpcRoles = (userRoles || []).map((r: { role_code: string }) => r.role_code);
-        const metaRole = data.user.user_metadata?.role || data.user.user_metadata?.default_role;
+        let rpcRoles: string[] = [];
+        if (!metaRole) {
+          try {
+            const { data: userRoles } = await supabase.rpc("get_user_roles", {
+              p_user_id: data.user.id,
+            });
+            rpcRoles = (userRoles || []).map((r: { role_code: string }) => r.role_code);
+          } catch {
+            // Fallback to metadata role if RPC fails
+          }
+        }
+
         const roles: string[] = Array.from(new Set([...rpcRoles, ...(metaRole ? [metaRole] : [])]));
 
         // Determine target portal based on role
-        if (
+        let targetPath = "/admin/dashboard";
+        const isAdminStaff =
           roles.includes("system_admin") ||
           roles.some((r) =>
             [
@@ -65,20 +76,40 @@ export default function Home() {
               "hr_officer",
               "auditor",
             ].includes(r)
-          )
-        ) {
-          router.push("/admin/dashboard");
+          );
+
+        if (isAdminStaff) {
+          targetPath = "/admin/dashboard";
         } else if (roles.includes("lecturer")) {
-          router.push("/lecturer/dashboard");
+          targetPath = "/lecturer/dashboard";
         } else if (roles.includes("student")) {
-          router.push("/student/dashboard");
+          targetPath = "/student/dashboard";
         } else if (roles.includes("applicant")) {
-          router.push("/applicant/dashboard");
+          targetPath = "/applicant/dashboard";
         } else if (roles.includes("academic_advisor")) {
-          router.push("/advisor/dashboard");
-        } else {
-          router.push("/admin/dashboard");
+          targetPath = "/advisor/dashboard";
         }
+
+        // Honor ?redirectedFrom= if it is a safe internal path matching the user's portal
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          const redirectedFrom = params.get("redirectedFrom");
+          if (
+            redirectedFrom &&
+            redirectedFrom.startsWith("/") &&
+            !redirectedFrom.startsWith("//") &&
+            redirectedFrom !== "/"
+          ) {
+            if (isAdminStaff || redirectedFrom.startsWith(`/${targetPath.split("/")[1]}`)) {
+              targetPath = redirectedFrom;
+            }
+          }
+          // Full navigation ensures fresh auth cookies are sent and bypasses any prefetched unauthenticated redirect cache
+          window.location.assign(targetPath);
+          return;
+        }
+
+        router.push(targetPath);
         router.refresh();
       }
     } catch (err: unknown) {

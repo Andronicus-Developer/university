@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { Database } from "@/types/database.types";
+import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
 
 /**
  * Creates a privileged service-role Supabase admin client.
@@ -16,10 +17,12 @@ export function createAdminClient() {
   }
 
   return createClient<Database>(supabaseUrl, serviceRoleKey, {
+    global: {
+      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
+    },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
     },
   });
 }
-

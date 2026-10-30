@@ -110,7 +110,8 @@ export default function ExaminationsPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to load examination components");
+        showNotification("error", data.error || "Failed to load examination components");
+        return;
       }
 
       setExams(data.exams || []);
@@ -118,7 +119,6 @@ export default function ExaminationsPage() {
       setGradeScaleItems(data.gradeScaleItems || []);
       if (data.stats) setStats(data.stats);
     } catch (err: any) {
-      console.error("Error fetching exams:", err);
       showNotification("error", err.message || "Failed to fetch examination records");
     } finally {
       setLoading(false);
@@ -183,14 +183,14 @@ export default function ExaminationsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create examination component");
+        showNotification("error", data.error || "Failed to create examination component");
+        return;
       }
 
       showNotification("success", `Exam "${formData.name}" scheduled in database!`);
       setShowAddModal(false);
       fetchExams();
     } catch (err: any) {
-      console.error("Create exam error:", err);
       showNotification("error", err.message || "Could not schedule exam");
     } finally {
       setSaving(false);
@@ -217,14 +217,14 @@ export default function ExaminationsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update exam");
+        showNotification("error", data.error || "Failed to update exam");
+        return;
       }
 
       showNotification("success", `Exam "${formData.name}" updated successfully.`);
       setShowEditModal(false);
       fetchExams();
     } catch (err: any) {
-      console.error("Update exam error:", err);
       showNotification("error", err.message || "Could not update exam");
     } finally {
       setSaving(false);
@@ -242,7 +242,8 @@ export default function ExaminationsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete exam");
+        showNotification("error", data.error || "Failed to delete exam");
+        return;
       }
 
       showNotification("success", `Exam "${selectedExam.name}" removed from database.`);
@@ -250,7 +251,6 @@ export default function ExaminationsPage() {
       setSelectedExam(null);
       fetchExams();
     } catch (err: any) {
-      console.error("Delete exam error:", err);
       showNotification("error", err.message || "Could not delete exam");
     } finally {
       setDeleting(false);

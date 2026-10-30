@@ -142,11 +142,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       setIsSigningOut(true);
       const supabase = createClient();
       await supabase.auth.signOut();
-      router.push("/");
-      router.refresh();
+      if (typeof document !== "undefined") {
+        document.cookie.split(";").forEach((c) => {
+          const name = c.split("=")[0]?.trim();
+          if (name && /^sb-.*-auth-token/.test(name)) {
+            document.cookie = `${name}=; Max-Age=0; path=/`;
+          }
+        });
+      }
+      window.location.assign("/");
     } catch {
       setIsSigningOut(false);
-      router.push("/");
+      window.location.assign("/");
     }
   };
 

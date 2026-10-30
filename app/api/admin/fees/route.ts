@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
 
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(supabaseUrl, serviceRoleKey, {
+    global: {
+      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
+    },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -36,7 +40,7 @@ export async function GET() {
         student:student_id(
           id,
           student_number,
-          profile:profile_id(full_name, email, phone_number)
+          profile:profile_id(full_name, email, phone)
         ),
         term:term_id(id, name, code)
       `)
@@ -194,20 +198,43 @@ export async function POST(req: NextRequest) {
       if (existingProfile) {
         profileId = existingProfile.id;
       } else {
-        const { data: newProf, error: profErr } = await supabase
-          .from("profiles")
-          .insert({
+        const tempPassword = `Student@${Math.floor(100000 + Math.random() * 900000)}`;
+        const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+          email: stdEmail,
+          password: tempPassword,
+          email_confirm: true,
+          user_metadata: {
             full_name: stdName,
-            email: stdEmail,
-          })
-          .select("id")
-          .single();
+            role: "student",
+          },
+        });
+
+        if (authErr || !authData?.user) {
+          console.error("Student auth user creation error:", authErr);
+          return NextResponse.json(
+            { error: authErr?.message || "Failed to provision student user account." },
+            { status: 500 }
+          );
+        }
+
+        profileId = authData.user.id;
+
+        const { error: profErr } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: profileId,
+              full_name: stdName,
+              email: stdEmail,
+              account_status: "active",
+            },
+            { onConflict: "id" }
+          );
 
         if (profErr) {
           console.error("Profile creation error:", profErr);
           return NextResponse.json({ error: profErr.message }, { status: 500 });
         }
-        profileId = newProf.id;
       }
 
       // Check if student record exists for this profile

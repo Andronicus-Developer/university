@@ -103,14 +103,14 @@ export default function AdmissionsPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to load admissions");
+        showNotification("error", data.error || "Failed to load admissions");
+        return;
       }
 
       setApplications(data.applications || []);
       setProgrammes(data.programmes || []);
       if (data.stats) setStats(data.stats);
     } catch (err: any) {
-      console.error("Error fetching admissions:", err);
       showNotification("error", err.message || "Failed to fetch admissions");
     } finally {
       setLoading(false);
@@ -179,14 +179,14 @@ export default function AdmissionsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to register admission application");
+        showNotification("error", data.error || "Failed to register admission application");
+        return;
       }
 
       showNotification("success", `Application ${formData.applicationNumber} registered successfully!`);
       setShowAddModal(false);
       fetchApplications();
     } catch (err: any) {
-      console.error("Create application error:", err);
       showNotification("error", err.message || "Could not register application");
     } finally {
       setSaving(false);
@@ -215,14 +215,14 @@ export default function AdmissionsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update application");
+        showNotification("error", data.error || "Failed to update application");
+        return;
       }
 
       showNotification("success", `Application ${selectedApp.application_number} updated.`);
       setShowEditModal(false);
       fetchApplications();
     } catch (err: any) {
-      console.error("Update application error:", err);
       showNotification("error", err.message || "Could not update application");
     } finally {
       setSaving(false);
@@ -240,7 +240,8 @@ export default function AdmissionsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete application");
+        showNotification("error", data.error || "Failed to delete application");
+        return;
       }
 
       showNotification("success", `Application ${selectedApp.application_number} deleted.`);
@@ -248,7 +249,6 @@ export default function AdmissionsPage() {
       setSelectedApp(null);
       fetchApplications();
     } catch (err: any) {
-      console.error("Delete application error:", err);
       showNotification("error", err.message || "Could not delete application");
     } finally {
       setDeleting(false);

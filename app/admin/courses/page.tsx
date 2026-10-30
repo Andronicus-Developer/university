@@ -175,14 +175,14 @@ export default function CoursesCatalogPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create course");
+        showNotification("error", data.error || "Failed to create course");
+        return;
       }
 
       showNotification("success", `Course ${formData.code} created successfully!`);
       setShowAddModal(false);
       fetchCourses();
     } catch (err: any) {
-      console.error("Create course error:", err);
       showNotification("error", err.message || "Could not save course");
     } finally {
       setSaving(false);
@@ -213,14 +213,14 @@ export default function CoursesCatalogPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update course");
+        showNotification("error", data.error || "Failed to update course");
+        return;
       }
 
       showNotification("success", `Course ${formData.code} updated successfully!`);
       setShowEditModal(false);
       fetchCourses();
     } catch (err: any) {
-      console.error("Update course error:", err);
       showNotification("error", err.message || "Could not update course");
     } finally {
       setSaving(false);
@@ -238,7 +238,8 @@ export default function CoursesCatalogPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete course");
+        showNotification("error", data.error || "Failed to delete course");
+        return;
       }
 
       showNotification("success", `Course ${selectedCourse.code} removed from database.`);
@@ -246,7 +247,6 @@ export default function CoursesCatalogPage() {
       setSelectedCourse(null);
       fetchCourses();
     } catch (err: any) {
-      console.error("Delete course error:", err);
       showNotification("error", err.message || "Could not delete course");
     } finally {
       setDeleting(false);

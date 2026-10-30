@@ -129,7 +129,8 @@ export default function FeesManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to load finance data");
+        showNotification("error", data.error || "Failed to load finance data");
+        return;
       }
 
       setInvoices(data.invoices || []);
@@ -137,7 +138,6 @@ export default function FeesManagementPage() {
       setStudents(data.students || []);
       if (data.stats) setStats(data.stats);
     } catch (err: any) {
-      console.error("Error fetching finance:", err);
       showNotification("error", err.message || "Failed to fetch student bills");
     } finally {
       setLoading(false);
@@ -201,14 +201,14 @@ export default function FeesManagementPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to generate student invoice");
+        showNotification("error", data.error || "Failed to generate student invoice");
+        return;
       }
 
       showNotification("success", `Invoice ${data.invoice?.invoice_number} created in database!`);
       setShowAddInvoiceModal(false);
       fetchFinance();
     } catch (err: any) {
-      console.error("Create invoice error:", err);
       showNotification("error", err.message || "Could not save invoice");
     } finally {
       setSaving(false);
@@ -235,14 +235,14 @@ export default function FeesManagementPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update invoice");
+        showNotification("error", data.error || "Failed to update invoice");
+        return;
       }
 
       showNotification("success", `Invoice ${selectedInvoice.invoice_number} updated.`);
       setShowEditInvoiceModal(false);
       fetchFinance();
     } catch (err: any) {
-      console.error("Update invoice error:", err);
       showNotification("error", err.message || "Could not update invoice");
     } finally {
       setSaving(false);
@@ -260,7 +260,8 @@ export default function FeesManagementPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete invoice");
+        showNotification("error", data.error || "Failed to delete invoice");
+        return;
       }
 
       showNotification("success", `Invoice ${selectedInvoice.invoice_number} deleted.`);
@@ -268,7 +269,6 @@ export default function FeesManagementPage() {
       setSelectedInvoice(null);
       fetchFinance();
     } catch (err: any) {
-      console.error("Delete invoice error:", err);
       showNotification("error", err.message || "Could not delete invoice");
     } finally {
       setDeleting(false);

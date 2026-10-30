@@ -38,11 +38,12 @@ function getTargetDashboardForRoles(roles: string[]): string {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Instantly allow static files, images, favicon, and auth callbacks
+  // 1. Instantly allow static files, images, favicon, and auth/supabase proxy callbacks
   const isStaticOrAuthApi =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/supabase") ||
     pathname === "/favicon.ico" ||
     pathname.includes(".");
 
@@ -93,7 +94,7 @@ export async function middleware(request: NextRequest) {
     roles.push(metaRole);
   }
 
-  if (supabase) {
+  if (supabase && roles.length === 0) {
     try {
       const { data: userRoles } = await supabase.rpc("get_user_roles", {
         p_user_id: user.id,
