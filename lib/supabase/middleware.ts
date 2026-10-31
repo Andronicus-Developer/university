@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Database } from "@/types/database.types";
 import {
   extractUserFromCookies,
+  hasProjectAuthCookie,
   isFallbackSessionInCookies,
   isSessionStillFresh,
   supabaseFetchWithRetry,
@@ -10,13 +11,16 @@ import {
 
 /**
  * Updates Supabase session tokens in Next.js request/response cycle.
- * Resolves fresh or fallback cookies in Edge Runtime without external latency,
- * and only triggers upstream token refresh when the access token is near expiry.
+ * Strictly scopes cookie lookups to this Supabase project's storage key so other
+ * localhost projects' cookies never collide or cause false RBAC rejections.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   // Snapshot incoming cookies BEFORE @supabase/ssr can mutate or clear them
   const initialCookies = request.cookies.getAll().map((c) => ({
@@ -24,52 +28,52 @@ export async function updateSession(request: NextRequest) {
     value: c.value,
   }));
 
-  const hasAuthCookie = initialCookies.some(
-    (c) => /^sb-.*-auth-token(\.\d+)?$/.test(c.name) && Boolean(c.value)
-  );
-
-  if (!hasAuthCookie) {
+  if (!hasProjectAuthCookie(initialCookies, supabaseUrl)) {
     return { supabaseResponse, user: null, supabase: null };
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const cookieUser = extractUserFromCookies(initialCookies);
+    return { supabaseResponse, user: cookieUser, supabase: null };
+  }
 
-  // Fast-path: if session is still fresh (not near expiry) or is a local fallback session,
-  // resolve directly from cookie in <1ms without blocking on external Wi-Fi/Cloudflare calls
+  let pendingCookies: { name: string; value: string; options?: Record<string, any> }[] = [];
+
+  const supabase = createServerClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      global: {
+        fetch: (input, init) => supabaseFetchWithRetry(input, init, 1, 5000),
+      },
+      cookies: {
+        getAll() {
+          return initialCookies;
+        },
+        setAll(cookiesToSet) {
+          pendingCookies = cookiesToSet;
+        },
+      },
+    }
+  );
+
+  // Fast-path: if session is a local fallback session or still fresh (not near expiry),
+  // resolve directly from this project's cookie without blocking on external network calls
   if (
-    !supabaseUrl ||
-    !supabaseAnonKey ||
     isFallbackSessionInCookies(initialCookies) ||
     isSessionStillFresh(initialCookies, 60)
   ) {
     const cookieUser = extractUserFromCookies(initialCookies);
     if (cookieUser) {
-      return { supabaseResponse, user: cookieUser, supabase: null };
+      return {
+        supabaseResponse,
+        user: cookieUser,
+        supabase: isFallbackSessionInCookies(initialCookies) ? null : supabase,
+      };
     }
   }
 
-  let pendingCookies: { name: string; value: string; options?: Record<string, any> }[] = [];
-
   try {
-    const supabase = createServerClient<Database>(
-      supabaseUrl!,
-      supabaseAnonKey!,
-      {
-        global: {
-          fetch: (input, init) => supabaseFetchWithRetry(input, init, 1, 5000),
-        },
-        cookies: {
-          getAll() {
-            return initialCookies;
-          },
-          setAll(cookiesToSet) {
-            pendingCookies = cookiesToSet;
-          },
-        },
-      }
-    );
-
     const {
       data: { user },
       error,
@@ -77,7 +81,7 @@ export async function updateSession(request: NextRequest) {
 
     if (error || !user) {
       const fallbackUser = extractUserFromCookies(initialCookies);
-      return { supabaseResponse, user: fallbackUser, supabase: null };
+      return { supabaseResponse, user: fallbackUser, supabase };
     }
 
     if (pendingCookies.length > 0) {

@@ -27,6 +27,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
     },
   },
   "lecturer@university.edu.gh": {
+    password: "Admin@123456",
     spec: {
       id: "a0000000-0000-0000-0000-000000000002",
       email: "lecturer@university.edu.gh",
@@ -35,11 +36,32 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       role_name: "Lecturer / Instructor",
     },
   },
+  "adaahessel@university.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      email: "adaahessel@university.edu.gh",
+      full_name: "Keziah Adaah Essel",
+      role: "lecturer",
+      role_name: "Lecturer / Instructor",
+    },
+  },
   "student@university.edu.gh": {
+    password: "Admin@123456",
     spec: {
       id: "a0000000-0000-0000-0000-000000000003",
       email: "student@university.edu.gh",
       full_name: "Ama Osei",
+      role: "student",
+      role_name: "Student",
+    },
+  },
+  "ama.johnson@university.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "6015cdd8-1c8e-4995-bde4-2bb90435e6ee",
+      email: "ama.johnson@university.edu.gh",
+      full_name: "Ama Johnson",
       role: "student",
       role_name: "Student",
     },
@@ -258,8 +280,19 @@ function tryDecodeRawSessionValue(rawVal: string): Record<string, any> | null {
       ? fromBase64Url(unescaped.slice("base64-".length))
       : unescaped;
     const parsed = JSON.parse(jsonStr);
-    if (parsed && typeof parsed === "object" && (parsed.access_token || parsed.user)) {
-      return parsed;
+    if (parsed && typeof parsed === "object") {
+      // Handle newer compact array format from @supabase/ssr: [access_token, refresh_token, ...]
+      if (Array.isArray(parsed) && typeof parsed[0] === "string" && parsed[0].includes(".")) {
+        const jwtUser = decodeUserFromJwt(parsed[0]);
+        return {
+          access_token: parsed[0],
+          refresh_token: typeof parsed[1] === "string" ? parsed[1] : undefined,
+          user: jwtUser,
+        };
+      }
+      if (parsed.access_token || parsed.user) {
+        return parsed;
+      }
     }
     return null;
   } catch {
@@ -267,41 +300,85 @@ function tryDecodeRawSessionValue(rawVal: string): Record<string, any> | null {
   }
 }
 
-export function parseSessionFromCookies(
-  cookiesList: { name: string; value: string }[]
-): Record<string, any> | null {
-  const cookieMap = new Map<string, string>();
-  const baseKeys = new Set<string>();
+export function getProjectAuthStorageKey(supabaseUrl?: string): string {
+  const rawUrl =
+    supabaseUrl ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "https://wcpwzyikenlzqlrrwcvu.supabase.co";
+  try {
+    const projectRef = new URL(rawUrl).hostname.split(".")[0];
+    if (projectRef) {
+      return `sb-${projectRef}-auth-token`;
+    }
+  } catch {
+    // fallback below
+  }
+  return "sb-wcpwzyikenlzqlrrwcvu-auth-token";
+}
 
+export function hasProjectAuthCookie(
+  cookiesList: { name: string; value: string }[],
+  supabaseUrl?: string
+): boolean {
+  const expectedKey = getProjectAuthStorageKey(supabaseUrl);
+  return cookiesList.some(
+    (c) =>
+      Boolean(c.value) &&
+      (c.name === expectedKey ||
+        c.name.startsWith(`${expectedKey}.`) ||
+        (c.name.startsWith("sb-") && c.name.includes("-auth-token")))
+  );
+}
+
+export function parseSessionFromCookies(
+  cookiesList: { name: string; value: string }[],
+  supabaseUrl?: string
+): Record<string, any> | null {
+  const expectedKey = getProjectAuthStorageKey(supabaseUrl);
+  const cookieMap = new Map<string, string>();
+
+  // First collect keys matching the project expected key
   for (const c of cookiesList) {
     if (!c.value) continue;
-    const match = c.name.match(/^(sb-.*-auth-token)(?:\.(\d+))?$/);
-    if (match) {
+    if (c.name === expectedKey || c.name.startsWith(`${expectedKey}.`)) {
       cookieMap.set(c.name, c.value);
-      baseKeys.add(match[1]);
     }
   }
 
-  for (const baseKey of baseKeys) {
-    // 1. Check sequential chunked cookies first (.0, .1, ...) or unchunked exact cookie,
-    // matching @supabase/ssr's combineChunks logic safely
-    const exactVal = cookieMap.get(baseKey);
-    if (exactVal) {
-      const decodedExact = tryDecodeRawSessionValue(exactVal);
-      if (decodedExact) return decodedExact;
-    }
-
-    const chunks: string[] = [];
-    for (let i = 0; ; i++) {
-      const chunkVal = cookieMap.get(`${baseKey}.${i}`);
-      if (!chunkVal) break;
-      try {
-        chunks.push(decodeURIComponent(chunkVal));
-      } catch {
-        chunks.push(chunkVal);
+  // If no exact match, allow any sb-*-auth-token cookie as fallback
+  if (cookieMap.size === 0) {
+    for (const c of cookiesList) {
+      if (!c.value) continue;
+      if (c.name.startsWith("sb-") && c.name.includes("-auth-token")) {
+        cookieMap.set(c.name, c.value);
       }
     }
+  }
 
+  if (cookieMap.size === 0) {
+    return null;
+  }
+
+  // 1. Check exact unchunked cookie
+  for (const [key, val] of cookieMap.entries()) {
+    if (!key.includes(".")) {
+      const decodedExact = tryDecodeRawSessionValue(val);
+      if (decodedExact) return decodedExact;
+    }
+  }
+
+  // 2. Check sequential chunked cookies (.0, .1, ...)
+  const candidatePrefixes = Array.from(
+    new Set(Array.from(cookieMap.keys()).map((k) => k.split(".")[0]))
+  );
+
+  for (const prefix of candidatePrefixes) {
+    const chunks: string[] = [];
+    for (let i = 0; ; i++) {
+      const chunkVal = cookieMap.get(`${prefix}.${i}`);
+      if (!chunkVal) break;
+      chunks.push(chunkVal);
+    }
     if (chunks.length > 0) {
       const decodedChunked = tryDecodeRawSessionValue(chunks.join(""));
       if (decodedChunked) return decodedChunked;
@@ -351,13 +428,24 @@ export function extractUserFromCookies(
   const parsed = parseSessionFromCookies(cookiesList);
   if (!parsed) return null;
 
-  if (parsed.user && parsed.user.id && parsed.user.email) {
-    return parsed.user;
+  const jwtUser =
+    typeof parsed.access_token === "string"
+      ? decodeUserFromJwt(parsed.access_token)
+      : null;
+
+  if (parsed.user && parsed.user.id && (parsed.user.email || jwtUser?.email)) {
+    const email = parsed.user.email || jwtUser?.email;
+    return {
+      ...parsed.user,
+      email,
+      user_metadata: {
+        ...(jwtUser?.user_metadata || {}),
+        ...(parsed.user.user_metadata || {}),
+      },
+    };
   }
-  if (typeof parsed.access_token === "string") {
-    return decodeUserFromJwt(parsed.access_token);
-  }
-  return null;
+
+  return jwtUser;
 }
 
 export async function supabaseFetchWithRetry(

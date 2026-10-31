@@ -249,16 +249,22 @@ export default function AdminDashboardPage() {
       let inactiveStaff = 0;
 
       if (staffData) {
-        totalStaff = staffData.length;
-        activeStaff = staffData.filter((s: any) => s.status === "active").length;
-        inactiveStaff = totalStaff - activeStaff;
-
+        const facultyRegex =
+          /lecturer|professor|teacher|instructor|faculty|dean|academic advisor|fellow|researcher/i;
         const teacherList = staffData.filter((s: any) =>
-          /lecturer|professor|teacher|instructor|faculty/i.test(s.job_title || "")
+          facultyRegex.test(s.job_title || "")
         );
+        const nonTeacherStaff = staffData.filter(
+          (s: any) => !facultyRegex.test(s.job_title || "")
+        );
+
         totalTeachers = teacherList.length;
         activeTeachers = teacherList.filter((s: any) => s.status === "active").length;
         inactiveTeachers = totalTeachers - activeTeachers;
+
+        totalStaff = nonTeacherStaff.length;
+        activeStaff = nonTeacherStaff.filter((s: any) => s.status === "active").length;
+        inactiveStaff = totalStaff - activeStaff;
       }
 
       // 4. Query Courses / Subjects

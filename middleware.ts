@@ -3,6 +3,9 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 const ADMIN_STAFF_ROLES = [
   "system_admin",
+  "admin",
+  "superadmin",
+  "administrator",
   "vice_chancellor",
   "registrar",
   "academic_affairs_officer",
@@ -85,16 +88,22 @@ export async function middleware(request: NextRequest) {
   // Determine roles from DB RPC with metadata fallback
   let roles: string[] = [];
 
+  const normalizedEmail = user.email?.trim().toLowerCase();
   const metaRole =
     user.user_metadata?.role ||
     user.user_metadata?.default_role ||
-    (user.email === "admin@university.edu.gh" ? "system_admin" : undefined);
+    user.app_metadata?.role ||
+    user.app_metadata?.default_role ||
+    (normalizedEmail === "admin@university.edu.gh" ? "system_admin" : undefined);
 
   if (metaRole) {
     roles.push(metaRole);
   }
+  if (normalizedEmail === "admin@university.edu.gh" && !roles.includes("system_admin")) {
+    roles.push("system_admin");
+  }
 
-  if (supabase && roles.length === 0) {
+  if (supabase) {
     try {
       const { data: userRoles } = await supabase.rpc("get_user_roles", {
         p_user_id: user.id,
@@ -109,25 +118,46 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const isSystemAdmin =
+    roles.includes("system_admin") ||
+    roles.includes("admin") ||
+    roles.includes("superadmin") ||
+    roles.includes("administrator") ||
+    normalizedEmail === "admin@university.edu.gh";
+
   // If already authenticated and visiting the login page, redirect to dashboard
   if (isLoginPage) {
-    const dashboardPath = getTargetDashboardForRoles(roles);
+    const dashboardPath = isSystemAdmin ? "/admin/dashboard" : getTargetDashboardForRoles(roles);
     return NextResponse.redirect(new URL(dashboardPath, request.url));
   }
 
-  // Allow unauthorized notice page
+  // Allow unauthorized notice page (auto-recover system_admin back to dashboard)
   if (pathname === "/unauthorized") {
+    if (isSystemAdmin) {
+      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+    }
     return supabaseResponse;
   }
 
   // 5. Role-Based Access Control (RBAC) boundaries
+  // System Admin holds universal superuser bypass across all portals
+  if (isSystemAdmin) {
+    return supabaseResponse;
+  }
+
+  const buildUnauthorizedRedirect = (targetPath: string) => {
+    const url = new URL("/unauthorized", request.url);
+    url.searchParams.set("from", targetPath);
+    return NextResponse.redirect(url);
+  };
+
   if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
     const hasAdminAccess = roles.some((r) => ADMIN_STAFF_ROLES.includes(r));
     if (!hasAdminAccess) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
       }
-      return NextResponse.redirect(new URL("/unauthorized", request.url));
+      return buildUnauthorizedRedirect(pathname);
     }
     return supabaseResponse;
   }
@@ -135,7 +165,7 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/lecturer")) {
     const hasLecturerAccess = roles.includes("lecturer") || roles.includes("system_admin");
     if (!hasLecturerAccess) {
-      return NextResponse.redirect(new URL("/unauthorized", request.url));
+      return buildUnauthorizedRedirect(pathname);
     }
     return supabaseResponse;
   }
@@ -143,7 +173,7 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/student")) {
     const hasStudentAccess = roles.includes("student") || roles.includes("system_admin");
     if (!hasStudentAccess) {
-      return NextResponse.redirect(new URL("/unauthorized", request.url));
+      return buildUnauthorizedRedirect(pathname);
     }
     return supabaseResponse;
   }
@@ -154,7 +184,7 @@ export async function middleware(request: NextRequest) {
       roles.includes("system_admin") ||
       roles.includes("admissions_officer");
     if (!hasApplicantAccess) {
-      return NextResponse.redirect(new URL("/unauthorized", request.url));
+      return buildUnauthorizedRedirect(pathname);
     }
     return supabaseResponse;
   }
@@ -162,7 +192,7 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/advisor")) {
     const hasAdvisorAccess = roles.includes("academic_advisor") || roles.includes("system_admin");
     if (!hasAdvisorAccess) {
-      return NextResponse.redirect(new URL("/unauthorized", request.url));
+      return buildUnauthorizedRedirect(pathname);
     }
     return supabaseResponse;
   }

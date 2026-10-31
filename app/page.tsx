@@ -98,7 +98,9 @@ export default function Home() {
             redirectedFrom &&
             redirectedFrom.startsWith("/") &&
             !redirectedFrom.startsWith("//") &&
-            redirectedFrom !== "/"
+            redirectedFrom !== "/" &&
+            redirectedFrom !== "/unauthorized" &&
+            redirectedFrom !== "/login"
           ) {
             if (isAdminStaff || redirectedFrom.startsWith(`/${targetPath.split("/")[1]}`)) {
               targetPath = redirectedFrom;
