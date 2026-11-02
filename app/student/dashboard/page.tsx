@@ -80,7 +80,7 @@ export default function StudentDashboardPage() {
       if (json.student) {
         setContactPhone(json.student.phone || "");
         setContactAddress(json.student.address || "");
-        setPayAmount(String(json.finance?.balanceDue || "450.00"));
+        setPayAmount(String(json.finance?.balanceDue !== undefined ? json.finance.balanceDue : "0.00"));
       }
     } catch (err: any) {
       console.error(err);
@@ -425,7 +425,7 @@ export default function StudentDashboardPage() {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-medium text-blue-100 border border-white/20">
               <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-              <span>Academic Year 2026 / 2027 • First Semester</span>
+              <span>{data.activeTerm?.academic_year?.name || "Academic Year 2026/2027"} • {data.activeTerm?.name || "First Semester"}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Welcome back, {student.fullName}
@@ -483,12 +483,12 @@ export default function StudentDashboardPage() {
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cumulative GPA</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{student.cgpa.toFixed(2)}</span>
+              <span className="text-2xl font-black text-slate-900">{Number(student.cgpa || 0).toFixed(2)}</span>
               <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-                Term GPA: {student.gpa.toFixed(2)}
+                Term GPA: {Number(student.gpa || 0).toFixed(2)}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Scale: 4.00 • First Class Division</p>
+            <p className="text-[11px] text-slate-400">Scale: 4.00 • {student.academicClass || "First Class Honours"}</p>
           </div>
           <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
             <Award className="h-6 w-6" />
@@ -518,8 +518,14 @@ export default function StudentDashboardPage() {
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance Rate</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{attendance.percentage}%</span>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-                Good Standing
+              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${
+                attendance.percentage >= 75
+                  ? "text-emerald-600 bg-emerald-50"
+                  : attendance.percentage >= 60
+                  ? "text-amber-600 bg-amber-50"
+                  : "text-red-600 bg-red-50"
+              }`}>
+                {attendance.standing || (attendance.percentage >= 75 ? "Good Standing" : "At Risk")}
               </span>
             </div>
             <p className="text-[11px] text-slate-400">{attendance.attendedSessions} of {attendance.totalSessions} sessions attended</p>
@@ -535,10 +541,16 @@ export default function StudentDashboardPage() {
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Fee Balance</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                GHS {finance.balanceDue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                GHS {Number(finance.balanceDue || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
               </span>
             </div>
-            <p className="text-[11px] text-amber-600 font-medium">Due: 30 Nov 2026</p>
+            <p className="text-[11px] text-amber-600 font-medium">
+              {Number(finance.balanceDue || 0) > 0
+                ? (finance.dueDate
+                    ? `Due: ${new Date(finance.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                    : "Due: End of Term")
+                : "Fees fully cleared"}
+            </p>
           </div>
           <div className="h-12 w-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
             <CreditCard className="h-6 w-6" />
@@ -961,8 +973,10 @@ export default function StudentDashboardPage() {
                   Room: <span className="font-semibold text-slate-800">{accommodation.bed?.room?.room_number || "B-204"}</span> • Bed: <span className="font-semibold text-slate-800">{accommodation.bed?.bed_number || "Bed 1"}</span>
                 </p>
                 <div className="pt-1 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">Check-in: 01 Sep 2026</span>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-[10px]">Active</span>
+                  <span className="text-[10px] text-slate-400">
+                    Check-in: {accommodation.check_in_at ? new Date(accommodation.check_in_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Semester 1"}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-[10px] capitalize">{accommodation.status || "Active"}</span>
                 </div>
               </div>
             ) : (
