@@ -554,6 +554,18 @@ export default function SettingsPage() {
         text: "All configuration settings and storage links successfully saved to Supabase database!",
       });
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("institution_updated", {
+            detail: {
+              name: schoolForm.name,
+              abbreviation: schoolForm.abbreviation,
+              logoUrl: schoolForm.logoUrl,
+            },
+          })
+        );
+      }
+
       // Clear alert after 5s
       setTimeout(() => {
         setStatusMessage(null);

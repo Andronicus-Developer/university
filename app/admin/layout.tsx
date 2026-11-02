@@ -61,6 +61,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [userEmail, setUserEmail] = useState<string>("admin@university.edu.gh");
   const [userRole, setUserRole] = useState<string>("System Administrator");
   const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
+  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
+  const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -132,9 +135,58 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       } catch {
         // Fallback default
       }
+
+      // Fetch School / Institution Info directly from database
+      try {
+        const res = await fetch("/api/settings/institution");
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.name) {
+            setSchoolName(data.name);
+            if (data.abbreviation) setSchoolAbbr(data.abbreviation);
+            if (data.logo_url) setSchoolLogo(data.logo_url);
+            return;
+          }
+        }
+      } catch {
+        // Fallback directly to supabase table
+      }
+
+      try {
+        const { data: settingRow } = await (supabase as any)
+          .from("system_settings")
+          .select("setting_value")
+          .eq("setting_key", "institution_info")
+          .maybeSingle();
+
+        if (settingRow?.setting_value?.name) {
+          setSchoolName(settingRow.setting_value.name);
+          if (settingRow.setting_value.abbreviation) {
+            setSchoolAbbr(settingRow.setting_value.abbreviation);
+          }
+          if (settingRow.setting_value.logo_url) {
+            setSchoolLogo(settingRow.setting_value.logo_url);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load institution info from DB:", err);
+      }
     }
 
     loadAdminData();
+
+    // Listen for live institution settings changes from /admin/settings
+    const handleInstitutionUpdate = (e: any) => {
+      if (e.detail?.name) setSchoolName(e.detail.name);
+      if (e.detail?.abbreviation) setSchoolAbbr(e.detail.abbreviation);
+      if (e.detail?.logoUrl !== undefined) setSchoolLogo(e.detail.logoUrl);
+      if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
+    };
+
+    window.addEventListener("institution_updated", handleInstitutionUpdate);
+    return () => {
+      window.removeEventListener("institution_updated", handleInstitutionUpdate);
+    };
   }, []);
 
   const handleSignOut = async () => {
@@ -208,13 +260,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     <div className="flex flex-col h-full bg-white select-none">
       {/* Brand Header */}
       <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100 bg-white">
-        <Link href="/admin/dashboard" className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-blue-500/20">
-            UMS
+        <Link href="/admin/dashboard" className="flex items-center gap-3 min-w-0">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-blue-500/20 shrink-0 overflow-hidden">
+            {schoolLogo ? (
+              <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
+            ) : (
+              (schoolAbbr || "AIT").slice(0, 4)
+            )}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-bold text-slate-900 tracking-tight leading-tight">
-              Premier University
+          <div className="flex flex-col min-w-0">
+            <span
+              className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
+              title={schoolName}
+            >
+              {schoolName}
             </span>
             <span className="text-[11px] font-medium text-slate-500">
               Admin Portal

@@ -47,6 +47,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/supabase") ||
+    pathname.startsWith("/api/settings/institution") ||
     pathname === "/favicon.ico" ||
     pathname.includes(".");
 

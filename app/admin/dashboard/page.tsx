@@ -107,6 +107,7 @@ interface StudentActivityItem {
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState<string>("Administrator");
+  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [showAlert, setShowAlert] = useState(true);
   const [alertMessage, setAlertMessage] = useState<string>(
@@ -207,6 +208,17 @@ export default function AdminDashboardPage() {
         } else if (user.user_metadata?.full_name) {
           setAdminName(user.user_metadata.full_name);
         }
+      }
+
+      // Fetch institution name from database settings
+      try {
+        const res = await fetch("/api/settings/institution");
+        if (res.ok) {
+          const d = await res.json();
+          if (d?.name) setSchoolName(d.name);
+        }
+      } catch {
+        // non-blocking
       }
 
       // Format updated date
@@ -674,7 +686,7 @@ export default function AdminDashboardPage() {
               <span className="text-2xl">👋</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 font-normal">
-              Premier University Administrative Operations & Real-time Metrics
+              {schoolName} Administrative Operations & Real-time Metrics
             </p>
           </div>
 
