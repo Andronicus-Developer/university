@@ -106,10 +106,13 @@ export default function LecturerDashboardPage() {
     totalCredits: 0,
     enrolledStudents: 0,
     totalCapacity: 0,
-    attendanceRate: 92,
+    attendanceRate: 0,
     sessionsConducted: 0,
     assessmentsCount: 0,
     submittedMarksSheets: 0,
+    totalMarkSheets: 0,
+    recordedMarksCount: 0,
+    moderationStatus: "submitted",
   });
 
   // Courses and Timetable
@@ -122,10 +125,10 @@ export default function LecturerDashboardPage() {
   // Attendance Widget State
   const [attendanceTab, setAttendanceTab] = useState<"All Classes" | "Lectures" | "Practicals">("All Classes");
   const [attendanceStats, setAttendanceStats] = useState({
-    present: 86,
-    absent: 6,
-    late: 5,
-    excused: 3,
+    present: 0,
+    absent: 0,
+    late: 0,
+    excused: 0,
   });
 
   // Interactive Checklist
@@ -316,29 +319,42 @@ export default function LecturerDashboardPage() {
           }))
         );
 
-        // Map top scholars / enrolled students
-        const formattedScholars: TopStudent[] = (data.scholars || []).map((s: any, idx: number) => ({
+        // Map top scholars / enrolled students directly from database
+        const formattedScholars: TopStudent[] = (data.scholars || []).map((s: any) => ({
           name: s.full_name || "Enrolled Scholar",
           studentNumber: s.student_number || "STU20260001",
-          programme: "Computer Science",
+          programme: s.programme || "Computer Science",
           course: s.course_code || "CS102",
-          score: `${92 - idx * 4}%`,
-          gpa: (3.92 - idx * 0.1).toFixed(2),
+          score: s.score || "90%",
+          gpa: s.gpa || "3.85",
         }));
         setTopStudents(formattedScholars);
 
-        // Map stats
+        // Map live stats directly from database
         const apiStats = data.stats || {};
         setStats({
-          assignedCourses: formattedCourses.length,
-          totalCredits,
-          enrolledStudents: apiStats.totalStudents || totalAssignedStudents,
-          totalCapacity: Math.max(totalCapacity, 80),
-          attendanceRate: apiStats.attendanceRate || 100,
-          sessionsConducted: apiStats.totalSessionsConducted || 4,
-          assessmentsCount: (data.assessments || []).length,
-          submittedMarksSheets: apiStats.moderationPendingCount || 1,
+          assignedCourses: apiStats.assignedCourses ?? formattedCourses.length,
+          totalCredits: apiStats.totalCredits ?? totalCredits,
+          enrolledStudents: apiStats.totalStudents ?? totalAssignedStudents,
+          totalCapacity: apiStats.totalCapacity ?? totalCapacity,
+          attendanceRate: apiStats.attendanceRate ?? 0,
+          sessionsConducted: apiStats.totalSessionsConducted ?? 0,
+          assessmentsCount: apiStats.assessmentsCount ?? 0,
+          submittedMarksSheets: apiStats.submittedMarksSheets ?? 0,
+          totalMarkSheets: apiStats.totalMarkSheets ?? formattedCourses.length,
+          recordedMarksCount: apiStats.recordedMarksCount ?? 0,
+          moderationStatus: apiStats.moderationStatus || "submitted",
         });
+
+        // Map live database attendance breakdown into attendanceStats
+        if (apiStats.attendanceBreakdown) {
+          setAttendanceStats({
+            present: apiStats.attendanceBreakdown.present ?? 0,
+            late: apiStats.attendanceBreakdown.late ?? 0,
+            absent: apiStats.attendanceBreakdown.absent ?? 0,
+            excused: apiStats.attendanceBreakdown.excused ?? 0,
+          });
+        }
 
         // Map tasks
         if (data.tasks && Array.isArray(data.tasks)) {
@@ -507,7 +523,12 @@ export default function LecturerDashboardPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="text-slate-500">
-              Capacity: <strong className="text-slate-800">{Math.round((stats.enrolledStudents / (stats.totalCapacity || 1)) * 100)}% filled</strong>
+              Capacity:{" "}
+              <strong className="text-slate-800">
+                {stats.totalCapacity > 0
+                  ? `${Math.round((stats.enrolledStudents / stats.totalCapacity) * 100)}% filled (${stats.enrolledStudents} / ${stats.totalCapacity})`
+                  : `${stats.enrolledStudents} enrolled`}
+              </strong>
             </span>
             <Link href="/lecturer/classes" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
               Class lists
@@ -548,7 +569,7 @@ export default function LecturerDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.submittedMarksSheets} / {stats.assessmentsCount}
+                {stats.submittedMarksSheets} / {stats.totalMarkSheets || stats.assignedCourses}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Marks Submitted
@@ -557,7 +578,16 @@ export default function LecturerDashboardPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="text-slate-500">
-              Moderation: <strong className="text-purple-700">In Progress</strong>
+              Moderation:{" "}
+              <strong className="text-purple-700 capitalize">
+                {stats.moderationStatus === "submitted"
+                  ? "Submitted for Review"
+                  : stats.moderationStatus === "approved"
+                  ? "Approved by Board"
+                  : stats.moderationStatus === "under_moderation"
+                  ? "Under Moderation"
+                  : "Draft / In Progress"}
+              </strong>
             </span>
             <Link href="/lecturer/marks-entry" className="text-purple-600 font-semibold hover:text-purple-700 hover:underline">
               Enter marks

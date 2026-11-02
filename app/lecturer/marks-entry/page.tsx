@@ -12,10 +12,12 @@ import {
   Download,
   Users,
   Award,
+  Loader2,
 } from "lucide-react";
 
 interface StudentScoreRow {
   studentId: string;
+  enrolmentId: string;
   studentNumber: string;
   fullName: string;
   marksObtained: number | string;
@@ -24,44 +26,134 @@ interface StudentScoreRow {
 }
 
 export default function LecturerMarksEntryPage() {
-  const [selectedCourse, setSelectedCourse] = useState("CS101");
-  const [selectedComponent, setSelectedComponent] = useState("Midterm Exam (30%)");
-  const [maxMarks] = useState(100);
+  const [offerings, setOfferings] = useState<any[]>([]);
+  const [selectedOfferingId, setSelectedOfferingId] = useState<string>("");
+  const [components, setComponents] = useState<any[]>([]);
+  const [selectedComponentId, setSelectedComponentId] = useState<string>("");
+  const [maxMarks, setMaxMarks] = useState(100);
   const [scores, setScores] = useState<StudentScoreRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
+  // 1. Load Course Offerings
   useEffect(() => {
-    async function loadClassRoster() {
-      const supabase = createClient();
-      const { data } = await (supabase as any)
-        .from("students")
-        .select("id, student_number, profile:profile_id(full_name)")
-        .limit(15);
-
-      if (data && data.length > 0) {
-        setScores(
-          data.map((s: any, idx: number) => ({
-            studentId: s.id,
-            studentNumber: s.student_number,
-            fullName: s.profile?.full_name || "Enrolled Student",
-            marksObtained: Math.round(68 + ((idx * 7) % 30)),
-            isAbsent: false,
-            remarks: "",
-          }))
-        );
-      } else {
-        setScores([
-          { studentId: "s-1", studentNumber: "STU20260012", fullName: "Ama Mensah", marksObtained: 88, isAbsent: false, remarks: "" },
-          { studentId: "s-2", studentNumber: "STU20260028", fullName: "Kofi Owusu", marksObtained: 92, isAbsent: false, remarks: "" },
-          { studentId: "s-3", studentNumber: "STU20260035", fullName: "Ebenezer Quaye", marksObtained: 74, isAbsent: false, remarks: "" },
-          { studentId: "s-4", studentNumber: "STU20260041", fullName: "Grace Acheampong", marksObtained: 81, isAbsent: false, remarks: "" },
-          { studentId: "s-5", studentNumber: "STU20260055", fullName: "Samuel Boateng", marksObtained: 0, isAbsent: true, remarks: "Excused medical" },
-        ]);
+    async function loadOfferings() {
+      try {
+        const res = await fetch("/api/lecturer/dashboard");
+        const data = await res.json();
+        if (data?.success && data.offerings && data.offerings.length > 0) {
+          setOfferings(data.offerings);
+          setSelectedOfferingId(data.offerings[0].id);
+        } else {
+          const supabase = createClient();
+          const { data: offs } = await (supabase as any)
+            .from("course_offerings")
+            .select("id, section, course:course_id(code, name)")
+            .limit(10);
+          if (offs && offs.length > 0) {
+            setOfferings(offs);
+            setSelectedOfferingId(offs[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load offerings:", err);
       }
     }
-    loadClassRoster();
-  }, [selectedCourse, selectedComponent]);
+    loadOfferings();
+  }, []);
+
+  // 2. Load Assessment Components for selected Course Offering
+  useEffect(() => {
+    if (!selectedOfferingId) return;
+
+    async function loadComponents() {
+      try {
+        const supabase = createClient();
+        const { data: comps } = await (supabase as any)
+          .from("assessment_components")
+          .select("*")
+          .eq("course_offering_id", selectedOfferingId)
+          .order("created_at", { ascending: true });
+
+        if (comps && comps.length > 0) {
+          setComponents(comps);
+          setSelectedComponentId(comps[0].id);
+          setMaxMarks(Number(comps[0].max_marks) || 100);
+        } else {
+          setComponents([]);
+          setSelectedComponentId("");
+        }
+      } catch (err) {
+        console.warn("Could not load components:", err);
+      }
+    }
+    loadComponents();
+  }, [selectedOfferingId]);
+
+  // 3. Load Enrolled Students and existing Marks
+  useEffect(() => {
+    if (!selectedOfferingId) return;
+
+    async function loadEnrolledStudentsAndMarks() {
+      setLoading(true);
+      try {
+        const supabase = createClient();
+        const { data: enrolments } = await (supabase as any)
+          .from("course_enrolments")
+          .select(`
+            id,
+            student_id,
+            enrolment_status,
+            student:student_id(
+              id,
+              student_number,
+              profile:profile_id(full_name, email)
+            )
+          `)
+          .eq("course_offering_id", selectedOfferingId)
+          .eq("enrolment_status", "enrolled");
+
+        let existingMarksMap: Record<string, any> = {};
+        if (selectedComponentId) {
+          const { data: marks } = await (supabase as any)
+            .from("assessment_marks")
+            .select("*")
+            .eq("assessment_component_id", selectedComponentId);
+
+          if (marks) {
+            marks.forEach((m: any) => {
+              existingMarksMap[m.enrolment_id] = m;
+            });
+          }
+        }
+
+        if (enrolments && enrolments.length > 0) {
+          setScores(
+            enrolments.map((e: any) => {
+              const existing = existingMarksMap[e.id];
+              return {
+                studentId: e.student_id,
+                enrolmentId: e.id,
+                studentNumber: e.student?.student_number || "STU20260001",
+                fullName: e.student?.profile?.full_name || "Enrolled Student",
+                marksObtained: existing ? existing.marks_obtained : "",
+                isAbsent: Boolean(existing?.is_absent),
+                remarks: existing?.remarks || "",
+              };
+            })
+          );
+        } else {
+          setScores([]);
+        }
+      } catch (err) {
+        console.warn("Could not load enrolled students:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadEnrolledStudentsAndMarks();
+  }, [selectedOfferingId, selectedComponentId]);
 
   const updateMark = (studentId: string, val: string) => {
     const num = val === "" ? "" : Math.min(maxMarks, Math.max(0, Number(val)));
@@ -71,32 +163,80 @@ export default function LecturerMarksEntryPage() {
   };
 
   const handleSaveDraft = async () => {
+    if (!selectedComponentId) {
+      alert("Please select or create an assessment component first.");
+      return;
+    }
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setSaving(false);
-    setNotification("Marks saved as draft. You can continue editing before final submission.");
+    try {
+      const res = await fetch("/api/lecturer/marks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseOfferingId: selectedOfferingId,
+          assessmentComponentId: selectedComponentId,
+          marks: scores,
+          isSubmittedForModeration: false,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotification("Marks saved directly to database as draft!");
+      } else {
+        alert(data.error || "Failed to save marks");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error while saving marks");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSubmitForModeration = async () => {
+    if (!selectedComponentId || !selectedOfferingId) {
+      alert("Please select a course offering and assessment component.");
+      return;
+    }
     const confirmSubmit = window.confirm(
       "Are you sure you want to submit this mark sheet for departmental moderation? Once submitted, marks become locked pending board review."
     );
     if (!confirmSubmit) return;
 
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSaving(false);
-    setNotification("Mark sheet successfully submitted for Departmental Moderation.");
+    try {
+      const res = await fetch("/api/lecturer/marks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseOfferingId: selectedOfferingId,
+          assessmentComponentId: selectedComponentId,
+          marks: scores,
+          isSubmittedForModeration: true,
+          submissionNotes: "Mark sheet finalized and forwarded to HOD for departmental moderation.",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotification("Mark sheet successfully submitted to database for Departmental Moderation!");
+      } else {
+        alert(data.error || "Failed to submit mark sheet");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error while submitting mark sheet");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const calculateGrade = (marks: number | string) => {
     const m = Number(marks);
-    if (m >= 80) return { grade: "A", pts: "4.0" };
-    if (m >= 75) return { grade: "B+", pts: "3.5" };
-    if (m >= 70) return { grade: "B", pts: "3.0" };
-    if (m >= 65) return { grade: "C+", pts: "2.5" };
-    if (m >= 60) return { grade: "C", pts: "2.0" };
-    if (m >= 50) return { grade: "D", pts: "1.0" };
+    const pct = maxMarks > 0 ? (m / maxMarks) * 100 : m;
+    if (pct >= 80) return { grade: "A", pts: "4.0" };
+    if (pct >= 75) return { grade: "B+", pts: "3.5" };
+    if (pct >= 70) return { grade: "B", pts: "3.0" };
+    if (pct >= 65) return { grade: "C+", pts: "2.5" };
+    if (pct >= 60) return { grade: "C", pts: "2.0" };
+    if (pct >= 50) return { grade: "D", pts: "1.0" };
     return { grade: "F", pts: "0.0" };
   };
 
@@ -123,18 +263,18 @@ export default function LecturerMarksEntryPage() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={handleSaveDraft}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition-colors cursor-pointer"
+            disabled={saving || loading}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
           >
-            <Save className="h-3.5 w-3.5" />
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-600" /> : <Save className="h-3.5 w-3.5" />}
             <span>Save Draft</span>
           </button>
           <button
             onClick={handleSubmitForModeration}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
+            disabled={saving || loading}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
           >
-            <Send className="h-3.5 w-3.5" />
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white" /> : <Send className="h-3.5 w-3.5" />}
             <span>Submit for Moderation</span>
           </button>
         </div>
@@ -154,27 +294,38 @@ export default function LecturerMarksEntryPage() {
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1">Course Offering</label>
           <select
-            value={selectedCourse}
-            onChange={(e) => setSelectedCourse(e.target.value)}
+            value={selectedOfferingId}
+            onChange={(e) => setSelectedOfferingId(e.target.value)}
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-500"
           >
-            <option value="CS101">CS101 - Programming Foundations (Section A)</option>
-            <option value="CS204">CS204 - Database Systems (Section B)</option>
-            <option value="CS308">CS308 - Software Engineering (Section A)</option>
+            {offerings.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.course?.code || "COURSE"} - {o.course?.name || "Offering"} (Section {o.section || "A"})
+              </option>
+            ))}
           </select>
         </div>
 
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1">Assessment Component</label>
           <select
-            value={selectedComponent}
-            onChange={(e) => setSelectedComponent(e.target.value)}
+            value={selectedComponentId}
+            onChange={(e) => {
+              const comp = components.find((c) => c.id === e.target.value);
+              setSelectedComponentId(e.target.value);
+              if (comp) setMaxMarks(Number(comp.max_marks) || 100);
+            }}
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-500"
           >
-            <option value="Continuous Assessment Quiz 1 (15%)">Continuous Assessment Quiz 1 (15%)</option>
-            <option value="Midterm Exam (30%)">Midterm Exam (30%)</option>
-            <option value="Practical Project (25%)">Practical Project (25%)</option>
-            <option value="End of Semester Examination (40%)">End of Semester Examination (40%)</option>
+            {components.length > 0 ? (
+              components.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.weight_percentage}%) - Max {c.max_marks} marks
+                </option>
+              ))
+            ) : (
+              <option value="">No components defined for this course</option>
+            )}
           </select>
         </div>
       </div>
@@ -194,66 +345,81 @@ export default function LecturerMarksEntryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {scores.map((s) => {
-                const { grade, pts } = calculateGrade(s.marksObtained);
-                return (
-                  <tr key={s.studentId} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-bold text-slate-900">{s.fullName}</td>
-                    <td className="py-3 px-4 font-mono text-slate-700">{s.studentNumber}</td>
-                    <td className="py-3 px-4 text-center">
-                      <input
-                        type="number"
-                        min={0}
-                        max={maxMarks}
-                        disabled={s.isAbsent}
-                        value={s.isAbsent ? "" : s.marksObtained}
-                        onChange={(e) => updateMark(s.studentId, e.target.value)}
-                        className="w-20 px-2 py-1 text-center font-bold text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 focus:bg-white disabled:opacity-40"
-                      />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {s.isAbsent ? (
-                        <span className="font-bold text-red-600">ABS</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {grade} ({pts})
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <input
-                        type="checkbox"
-                        checked={s.isAbsent}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setScores((prev) =>
-                            prev.map((item) =>
-                              item.studentId === s.studentId ? { ...item, isAbsent: checked } : item
-                            )
-                          );
-                        }}
-                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <input
-                        type="text"
-                        placeholder="Optional remarks..."
-                        value={s.remarks}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setScores((prev) =>
-                            prev.map((item) =>
-                              item.studentId === s.studentId ? { ...item, remarks: val } : item
-                            )
-                          );
-                        }}
-                        className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <Loader2 className="h-6 w-6 animate-spin text-emerald-600 mx-auto mb-2" />
+                    <span>Loading student marks roster from database...</span>
+                  </td>
+                </tr>
+              ) : scores.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    No enrolled students found for this course offering.
+                  </td>
+                </tr>
+              ) : (
+                scores.map((s) => {
+                  const { grade, pts } = calculateGrade(s.marksObtained);
+                  return (
+                    <tr key={s.studentId} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-bold text-slate-900">{s.fullName}</td>
+                      <td className="py-3 px-4 font-mono text-slate-700">{s.studentNumber}</td>
+                      <td className="py-3 px-4 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          max={maxMarks}
+                          disabled={s.isAbsent}
+                          value={s.isAbsent ? "" : s.marksObtained}
+                          onChange={(e) => updateMark(s.studentId, e.target.value)}
+                          className="w-20 px-2 py-1 text-center font-bold text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 focus:bg-white disabled:opacity-40"
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {s.isAbsent ? (
+                          <span className="font-bold text-red-600">ABS</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {grade} ({pts})
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={s.isAbsent}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setScores((prev) =>
+                              prev.map((item) =>
+                                item.studentId === s.studentId ? { ...item, isAbsent: checked } : item
+                              )
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-3 px-4">
+                        <input
+                          type="text"
+                          placeholder="Optional remarks..."
+                          value={s.remarks}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setScores((prev) =>
+                              prev.map((item) =>
+                                item.studentId === s.studentId ? { ...item, remarks: val } : item
+                              )
+                            );
+                          }}
+                          className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -261,4 +427,3 @@ export default function LecturerMarksEntryPage() {
     </div>
   );
 }
-
