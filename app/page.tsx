@@ -60,8 +60,17 @@ export default function Home() {
 
         // Determine target portal based on role
         let targetPath = "/admin/dashboard";
-        const isAdminStaff =
+        const isSystemAdmin =
           roles.includes("system_admin") ||
+          data.user.email === "admin@university.edu.gh";
+
+        const isFinanceStaff =
+          roles.includes("finance_officer") ||
+          roles.includes("bursar") ||
+          roles.includes("accountant");
+
+        const isAdminStaff =
+          isSystemAdmin ||
           roles.some((r) =>
             [
               "vice_chancellor",
@@ -70,7 +79,6 @@ export default function Home() {
               "dean",
               "head_of_department",
               "admissions_officer",
-              "finance_officer",
               "librarian",
               "hostel_officer",
               "hr_officer",
@@ -78,7 +86,9 @@ export default function Home() {
             ].includes(r)
           );
 
-        if (isAdminStaff) {
+        if (isFinanceStaff && !isSystemAdmin) {
+          targetPath = "/finance/dashboard";
+        } else if (isAdminStaff) {
           targetPath = "/admin/dashboard";
         } else if (roles.includes("lecturer")) {
           targetPath = "/lecturer/dashboard";
@@ -88,6 +98,8 @@ export default function Home() {
           targetPath = "/applicant/dashboard";
         } else if (roles.includes("academic_advisor")) {
           targetPath = "/advisor/dashboard";
+        } else if (isFinanceStaff) {
+          targetPath = "/finance/dashboard";
         }
 
         // Honor ?redirectedFrom= if it is a safe internal path matching the user's portal

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Settings,
   Save,
@@ -48,51 +47,15 @@ export default function FinanceSettingsPage() {
   const loadSettings = async () => {
     setLoading(true);
     setErrorMsg(null);
-    const supabase = createClient();
-    const db = supabase as any;
-
     try {
-      const { data, error } = await db
-        .from("system_settings")
-        .select("*")
-        .in("setting_key", ["payment_gateways", "finance_policy", "academic_policy"]);
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        let updated = { ...financeConfig };
-
-        data.forEach((item: any) => {
-          if (item.setting_key === "payment_gateways") {
-            const v = item.setting_value || {};
-            updated.currency = v.currency || updated.currency;
-            updated.auto_receipt_generation = v.auto_receipt_generation ?? updated.auto_receipt_generation;
-            if (v.supported_providers) {
-              updated.paystack_enabled = v.supported_providers.includes("paystack");
-              updated.hubtel_enabled = v.supported_providers.includes("hubtel");
-              updated.cashier_desk_enabled = v.supported_providers.includes("cashier");
-              updated.bank_wire_enabled = v.supported_providers.includes("bank_wire");
-            }
-          }
-
-          if (item.setting_key === "finance_policy") {
-            const v = item.setting_value || {};
-            updated = { ...updated, ...v };
-          }
-
-          if (item.setting_key === "academic_policy") {
-            const v = item.setting_value || {};
-            if (v.current_academic_year) updated.academic_year = v.current_academic_year;
-            if (v.active_semester) updated.active_semester = v.active_semester;
-            if (v.late_registration_fine) updated.late_payment_penalty = v.late_registration_fine;
-            if (v.restrict_transcript_on_debt !== undefined) updated.debt_transcript_hold = v.restrict_transcript_on_debt;
-          }
-        });
-
-        setFinanceConfig(updated);
+      const res = await fetch("/api/finance/settings");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load finance settings");
+      if (json.settings) {
+        setFinanceConfig(json.settings);
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("loadSettings error:", err);
       setErrorMsg(err.message || "Failed to load finance settings from database.");
     } finally {
       setLoading(false);
@@ -108,74 +71,23 @@ export default function FinanceSettingsPage() {
     setSaving(true);
     setSaveSuccess(false);
     setErrorMsg(null);
-    const supabase = createClient();
-    const db = supabase as any;
 
     try {
-      const providers = [];
-      if (financeConfig.paystack_enabled) providers.push("paystack");
-      if (financeConfig.hubtel_enabled) providers.push("hubtel");
-      if (financeConfig.cashier_desk_enabled) providers.push("cashier");
-      if (financeConfig.bank_wire_enabled) providers.push("bank_wire");
-
-      // 1. Update payment_gateways
-      const { error: err1 } = await db.from("system_settings").upsert(
-        {
-          setting_key: "payment_gateways",
-          category: "finance",
-          description: "Payment provider configurations and digital receipt settings",
-          setting_value: {
-            currency: financeConfig.currency,
-            default_provider: financeConfig.paystack_enabled ? "paystack" : "hubtel",
-            supported_providers: providers,
-            auto_receipt_generation: financeConfig.auto_receipt_generation,
-          },
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "setting_key" }
-      );
-      if (err1) throw err1;
-
-      // 2. Update finance_policy
-      const { error: err2 } = await db.from("system_settings").upsert(
-        {
-          setting_key: "finance_policy",
-          category: "finance",
-          description: "Bursary dual-control, write-offs, refund thresholds, and collection rules",
-          setting_value: {
-            currency: financeConfig.currency,
-            currency_symbol: financeConfig.currency_symbol,
-            academic_year: financeConfig.academic_year,
-            active_semester: financeConfig.active_semester,
-            auto_generate_invoices: financeConfig.auto_generate_invoices,
-            dual_control_enforced: financeConfig.dual_control_enforced,
-            refund_dual_control_threshold: Number(financeConfig.refund_dual_control_threshold),
-            write_off_limit: Number(financeConfig.write_off_limit),
-            debt_threshold_exam_block_pct: Number(financeConfig.debt_threshold_exam_block_pct),
-            debt_transcript_hold: financeConfig.debt_transcript_hold,
-            late_payment_penalty: Number(financeConfig.late_payment_penalty),
-          },
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "setting_key" }
-      );
-      if (err2) throw err2;
-
-      // 3. Log to audit events
-      await db.from("audit_events").insert({
-        action: "FINANCE_POLICY_UPDATED",
-        entity_type: "system_settings",
-        entity_id: "finance_policy",
-        actor_role: "bursar",
-        outcome: "SUCCESS",
-        reason: "Updated finance policy, payment gateways, and dual control rules",
-        new_values: financeConfig,
+      const res = await fetch("/api/finance/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(financeConfig),
       });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Failed to persist configuration to database.");
+      }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
     } catch (err: any) {
-      console.error(err);
+      console.error("handleSave error:", err);
       setErrorMsg(err.message || "Failed to persist configuration to database.");
     } finally {
       setSaving(false);

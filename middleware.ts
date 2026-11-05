@@ -12,7 +12,6 @@ const ADMIN_STAFF_ROLES = [
   "dean",
   "head_of_department",
   "admissions_officer",
-  "finance_officer",
   "librarian",
   "hostel_officer",
   "hr_officer",
@@ -20,6 +19,15 @@ const ADMIN_STAFF_ROLES = [
 ];
 
 function getTargetDashboardForRoles(roles: string[]): string {
+  const isSysAdmin =
+    roles.includes("system_admin") ||
+    roles.includes("admin") ||
+    roles.includes("superadmin") ||
+    roles.includes("administrator");
+
+  if (!isSysAdmin && (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant"))) {
+    return "/finance/dashboard";
+  }
   if (roles.some((r) => ADMIN_STAFF_ROLES.includes(r))) {
     return "/admin/dashboard";
   }
@@ -34,6 +42,9 @@ function getTargetDashboardForRoles(roles: string[]): string {
   }
   if (roles.includes("academic_advisor")) {
     return "/advisor/dashboard";
+  }
+  if (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant")) {
+    return "/finance/dashboard";
   }
   return "/admin/dashboard";
 }
@@ -157,6 +168,9 @@ export async function middleware(request: NextRequest) {
     if (!hasAdminAccess) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
+      }
+      if (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant")) {
+        return NextResponse.redirect(new URL("/finance/dashboard", request.url));
       }
       return buildUnauthorizedRedirect(pathname);
     }

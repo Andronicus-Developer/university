@@ -46,6 +46,12 @@ export async function GET(request: NextRequest) {
     let targetDashboard = "/admin/dashboard";
     if (isSystemAdmin) {
       targetDashboard = "/admin/dashboard";
+    } else if (
+      roles.includes("finance_officer") ||
+      roles.includes("bursar") ||
+      roles.includes("accountant")
+    ) {
+      targetDashboard = "/finance/dashboard";
     } else if (roles.includes("lecturer")) {
       targetDashboard = "/lecturer/dashboard";
     } else if (roles.includes("student")) {

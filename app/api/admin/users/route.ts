@@ -158,8 +158,8 @@ export async function POST(req: NextRequest) {
         action: "USER_PROVISIONED",
         entity_type: "auth_user",
         entity_id: newUserId,
-        outcome: "success",
-        metadata: {
+        outcome: "SUCCESS",
+        new_values: {
           email,
           full_name,
           role: role_code,
@@ -262,8 +262,8 @@ export async function PUT(req: NextRequest) {
         action: "USER_MODIFIED",
         entity_type: "auth_user",
         entity_id: id,
-        outcome: "success",
-        metadata: {
+        outcome: "SUCCESS",
+        new_values: {
           email,
           full_name,
           role: role_code,

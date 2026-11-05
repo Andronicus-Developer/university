@@ -108,7 +108,13 @@ function UnauthorizedContent() {
   }, []);
 
   const handleReturnDashboard = () => {
-    if (userRoles.includes("student")) {
+    if (
+      userRoles.includes("finance_officer") ||
+      userRoles.includes("bursar") ||
+      userRoles.includes("accountant")
+    ) {
+      window.location.assign("/finance/dashboard");
+    } else if (userRoles.includes("student")) {
       window.location.assign("/student/dashboard");
     } else if (userRoles.includes("lecturer")) {
       window.location.assign("/lecturer/dashboard");
