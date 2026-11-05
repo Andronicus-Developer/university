@@ -1,0 +1,766 @@
+
+
+
+UNIVERSITY MANAGEMENT SYSTEM
+Full Product Requirements, Functional, Database, Security and Technical Documentation
+
+
+Single-university deployment • Web-based system • Ghana-ready configuration
+
+
+
+Technology baseline: Next.js App Router, TypeScript, Tailwind CSS, shadcn/ui, Supabase PostgreSQL, Supabase Auth and Storage
+Document version: 1.0
+Date: 28 October 2026
+Status: Implementation baseline; validate institution-specific policies before development
+
+
+Document Control
+FieldDetailsProductUniversity Management System (UMS)Deployment modelSingle institution, one production environment; designed with modular boundaries for future expansionPrimary usersApplicants, students, lecturers, academic departments, registry, finance, HR, library, hostel, IT and university leadershipPrimary purposeManage the university lifecycle from admissions through graduation, with finance, academic operations, student services and institutional reportingSystem of recordSupabase PostgreSQLDocument ownerProduct owner / university project steering committeeReview requirementRegistrar, Finance Director, Academic Affairs, IT/Security, Legal/Compliance and student-services representatives
+How to use this document
+This document is the implementation baseline for product design, estimation, engineering, QA and stakeholder sign-off. It defines intended capabilities, not a substitute for the university's approved academic regulations, financial policies, data-protection obligations or regulatory requirements. Where policy differs by institution, use configurable settings rather than hard-coded assumptions.
+Contents
+* 1. Executive summary and objectives
+* 2. Scope, assumptions and exclusions
+* 3. Architecture and technology stack
+* 4. User roles and permission model
+* 5. Functional modules and requirements
+* 6. Key workflows
+* 7. Information architecture and navigation
+* 8. Data model and database design
+* 9. API and integration standards
+* 10. Security, privacy and audit
+* 11. Reporting and analytics
+* 12. UX, accessibility and notifications
+* 13. Non-functional requirements
+* 14. Testing and acceptance criteria
+* 15. Deployment, operations and disaster recovery
+* 16. Delivery roadmap and implementation checklist
+* 17. Risks, open decisions and sign-off
+1. Executive Summary
+The University Management System (UMS) is a secure, role-based web application that centralizes academic administration, student lifecycle management, fee collection, examinations, staff administration and student services. It should reduce duplicated data entry, improve the accuracy and timeliness of records, give users self-service access, and provide leadership with reliable operational and financial reports.
+1.1 Product objectives
+* Create one authoritative student record from application through graduation or withdrawal.
+* Support faculties, schools, departments, programmes, courses, academic years, semesters and class groups.
+* Digitize admissions, registration, course enrolment, assessment, grading, results approval and transcript requests.
+* Manage fees, invoices, receipts, scholarships, sponsorships, refunds and financial reconciliation.
+* Give students, lecturers, advisors and administrators role-appropriate dashboards and workflows.
+* Track staff profiles, teaching assignments, leave and selected HR functions.
+* Provide controlled access to library, hostel, timetable, attendance, notices and student support services.
+* Deliver auditable reporting for academic leadership, finance, registry and authorized regulators.
+* Protect personal, academic and financial information with least-privilege access, logging and recovery controls.
+1.2 Success measures
+AreaExample KPI / target to agreeAdmissionsApplication completion rate; time from completed application to decisionRegistrationPercentage of eligible students who complete registration without manual interventionAcademic recordsPercentage of approved results published on schedule; correction rateFinanceReconciliation rate; unmatched payment count; overdue balancesService deliveryMedian turnaround time for transcripts, letters and student requestsReliabilityMonthly availability target; recovery time and recovery point objectivesUser adoptionActive users by role; completion rate for core self-service workflows
+Targets must be agreed with the institution and measured from a baseline; do not treat example metrics as contractual service levels.
+2. Scope, Assumptions and Exclusions
+2.1 In scope
+* Public admissions pages and applicant portal.
+* Student portal, lecturer portal, advisor access and administrative workspaces.
+* Academic structure, curriculum, course offerings, registration and timetable.
+* Assessment, grading, results approval and academic progression.
+* Student finance, payment-provider integration, receipts and reconciliation.
+* Registry services, student documents, transcript and letter requests.
+* Staff directory and foundational HR records.
+* Library and hostel modules as configurable modules.
+* Notifications, reporting, audit logs, configuration and access administration.
+2.2 Assumptions
+* This specification is for one university, not a public multi-tenant SaaS platform. A future multi-campus deployment can be supported through campus and organizational dimensions.
+* The university will nominate process owners and provide approved academic rules, fee schedules, grading scales, document templates and data-retention requirements.
+* Payment collection will be delegated to a licensed payment provider. The UMS will not store raw card credentials.
+* The university will supply validated legacy data and authorize migration.
+* Email/SMS providers, payment gateway credentials, domains and production accounts will be supplied by the institution.
+* Identity verification, national ID integrations, regulatory reporting and external student-information exchanges depend on approved APIs and agreements.
+2.3 Out of scope for the initial release
+* Operating a payment service or holding customer funds independently.
+* A complete hospital/clinical records system.
+* A full enterprise ERP or full double-entry accounting suite unless separately commissioned.
+* Native iOS/Android apps; the initial product is responsive web/PWA-ready.
+* Biometric attendance hardware integrations until a vendor and privacy review are approved.
+* Automated decisions that replace authorized academic, admissions or disciplinary committees.
+3. Architecture and Technology Stack
+3.1 Standard stack
+LayerTechnologyPurpose / implementation noteWeb applicationNext.js App Router + React + TypeScriptPortals, server-rendered pages, server components and controlled server actions/API routesStyling and UITailwind CSS + shadcn/uiResponsive accessible interface and reusable component systemForms and validationReact Hook Form + ZodClient feedback plus mandatory server-side validationDatabaseSupabase PostgreSQLRelational system of record; migrations checked into source controlAuthenticationSupabase AuthEmail/password, verified email and optional MFA; institutional SSO can be addedAuthorizationPostgreSQL RLS + server-side RBACEnforce access at the server and database boundaries; UI hiding is not securityFile storageSupabase StoragePrivate buckets for documents; signed URLs with short expiry where appropriateServer-stateTanStack Query where client-side caching is neededCaching, pagination and mutation handling; do not duplicate server data unnecessarilyTablesTanStack TableLarge administrative lists, sorting, filters and paginationChartsRechartsOperational and leadership dashboardsBackground jobsTrigger.dev or an equivalent managed job runnerScheduled reminders, exports and retryable workflowsPaymentsPaystack or Hubtel, subject to institutional approvalHosted/redirect checkout, server verification, webhooks and reconciliationEmailResend or institution-approved SMTP providerTransactional email templates and delivery trackingSMSHubtel or approved SMS providerTime-sensitive notifications where enabledTestingVitest + PlaywrightUnit, integration and end-to-end testingMonitoringSentry + structured logsError reporting, performance diagnostics and alertingHostingVercel or approved managed hostingPreview and production deployment; secrets managed outside source codeCI/CDGitHub ActionsLint, type-check, tests, migration checks and deployment gates
+3.2 Logical architecture
+1. Presentation layer: public site, applicant portal, student portal, lecturer portal and administrative workspace.
+2. Application layer: validated use cases, business rules, workflow transitions, report generation and integration adapters.
+3. Authorization layer: authenticated identity, role assignments, scoped permissions and institution/campus context.
+4. Data layer: PostgreSQL schemas, constraints, indexes, row-level security policies and versioned migrations.
+5. Integration layer: payment provider, email/SMS, identity/SSO, learning-management system and accounting exports.
+6. Operations layer: audit logs, monitoring, backups, incident response, deployment and recovery.
+3.3 Architecture rules
+* Keep business logic in explicit service/use-case modules; do not scatter critical rules across UI components.
+* Use server-side authorization for every protected operation and RLS as a second enforcement layer.
+* Use database transactions for operations that must succeed or fail together, especially enrolment, invoice posting and results publication.
+* Use idempotency keys for payment initiation, webhook processing and retryable jobs.
+* Use migrations for schema changes; never make undocumented production-only database edits.
+* Separate development, staging and production projects, keys, storage buckets and payment credentials.
+* Do not expose Supabase service-role keys, payment secrets or signing secrets to the browser.
+3.4 Suggested repository structure
+A modular monolith is recommended for the first release. Suggested structure:
+src/
+  app/
+    (public)/
+    (auth)/
+    applicant/
+    student/
+    lecturer/
+    advisor/
+    admin/
+    api/
+  components/
+    ui/
+    forms/
+    tables/
+    charts/
+  modules/
+    admissions/
+    identity/
+    academics/
+    registration/
+    timetable/
+    attendance/
+    assessment/
+    finance/
+    registry/
+    library/
+    hostel/
+    hr/
+    communications/
+    reporting/
+  lib/
+    supabase/
+    auth/
+    permissions/
+    validation/
+    audit/
+    payments/
+    email/
+  server/
+    use-cases/
+    repositories/
+    integrations/
+  types/
+  tests/
+supabase/
+  migrations/
+  seed.sql
+  tests/
+4. User Roles and Permission Model
+Users may have more than one role, but privileged roles must be explicitly assigned and reviewed. Use least privilege and scope access by faculty, department, course, campus or assigned student cohort as appropriate.
+RolePrimary responsibilitiesTypical restrictionsSystem AdministratorConfiguration, user support, operational settings, integrations and technical healthNo automatic permission to alter grades or approve financial transactionsVice-Chancellor / ExecutiveInstitution-wide performance, strategic dashboards and approved reportsRead-only by default; no routine record editingRegistrarStudent records, academic calendar, admissions decisions, registration oversight, official letters and transcriptsSensitive actions logged; official records require approved workflowsAcademic Affairs OfficerProgrammes, course catalogues, semester setup, progression rules and result administrationCannot approve own restricted changes where separation of duties appliesDeanFaculty oversight, faculty-level reports, course and workload oversightScoped to assigned faculty unless separately authorizedHead of DepartmentDepartment course offerings, teaching allocations, departmental review and result recommendationsScoped to assigned departmentAdmissions OfficerApplications, document checks, applicant communications and admission recommendationsCannot make final decisions unless assigned approval authorityFinance Officer / BursarFee schedules, invoices, receipts, scholarships, refunds and reconciliationRefunds and write-offs may require second approvalLecturerAssigned courses, class lists, attendance, assessments, marks and student feedbackOnly assigned course offerings; marks lock after submission/approvalAcademic AdvisorAssigned advisees, progression review and advising notesCannot edit official grades or unrestricted student dataStudentOwn profile, application/registration, timetable, results, invoices, payments and requestsCan access only own data and permitted cohort informationApplicantApplication form, document upload, application status and admission offer responseAccess limited to own applicationLibrarianCatalogue, loans, returns, reservations, fines and library reportsNo access to unrelated academic or financial detailsHostel OfficerResidence inventory, applications, room allocation and check-in/outAccess limited to residence operationsHR OfficerStaff records, contracts, leave and HR reportsPayroll and sensitive employee records require explicit permissionsAuditorRead-only access to approved logs, reports and transaction evidenceCannot create, edit or delete business recordsParent/Sponsor (optional)View explicitly linked sponsored-student balances or approved noticesNo access to grades or personal information unless authorized by policy and consent
+4.1 Permission design
+* Use permissions such as admissions.application.read, admissions.application.review, admissions.decision.approve, academics.course.manage, results.marks.submit, results.publish, finance.invoice.create, finance.refund.approve, registry.transcript.issue and users.roles.manage.
+* Store role-to-permission mappings centrally; avoid hard-coded role-name checks throughout the code.
+* Support scoped assignments, such as Dean of Faculty A or Lecturer for Course Offering B.
+* Require MFA for privileged roles where feasible; enforce re-authentication for high-risk actions.
+* Require dual control for refunds above a configurable threshold, result corrections after publication and other high-risk actions.
+* Record who granted a role, when it was granted, its scope, expiry (if temporary) and who approved it.
+4.2 Separation of duties
+The person who creates a payment refund, result amendment, fee waiver or privileged role should not be able to approve the same action when institutional policy requires independent review. Use pending/approved/rejected states and immutable audit events.
+5. Functional Modules and Requirements
+5.1 Public website and university information
+* Display approved information about faculties, departments, programmes, entry requirements, fees, academic calendar, admissions dates, contacts and notices.
+* Provide accessible pages, search-engine metadata and mobile-responsive navigation.
+* Allow authorized content editors to draft, preview, approve, publish and archive content.
+* Keep public content separate from private student and staff records.
+5.2 Identity, access and user administration
+* Support invitations, registration, email verification, password reset, session revocation and optional MFA.
+* Link a login identity to a person record without duplicating student/staff profiles.
+* Support account states: invited, pending verification, active, suspended, locked and deactivated.
+* Allow authorized administrators to assign roles and scoped permissions with an audit trail.
+* Apply rate limits, brute-force protections, secure cookie/session handling and account recovery controls.
+* Provide a user activity view to authorized support and security staff.
+5.3 Admissions and applicant management
+* Configure admission cycles, application periods, applicant categories, programmes, entry requirements, required documents and application fees.
+* Provide save-and-resume application forms with server-side validation.
+* Accept document uploads into private storage and record file metadata, type, size, uploader and review status.
+* Track application statuses: draft, submitted, fee-pending, under-review, incomplete, shortlisted, approved, rejected, waitlisted, offer-issued, offer-accepted, offer-declined and converted-to-student.
+* Support reviewer assignment, checklists, comments, scoring/rubrics where approved, recommendation and decision approval.
+* Generate application numbers, offer letters and rejection/next-step communications.
+* Prevent duplicate submissions where possible and provide controlled merge handling for duplicate applicant records.
+* Convert accepted applicants into student records without re-keying data.
+5.4 Academic structure and curriculum
+* Maintain campuses, faculties/schools, departments, programmes, programme versions, levels/years, course catalogue and prerequisites.
+* Configure academic years, semesters/terms, registration periods, add/drop periods and examination periods.
+* Define course credits, contact hours, course type, grading scheme, prerequisites, co-requisites and programme requirements.
+* Create course offerings by term, section, location, delivery mode and capacity.
+* Assign lecturers, teaching assistants and moderators to course offerings.
+* Version curriculum rules so historical students retain the programme requirements applicable to their cohort.
+* Prevent deletion of referenced academic records; use archival and effective dates.
+5.5 Student information system
+* Maintain student number, legal/preferred name, contact details, emergency contact, admission pathway, programme, cohort, status and authorized demographic fields.
+* Store academic history, enrolments, approved results, holds, progression decisions and graduation status.
+* Support student status changes: admitted, active, deferred, leave-of-absence, suspended, withdrawn, completed, graduated and deceased where policy requires.
+* Maintain a change history for key fields, including actor, timestamp, reason and prior value where appropriate.
+* Support student profile updates with approval for fields that affect official records.
+* Provide a consolidated student timeline to authorized staff.
+5.6 Registration and enrolment
+* Determine registration eligibility based on admission status, fee rules, academic standing, prerequisites, holds and registration dates.
+* Allow students to select eligible course offerings subject to capacity, timetable conflicts and credit limits.
+* Support add/drop requests, overrides and approval workflows.
+* Track enrolment states: selected, pending approval, enrolled, dropped, withdrawn and completed.
+* Recalculate registered credits and fee assessments after approved changes.
+* Provide clear blocking reasons and a support request path when registration cannot proceed.
+* Record manual overrides with reason, authorizer and expiry where applicable.
+5.7 Timetable and room scheduling
+* Maintain rooms, capacity, equipment, accessibility and campus/location data.
+* Schedule lectures, tutorials, laboratories and examinations.
+* Detect room, lecturer and cohort clashes before publishing.
+* Allow authorized timetable officers to draft, validate, publish and revise schedules.
+* Notify affected students and staff of published changes.
+* Support timetable views by student, lecturer, room, course and date.
+5.8 Attendance
+* Record attendance by course session using an authorized lecturer or approved import.
+* Support present, absent, late, excused and other institution-defined statuses.
+* Allow correction requests and maintain original value, amended value, reason and approver.
+* Configure attendance thresholds and alerts where attendance is part of academic policy.
+* Restrict students to their own attendance records and lecturers to assigned classes.
+5.9 Assessment, grading and results
+* Configure assessment components, weights, maximum marks, grading scale, pass rules and rounding policy per course/term.
+* Validate that assessment weights and marks are within configured limits.
+* Allow lecturers to save drafts, submit marks and respond to moderation requests.
+* Support moderation, department review, board approval and controlled publication.
+* Lock marks after submission/approval; amendments require reason, approval and audit event.
+* Calculate grades, grade points, GPA/CGPA and academic standing using institution-approved rules.
+* Support supplementary/resit examinations, incomplete grades, deferred examinations and approved special cases.
+* Publish results to eligible students only after the configured approval workflow.
+* Generate class lists, result sheets, broadsheets and academic history.
+* Provide a controlled grade appeal and review workflow.
+5.10 Fees, student finance and payments
+* Configure fee categories, programme/level-specific schedules, semester charges, payment deadlines, penalties and approved discounts.
+* Generate invoices or account statements from registration and applicable fee rules.
+* Support scholarships, sponsorships, waivers, installment plans, credit balances and approved refunds.
+* Integrate with a provider-hosted payment flow; store provider references, amounts, currency, status and reconciliation evidence, not raw card data.
+* Verify payments server-side and process signed webhooks idempotently.
+* Maintain a transaction ledger with pending, successful, failed, reversed, refunded and disputed states.
+* Generate receipts only after verified successful payment or approved manual receipt issuance.
+* Reconcile provider settlement reports with internal payment records and flag unmatched transactions.
+* Apply financial holds according to published policy and provide a clear dispute process.
+* Require approval for fee waivers, write-offs and refunds according to thresholds.
+5.11 Registry and student services
+* Accept requests for transcripts, enrollment letters, completion letters, student ID replacements and certified documents.
+* Track request status, fees, supporting documents, assigned officer, SLA and collection/delivery method.
+* Generate documents from approved templates with unique reference numbers and verification codes where appropriate.
+* Restrict transcript issuance to authorized officers and approved financial/academic conditions.
+* Support leave-of-absence, deferral, withdrawal, readmission and change-of-programme requests.
+* Maintain an audit trail for issued, reissued, cancelled and corrected official documents.
+5.12 Library management
+* Manage bibliographic catalogue, physical/digital copies, classifications, locations and availability.
+* Manage member eligibility, loans, returns, renewals, reservations, fines and lost/damaged item workflows.
+* Support barcode/QR identifiers if equipment is available.
+* Send due-date and overdue reminders; support fine waivers with approval.
+* Optionally integrate with an existing library management system rather than duplicating its catalogue.
+5.13 Hostel and accommodation
+* Maintain halls, blocks, rooms, beds, capacity, amenities and availability.
+* Configure application windows, eligibility, pricing and allocation rules.
+* Support allocation, offer acceptance, payment confirmation, check-in/out, room changes and maintenance requests.
+* Prevent double allocation and keep a dated occupancy history.
+* Restrict room and welfare information to authorized staff.
+5.14 Human resources and staff administration
+* Maintain staff profiles, department, job title, employment status, contract dates and emergency contact.
+* Track lecturer qualifications and teaching assignments where required.
+* Support leave requests, approval chains, leave balances and staff notices.
+* Store contracts and confidential HR documents in private storage with restricted access.
+* Support payroll export/integration only after local payroll rules and required approvals are defined.
+* Keep employee records separate from student records and limit HR access by permission.
+5.15 Communications and announcements
+* Provide in-app notifications and email/SMS delivery through approved providers.
+* Support audience targeting by role, programme, cohort, course, faculty or campus.
+* Use templates with variables, language, sender identity and preview.
+* Track queued, sent, delivered, bounced and failed status where provider data is available.
+* Avoid exposing recipients to each other in bulk email and avoid including sensitive personal information in SMS.
+* Provide notification preferences for non-essential messages; retain mandatory operational notices according to policy.
+5.16 Student support and case management
+* Allow students to open cases for academic advising, IT, finance, welfare, disability support or general inquiries.
+* Assign cases to teams, set priority and SLA, record private staff notes and track status.
+* Restrict sensitive case categories to specifically authorized teams.
+* Allow escalation, reassignment, resolution confirmation and feedback.
+* Do not use general-purpose notes for highly sensitive information unless policy, access and retention controls are defined.
+5.17 Reports and dashboards
+* Provide role-specific dashboards and date/filter controls.
+* Support export to CSV/XLSX/PDF with permission checks, row limits and audit logs.
+* Generate admissions funnel, enrolment, course capacity, attendance, result, progression, graduation, fee balance, collection, refund, hostel occupancy, library and staff reports.
+* Show report generation timestamp, applied filters, data owner and definitions.
+* Use server-side pagination and asynchronous export jobs for large datasets.
+* Ensure aggregate reports do not inadvertently expose identifiable student or staff data.
+5.18 System configuration and audit
+* Manage university profile, campuses, academic calendar, grading scales, fee rules, numbering formats, templates, notification channels and maintenance notices.
+* Keep high-risk settings behind explicit permissions and, where needed, approval.
+* Record sign-ins, role changes, record access for sensitive areas, exports, result publication, fee changes, refunds and administrative overrides.
+* Provide searchable audit filters and restricted export for authorized auditors.
+* Never permit ordinary administrators to edit or delete audit events.
+6. Key End-to-End Workflows
+6.1 Applicant to enrolled student
+7. Admissions administrator configures cycle, programmes, entry rules, required documents and application fee.
+8. Applicant creates an account, verifies email and completes a saveable application.
+9. Applicant uploads documents to private storage and submits the application.
+10. System validates required fields and payment status where an application fee applies.
+11. Admissions staff review the application and record recommendations; designated approver makes the decision.
+12. System sends the decision and, if approved, issues an offer with acceptance deadline and conditions.
+13. Applicant accepts the offer and completes any required onboarding steps.
+14. System creates or links the student profile, assigns student number, programme and cohort, and records the conversion event.
+15. Student completes registration and receives a course timetable and fee statement.
+6.2 Course registration
+16. Student signs in and opens the active registration period.
+17. System checks status, holds, prerequisites, course availability, credit limits and timetable clashes.
+18. Student selects courses; the system reserves capacity transactionally or rechecks capacity at final confirmation.
+19. Any override routes to the designated approver.
+20. On confirmation, enrolments are committed and applicable charges are assessed.
+21. Student sees confirmed courses, credits, timetable and account balance.
+6.3 Results approval and publication
+22. Lecturer enters assessment marks and submits the mark sheet.
+23. System validates missing marks, weight totals, grade ranges and course assignment.
+24. Moderator or department reviewer checks the submission and requests corrections or recommends approval.
+25. Authorized board/academic officer approves results according to policy.
+26. System locks the approved version and records the approver and timestamp.
+27. Results are published to eligible students and notifications are queued.
+28. Any post-publication change requires a formal amendment request, independent approval and preserved history.
+6.4 Payment and reconciliation
+29. System creates an invoice/account item and a payment attempt with a unique internal reference.
+30. Student is redirected to or opens the provider's secure checkout.
+31. Provider sends the user back to the application; the return page alone does not mark payment successful.
+32. Server verifies provider status or processes an authenticated/signed webhook.
+33. Webhook handler validates signature, amount, currency, reference and transaction state, then processes idempotently.
+34. System records the verified payment and allocates it to the invoice in a database transaction.
+35. Receipt becomes available after success is confirmed.
+36. Finance reconciles provider settlement reports and resolves unmatched or reversed transactions.
+6.5 Transcript request
+37. Student submits request, selects delivery method and pays any applicable approved fee.
+38. System checks identity, academic record status, holds and required approvals.
+39. Registry officer reviews and approves issuance.
+40. System generates the transcript from approved records using the official template and a unique document reference.
+41. The document is securely delivered or made available through a short-lived authenticated link.
+42. System logs issuance, download or reissue events as required by policy.
+7. Information Architecture and Navigation
+7.1 Public website
+* Home
+* About the University
+* Faculties and Departments
+* Programmes
+* Admissions
+* Fees and Funding
+* Academic Calendar
+* News and Events
+* Contact
+* Applicant Login
+* Student/Staff Login
+7.2 Student portal sidebar
+* Dashboard
+* My Profile
+* My Programme
+* Course Registration
+* Course Enrolments
+* Timetable
+* Attendance
+* Assignments/Assessment (or LMS link)
+* Results and GPA/CGPA
+* Academic Progress
+* Fee Statement
+* Invoices and Payments
+* Receipts
+* Scholarships/Sponsorships
+* Transcript and Letters
+* Service Requests
+* Library
+* Hostel/Accommodation
+* Announcements
+* Support Tickets
+* Notifications
+* Documents
+* Settings and Security
+7.3 Lecturer portal sidebar
+* Dashboard
+* My Courses
+* Class Lists
+* Timetable
+* Attendance
+* Assessment Setup
+* Marks Entry
+* Mark Sheets
+* Moderation/Submission Status
+* Student Feedback
+* Advising (if assigned)
+* Announcements
+* Student Support Referrals
+* Notifications
+* Profile and Security
+7.4 Registrar / academic administration
+* Dashboard
+* Admissions
+* Applicants
+* Offers
+* Student Records
+* Student Status Changes
+* Academic Structure
+* Programmes and Curriculum
+* Academic Years and Semesters
+* Course Catalogue
+* Course Offerings
+* Registration Oversight
+* Timetable
+* Assessment and Results
+* Progression and Graduation
+* Transcript/Letter Requests
+* Student Cases
+* Reports
+* Audit Trail
+* Configuration (permission-controlled)
+7.5 Finance / bursar
+* Finance Dashboard
+* Fee Schedules
+* Invoices and Charges
+* Student Accounts
+* Payments
+* Receipts
+* Scholarships and Sponsorships
+* Waivers and Discounts
+* Refund Requests
+* Payment Reconciliation
+* Provider Settlements
+* Outstanding Balances
+* Financial Reports
+* Approval Queue
+* Audit Trail
+* Finance Settings
+7.6 System administration
+* System Overview
+* Users
+* Roles and Permissions
+* Department/Campus Scopes
+* Academic Configuration
+* Integrations
+* Payment Provider Settings
+* Email/SMS Settings
+* Document Templates
+* Storage and File Policies
+* Audit Logs
+* Security Events
+* Background Jobs
+* Monitoring and Health
+* Backup/Recovery Status
+* Feature Flags
+* Maintenance Mode
+7.7 Leadership dashboards
+* Executive Overview
+* Admissions and Enrolment
+* Academic Performance
+* Student Retention and Progression
+* Finance Summary
+* Staffing and Workload
+* Accommodation/Library Utilization
+* Compliance and Audit Reports
+Menu items must be generated from permissions and enabled modules. Do not assume every role sees every item.
+8. Data Model and Database Design
+8.1 Core design principles
+* Use UUID primary keys for internal records and human-readable unique numbers for student, applicant, invoice and document references.
+* Use foreign keys, unique constraints, check constraints and indexes for integrity; do not rely only on application code.
+* Store timestamps in UTC and display in the configured university timezone.
+* Use numeric/decimal types for money and explicitly store currency codes.
+* Use effective dates or versioned records for programme, fee and grading rules that change over time.
+* Use soft archival for records that must be retained; do not hard-delete official academic or financial history.
+* Keep private files outside public buckets; store metadata and access policy in the database.
+* Define data retention, anonymization and deletion processes consistent with applicable law and institutional policy.
+8.2 Proposed entities
+DomainTables / entitiesKey relationshipsIdentityprofiles, user_role_assignments, roles, permissions, role_permissions, user_scopes, audit_eventsAuth identity links to one person profile; role assignments have scope and optional expiryOrganizationcampuses, faculties, departments, rooms, buildingsFaculties contain departments; rooms belong to campus/buildingAdmissionsadmission_cycles, applications, application_programmes, application_documents, application_reviews, admission_decisions, offersApplicant profile links to applications; accepted offer converts to studentAcademicsacademic_years, terms, programmes, programme_versions, curriculum_requirements, courses, prerequisites, course_offerings, teaching_assignmentsProgramme versions define requirements; course offerings are term-specificStudentsstudents, student_status_history, student_programme_history, student_holds, emergency_contactsStudent links to profile, programme/cohort and status historyRegistrationregistration_periods, course_enrolments, enrolment_overrides, credit_load_snapshotsStudent enrolment links to course offering and termTimetabletimetable_events, room_allocations, timetable_publicationsEvents link to offering, staff, room and cohortAttendanceclass_sessions, attendance_records, attendance_amendmentsAttendance is per student/session; amendments preserve old valuesAssessmentassessment_components, assessment_marks, grade_scales, grade_scale_items, result_submissions, result_approvals, published_results, result_amendmentsMarks link to enrolment/component; approved result versions are immutableFinancefee_schedules, fee_items, student_invoices, invoice_lines, payment_attempts, payments, payment_allocations, receipts, refund_requests, scholarships, waivers, settlement_batchesVerified payments are allocated to invoices; provider references are uniqueRegistryservice_requests, generated_documents, document_templates, document_issuance_eventsRequests are assigned and move through controlled statesLibrarylibrary_items, item_copies, loans, reservations, library_finesCopies have circulation status; loans link member and copyHostelresidences, rooms, beds, accommodation_applications, allocations, occupancy_events, maintenance_requestsA bed cannot have overlapping active allocationsHRstaff, employment_records, leave_requests, leave_balances, staff_documents, teaching_loadsStaff profile is separate from login identity and student profileCommunicationsannouncements, notification_templates, notifications, delivery_attemptsAudience and delivery status are tracked without duplicating sensitive contentSupportsupport_cases, case_assignments, case_comments, case_eventsCase access depends on category, assignment and permissionsSystemsystem_settings, integration_configs, job_runs, export_jobs, feature_flagsSecrets belong in environment/secret manager, not ordinary configuration rows
+8.3 Important constraints
+* Unique student_number, applicant_number, invoice_number and document_reference within their intended scope.
+* A student cannot enrol twice in the same course offering unless an explicitly approved repeat rule allows it.
+* Course offering capacity must not be exceeded; final enrolment requires a transactional capacity check.
+* Assessment component weights must satisfy the configured grading policy.
+* Marks must fall within allowed ranges and approved grade rules.
+* Posted invoice/payment records and approved results must not be silently overwritten.
+* Provider transaction references and webhook event IDs must be unique to prevent duplicate processing.
+* A successful payment allocation cannot exceed the unallocated payment amount or invoice balance unless overpayment rules explicitly allow a credit.
+* Only one active bed allocation may exist for a bed at a given time.
+* Role assignments must be checked for scope and expiry on every protected request.
+8.4 Data lifecycle and migration
+43. Inventory source systems, spreadsheets, paper records and document repositories.
+44. Define a data dictionary, ownership, authoritative source and cleansing rules.
+45. Map legacy identifiers to new UUIDs and preserve original student numbers where required.
+46. Run trial migrations in staging and reconcile record counts, financial totals, grades and enrolments.
+47. Obtain business-owner sign-off before production import.
+48. Freeze source changes or define a controlled delta migration during cutover.
+49. Retain migration logs and a rollback/recovery plan; do not expose unverified migrated results.
+9. API and Integration Standards
+9.1 API conventions
+* Use versioned REST endpoints or server actions with clear service boundaries; use REST for external integrations.
+* Validate all input with Zod on the server and return consistent error shapes.
+* Use cursor pagination or bounded page-based pagination for large lists.
+* Use ISO 8601 timestamps, explicit currency codes and decimal-safe monetary representations.
+* Return stable machine-readable error codes without leaking stack traces or sensitive database details.
+* Require authentication, authorization, rate limiting and audit logging for protected endpoints.
+* Use idempotency keys for actions that create financial or official records.
+9.2 Example endpoint catalogue
+Method / pathPurposePermission / notesPOST /api/v1/applicationsCreate/submit applicant applicationApplicant owns record; validate cycle and required documentsGET /api/v1/applications/:idRead applicationOwner or authorized admissions rolePOST /api/v1/applications/:id/decisionRecord admission decisionDecision permission; approval workflowGET /api/v1/students/:idRead student profileScoped student-record permissionPOST /api/v1/registration/enrolmentsAdd course enrolmentEligibility, capacity, timetable and credit checksPOST /api/v1/results/:offeringId/submitSubmit marksAssigned lecturer; validates mark sheetPOST /api/v1/results/:id/approveApprove resultsIndependent approver permissionPOST /api/v1/results/:id/publishPublish resultsAuthorized academic officer; immutable publication eventPOST /api/v1/payments/initializeCreate provider payment attemptAuthenticated student; idempotency keyPOST /api/v1/webhooks/paystackProcess provider webhookSignature verification; idempotent; no browser trustPOST /api/v1/refundsRequest refundFinance permission; separate approval where requiredPOST /api/v1/registry/requestsCreate transcript/letter requestStudent owns requestPOST /api/v1/reports/exportsQueue a large report exportReport permission; audited; signed download
+9.3 Integration requirements
+* Payment provider: server-side initialization, verified status, webhook signature validation, replay protection, idempotency and daily reconciliation.
+* Email/SMS: retry with backoff, template versioning, delivery status and suppression of sensitive content.
+* SSO: use a supported standard such as OIDC/SAML where available; define account linking and offboarding rules.
+* LMS: decide whether to integrate with Moodle or another LMS for course content, assignments and quizzes; define which system owns each data field.
+* Accounting: agree chart-of-accounts mapping, posting frequency, tax handling and reconciliation ownership before implementing exports.
+* Identity or regulatory APIs: use only documented, approved endpoints with explicit consent and lawful basis.
+10. Security, Privacy and Audit
+10.1 Baseline controls
+* Enforce HTTPS in all environments except isolated local development.
+* Use Supabase Auth with secure session handling, verified email and MFA for privileged accounts where feasible.
+* Apply least-privilege RBAC and RLS to every table containing private data.
+* Review every RLS policy with positive and negative tests; never assume that hiding a UI button prevents access.
+* Keep service-role keys and provider secrets server-only and rotate them through a documented procedure.
+* Use private storage buckets, file type/size limits, malware scanning where available and short-lived signed URLs.
+* Protect against injection, XSS, CSRF where applicable, insecure direct object references, brute force, SSRF and mass assignment.
+* Use rate limits for authentication, application submission, exports, payments and public endpoints.
+* Log security-relevant events without logging passwords, tokens, full payment secrets or unnecessary sensitive fields.
+* Use dependency scanning, secret scanning, code review and security checks in CI.
+10.2 Privacy requirements
+* Collect only personal data required for a defined university purpose.
+* Provide privacy notices explaining purposes, sharing, retention, rights and contact channels.
+* Define retention and disposal schedules for applications, student records, staff records, finance records and support cases.
+* Restrict sensitive categories and exports; use masking or aggregation where possible.
+* Define processes for data access/correction requests, incident handling and vendor review.
+* Assess applicable Ghanaian data-protection requirements and any cross-border hosting or transfer obligations with qualified counsel.
+10.3 Audit event fields
+At minimum, an audit event should capture: event ID, timestamp, actor identity, actor role/scope at the time, action, entity type, entity ID, outcome, request/correlation ID, source IP/user-agent where lawful and useful, reason/approval reference, and a minimal before/after summary for approved sensitive fields. Protect audit storage from ordinary updates and deletions.
+10.4 High-risk actions
+* Role assignment or privilege escalation
+* Publication or amendment of official results
+* Student status changes that affect academic standing
+* Fee schedule changes, waivers, write-offs and refunds
+* Payment reconciliation adjustments
+* Transcript issuance and reissuance
+* Bulk data export and sensitive document access
+* Changes to RLS policies, integration secrets or security settings
+11. Reporting and Analytics
+ReportMain filters / dimensionsPrimary usersAdmissions funnelCycle, programme, source, status, decision dateAdmissions, Registrar, leadershipEnrolment censusTerm, faculty, department, programme, cohort, statusAcademic Affairs, DeansCourse capacityTerm, course, section, lecturer, roomDepartments, timetable officeAcademic performanceTerm, course, programme, grade distribution, progressionAuthorized academic leadershipAt-risk studentsApproved risk rules, term, programme, advisorAdvisors and authorized support teamsFee collectionPeriod, fee category, programme, payment channel, statusFinance, leadershipOutstanding balancesAgeing bucket, student status, sponsor, programmeFinancePayment reconciliationProvider, settlement batch, unmatched reference, dateFinanceRegistry service SLARequest type, age, status, assigned teamRegistry managementLibrary circulationItem type, overdue status, branch, periodLibraryHostel occupancyHall, room, bed, status, termHostel officeStaff and teaching workloadDepartment, staff type, term, course loadHR, Deans
+Sensitive reports must apply the same permission scope as underlying records. Export jobs should expire, use private storage, and be logged.
+12. UX, Accessibility and Notifications
+12.1 UX requirements
+* Responsive design for desktop, tablet and mobile browsers.
+* Consistent page layout: breadcrumb, title, primary action, filters, table/list, empty state and pagination.
+* Clear loading, success, validation, permission-denied and recoverable-error states.
+* Save drafts for long forms and warn users before losing unsaved changes.
+* Use confirmation and reason prompts for destructive or high-impact actions.
+* Show status labels and next actions for workflow-driven records.
+* Provide accessible keyboard navigation, focus states, labels, contrast and semantic headings.
+* Use plain language and explain why a user is blocked from a workflow.
+12.2 Notification events
+* Application submitted, incomplete, decision issued and offer deadline approaching.
+* Registration opened, course approved/dropped and timetable changed.
+* Assessment submitted, result published and result amendment approved.
+* Invoice issued, payment confirmed/failed, receipt available and due date approaching.
+* Transcript request received, approved, ready or rejected.
+* Library item due/overdue, hostel allocation offered and support case updated.
+* Security alert, password reset and privileged role change.
+Notifications are delivery channels, not the system of record. A failed email must not roll back a valid enrolment or payment; queue retries and show in-app status.
+13. Non-Functional Requirements
+Quality attributeBaseline requirementAvailabilityAgree an institutional service target; monitor uptime and provider dependenciesPerformanceTarget common authenticated page loads under 2 seconds at the 95th percentile under agreed test load, excluding slow third-party servicesScalabilitySupport expected peak concurrent users during registration and results release; validate with load testsSecurityLeast privilege, RLS, MFA for privileged roles where feasible, secure secret handling and regular dependency reviewAccessibilityTarget WCAG 2.2 AA for core workflows, subject to formal auditRecoverabilityAgree RPO/RTO; verify backups and perform restoration drillsData integrityConstraints, transactional workflows, immutable posted records and reconciliationMaintainabilityTyped modules, documented use cases, migrations, code review and automated testsObservabilityStructured logs, correlation IDs, error monitoring and alerts for critical jobsCompatibilityCurrent supported versions of major browsers; responsive web layoutLocalizationConfigurable date, number, currency and timezone formats; define language requirementsPrivacyData minimization, access controls, retention schedule and documented incident process
+These are proposed baselines and must be converted into measurable service-level objectives after expected usage, hosting plan and budget are known.
+14. Testing and Acceptance Criteria
+14.1 Testing strategy
+* Unit tests for grading, GPA/CGPA, fee assessment, eligibility, discounts, refund rules and permission helpers.
+* Integration tests for database constraints, RLS, payment webhooks, email jobs and migration scripts.
+* End-to-end tests for application submission, admission approval, registration, payment, results publication and transcript request.
+* Role-based negative tests to prove that users cannot read or mutate another user's records without permission.
+* Concurrency tests for course capacity, duplicate payment webhooks and simultaneous invoice allocation.
+* Accessibility tests for forms, keyboard navigation, error messages and modal workflows.
+* Load tests for peak registration, results release and bulk notifications.
+* Backup restoration and incident-response exercises before go-live.
+14.2 Minimum acceptance criteria
+50. An applicant can submit a complete application and see its status without accessing another applicant's record.
+51. Admissions staff can review applications, and only authorized approvers can issue final decisions.
+52. Accepted applicants can be converted into student records without duplicate identity or data loss.
+53. Registration enforces prerequisites, date windows, credit limits, holds, clashes and course capacity.
+54. Lecturers can enter marks only for assigned offerings; approved results cannot be silently edited.
+55. Students see only results that are published and permitted for their account.
+56. A payment return URL cannot independently mark an invoice as paid.
+57. Repeated webhook delivery does not duplicate payment, receipt or invoice allocation.
+58. Refunds and fee waivers follow configured approval thresholds and leave an audit trail.
+59. Transcript issuance uses approved records and records who issued the document.
+60. Private files are not accessible through public URLs without valid authorization.
+61. Sensitive data exports are permission-checked, bounded, logged and delivered through expiring private links.
+62. Critical automated tests pass in CI before production release.
+63. A documented backup restoration test succeeds and recovery objectives are approved.
+15. Deployment, Operations and Disaster Recovery
+15.1 Environments
+* Local development: synthetic data only; no production secrets.
+* Preview/staging: isolated database and storage; test payment credentials; representative but sanitized data.
+* Production: separate project, least-privilege keys, restricted access, monitoring and controlled deployments.
+15.2 Release process
+64. Developer creates a branch and pull request.
+65. CI runs linting, TypeScript checks, unit tests, integration tests and secret/dependency scans.
+66. Database migrations are reviewed and tested against a staging copy.
+67. Product owner and module owner approve the release notes and any policy changes.
+68. Deploy to staging and run smoke tests plus critical end-to-end journeys.
+69. Apply a reviewed production migration using a backward-compatible approach where possible.
+70. Deploy the application, verify health checks and monitor error/payment/job dashboards.
+71. Maintain a documented rollback or forward-fix plan; never assume database changes can always be reversed safely.
+15.3 Backup and recovery
+* Confirm Supabase plan-specific backup and point-in-time recovery capabilities before committing to an RPO.
+* Keep independent exports or backups where required by institutional policy and test restoration, not just backup creation.
+* Define RPO (maximum tolerable data loss) and RTO (maximum tolerable service interruption) with leadership.
+* Document who can initiate recovery, how integrity is checked and how users are informed.
+* Reconcile financial and academic transactions after recovery and investigate any missing or duplicated events.
+15.4 Monitoring and incident response
+* Alert on application error spikes, failed authentication patterns, webhook signature failures, stuck background jobs, payment reconciliation gaps and storage/DB capacity warnings.
+* Use correlation IDs to trace a workflow across the web app, database, jobs and providers.
+* Maintain an incident runbook with severity, escalation contacts, evidence preservation, containment, recovery and post-incident review.
+* Review privileged access periodically and revoke accounts promptly when staff leave or change roles.
+16. Delivery Roadmap
+PhaseDeliverablesExit criteria0. DiscoveryStakeholder interviews, policy inventory, data audit, process maps, success metricsProcess owners sign off scope and unresolved policy decisions are tracked1. FoundationRepository, environments, design system, auth, roles, RLS, audit, CI/CDRole-based access tests pass; staging deploy is repeatable2. Academic coreOrganization, programmes, terms, courses, student records, registration, timetableEnd-to-end course registration passes acceptance tests3. AdmissionsCycles, applications, documents, reviews, offers and student conversionApplicant-to-student workflow passes4. AssessmentAttendance, assessments, marks, moderation, approvals and publicationGrade calculations verified against approved examples5. FinanceFee schedules, invoices, payment integration, receipts and reconciliationDuplicate webhook and reconciliation tests pass6. Registry and servicesTranscript requests, official letters, support, library/hostel as selectedService workflows and document permissions pass7. Reporting and hardeningDashboards, exports, performance, accessibility, security review and load testsCritical findings resolved or formally accepted8. Migration and go-liveData migration, training, cutover, support and recovery drillBusiness owners approve migrated totals and operational readiness
+16.1 Suggested first release
+For a realistic first release, prioritize identity/permissions, admissions, student records, academic structure, registration, fees/payments and essential reports. Add advanced library, hostel, HR and LMS functionality after core data and workflows are stable.
+16.2 Team responsibilities
+RoleAccountabilityProduct ownerScope, prioritization, business acceptance and policy decisionsRegistrar / Academic leadAdmissions, student records, curriculum, registration, results and transcriptsFinance leadFees, payment rules, reconciliation, refunds and financial reportingTechnical leadArchitecture, code standards, security, integrations and technical deliveryFrontend/backend engineersUI, use cases, database migrations, APIs and automated testsQA engineerTest plans, regression, role-boundary and end-to-end testingDevOps/security ownerEnvironments, secrets, deployment, monitoring, backup and incident responseData migration leadSource mapping, cleansing, trial runs, reconciliation and cutover
+17. Risks, Open Decisions and Sign-off
+17.1 Key risks and mitigations
+RiskMitigationUnclear academic policiesObtain signed rules for grading, progression, repeats, deferment, graduation and transcript eligibility before implementationPoor legacy dataProfile, cleanse, map, test-migrate and reconcile with business ownersExcessive administrator accessUse scoped permissions, MFA, approval workflows and access reviewsDuplicate or delayed payment eventsIdempotent webhook handling, unique provider references and reconciliationIncorrect grade/GPA calculationsUse institution-approved examples and independent test fixturesPeak-load failureLoad test registration and results-release peaks; tune queries and hostingVendor dependencyDocument provider limits, failure modes, data export and exit strategyPrivacy incidentMinimize data, protect files, log access and maintain a tested incident processScope expansionUse phased delivery, explicit change requests and release acceptance gates
+17.2 Decisions required before implementation
+* Official university name, branding, campuses and timezone.
+* Academic structure, programme types, academic calendar and curriculum rules.
+* Grading scales, grade points, GPA/CGPA formula, repeats, resits and progression policies.
+* Admission cycles, entry requirements, application fees and approval authorities.
+* Fee schedules, payment channels, refund/waiver thresholds, sponsors and financial holds.
+* Payment provider and merchant account ownership.
+* Email/SMS provider, sender identity and notification policy.
+* Whether to integrate an existing LMS, library system, HR/payroll or accounting platform.
+* Student/staff data fields, privacy notice, retention rules and migration source systems.
+* Expected student/staff counts, peak concurrency, uptime target, RPO/RTO and hosting budget.
+* Required reports, regulatory formats, transcript templates and document verification rules.
+* MFA/SSO requirements and who may access sensitive data.
+17.3 Go-live checklist
+* Business owners sign off workflows and policy settings.
+* All privileged roles and scopes reviewed.
+* RLS and negative authorization tests pass.
+* Payment webhooks, idempotency and reconciliation verified in test mode.
+* Migration reconciliation signed by Registry and Finance.
+* Email/SMS templates and sender identities verified.
+* Backups and restoration procedure tested.
+* Monitoring, alerting, incident contacts and support process active.
+* Staff training and student communications prepared.
+* Critical accessibility, security and performance findings resolved.
+* Rollback/cutover plan approved and go-live decision documented.
+17.4 Approval
+ApproverName / signatureDateUniversity executive sponsorRegistrar / Academic AffairsFinance Director / BursarIT / Information SecurityData Protection / Legal representativeProduct owner
+Appendix A. Recommended Build Principles
+* Build the data model and authorization policies before polishing dashboards.
+* Make workflows explicit state machines rather than loosely related booleans.
+* Treat student records, approved results and financial postings as auditable records.
+* Never trust client-side role checks, payment redirects or hidden form fields.
+* Prefer database constraints and transactions for invariants that must always hold.
+* Keep provider-specific integrations behind adapters so providers can be replaced.
+* Use feature flags for staged rollout of optional modules.
+* Use seeded synthetic data for demos and automated tests; do not copy real student records into local development.
+* Document operational procedures as well as code: access reviews, refunds, grade corrections, data exports, incident response and recovery.
+Appendix B. Suggested Definition of Done
+* Requirement and acceptance criteria reviewed by the module owner.
+* UI is responsive and accessible for the supported workflow.
+* Server-side validation and authorization are implemented.
+* RLS, constraints, indexes and migrations are reviewed.
+* Unit/integration tests cover normal, invalid, unauthorized and concurrent cases.
+* Audit events are emitted for sensitive actions.
+* Loading, empty, error and success states are present.
+* Logs and monitoring do not leak sensitive data.
+* Documentation, operational notes and release notes are updated.
+* CI passes and the change is reviewed before deployment.
+Appendix C. Reference Documentation
+Use current official documentation during implementation; APIs and platform features change over time.
+* Next.js documentation: https://nextjs.org/docs
+* Supabase documentation: https://supabase.com/docs
+* Supabase Auth with Next.js: https://supabase.com/docs/guides/auth/server-side/nextjs
+* PostgreSQL documentation: https://www.postgresql.org/docs/
+* Tailwind CSS documentation: https://tailwindcss.com/docs
+* shadcn/ui documentation: https://ui.shadcn.com/docs
+* Zod documentation: https://zod.dev/
+* TanStack Query documentation: https://tanstack.com/query/latest
+* Playwright documentation: https://playwright.dev/docs/intro
+* Paystack documentation: https://paystack.com/docs/
+* Hubtel developer documentation: https://developers.hubtel.com/
+
+
+Appendix D. Complete Technology Stack and Official Documentation Links
+This appendix consolidates the recommended stack into an implementation-ready reference. Prefer the official documentation linked below. Confirm supported versions at project start and pin compatible versions in the lockfile; do not blindly upgrade production dependencies.
+D.1 Core application stack
+Layer / responsibilityRecommended choiceOfficial documentationRuntimeNode.js LTShttps://nodejs.org/docs/latest/api/Package managerpnpmhttps://pnpm.io/motivationWeb frameworkNext.js App Routerhttps://nextjs.org/docs/appUI frameworkReacthttps://react.dev/learnLanguageTypeScript (strict mode)https://www.typescriptlang.org/docs/CSS / design tokensTailwind CSShttps://tailwindcss.com/docsUI componentsshadcn/uihttps://ui.shadcn.com/docsIconsLucidehttps://lucide.dev/guide/FormsReact Hook Formhttps://react-hook-form.com/get-startedSchema validationZodhttps://zod.dev/DatabaseSupabase PostgreSQLhttps://supabase.com/docs/guides/database/overviewDatabase clientSupabase JavaScript clienthttps://supabase.com/docs/reference/javascript/introductionNext.js server-side Supabase clients@supabase/ssrhttps://supabase.com/docs/guides/auth/server-side/nextjsAuthenticationSupabase Authhttps://supabase.com/docs/guides/authAuthorizationPostgreSQL Row Level Security + application RBAChttps://supabase.com/docs/guides/database/postgres/row-level-securityFile storageSupabase Storagehttps://supabase.com/docs/guides/storageClient-side server-stateTanStack Queryhttps://tanstack.com/query/latest/docs/framework/react/overviewData tablesTanStack Tablehttps://tanstack.com/table/latest/docs/introductionChartsRechartshttps://recharts.org/en-US/Money arithmeticDecimal.js plus PostgreSQL NUMERIChttps://mikemcl.github.io/decimal.js/Date/time handlingdate-fnshttps://date-fns.org/docs/Getting-StartedAPI schema/documentationOpenAPI Specificationhttps://spec.openapis.org/oas/latest.html
+D.2 Delivery, testing and operations
+ResponsibilityRecommended choiceOfficial documentationUnit testsVitesthttps://vitest.dev/guide/Browser / end-to-end testsPlaywrighthttps://playwright.dev/docs/introComponent testsReact Testing Libraryhttps://testing-library.com/docs/react-testing-library/intro/Error monitoringSentryhttps://docs.sentry.io/platforms/javascript/guides/nextjs/Version controlGithttps://git-scm.com/docSource hosting / code reviewGitHubhttps://docs.github.com/CI/CDGitHub Actionshttps://docs.github.com/actionsContainerizationDockerhttps://docs.docker.com/HostingVercel (or an institution-approved Node.js host)https://vercel.com/docsBackground jobsTrigger.devhttps://trigger.dev/docsTransactional emailResendhttps://resend.com/docsSMS / Ghana communicationsHubtel (subject to account and API availability)https://developers.hubtel.com/Payment providerPaystack or Hubtel, after institutional procurement and compliance reviewhttps://paystack.com/docs/ ; https://developers.hubtel.com/Cache / rate-limit support when neededRedishttps://redis.io/docs/latest/Database local developmentSupabase CLIhttps://supabase.com/docs/guides/cliAccessibility standardWCAG 2.2https://www.w3.org/TR/WCAG22/Web security guidanceOWASP ASVShttps://owasp.org/www-project-application-security-verification-standard/
+D.3 Required implementation conventions
+* Use TypeScript strict mode and keep shared domain types close to the modules that own them.
+* Use Supabase Auth with @supabase/ssr cookie-based clients for Next.js server rendering; create separate browser and server client helpers.
+* Use RLS for private tables and storage access. Test policies as each role and as an unauthenticated user. A UI permission check is not a security boundary.
+* Use server-side Zod validation for all writes, even when client validation is present.
+* Use PostgreSQL NUMERIC for monetary values and Decimal.js for calculations that occur in TypeScript. Define currency and rounding rules explicitly.
+* Use migrations in source control, reviewed pull requests, staging verification and controlled production releases.
+* Use background jobs for retryable, long-running tasks such as bulk notifications and report exports; keep jobs idempotent.
+* Do not expose service-role keys, webhook secrets or provider private keys in browser bundles, public environment variables or source control.
+* Use a hosted payment checkout or provider tokenization; never store raw card numbers or CVV.
+* Treat all provider webhooks as untrusted until signature, reference, amount, currency and status have been verified.
+Appendix E. MVP Model (Minimum Viable Product)
+The MVP should prove the university's highest-value end-to-end workflows with secure, auditable data. It should not attempt to launch every module in this document at once. The recommended MVP covers admissions, core student records, academic setup, registration, basic finance/payment collection, and the minimum administrative controls required to operate safely.
+E.1 MVP goals
+* Digitize one complete applicant-to-student journey.
+* Allow authorized staff to configure a term, programmes and course offerings.
+* Allow eligible students to register for courses and view their timetable.
+* Allow lecturers to view assigned class lists and submit marks through a controlled approval workflow.
+* Issue student invoices, record verified payments, generate receipts and reconcile payment records.
+* Give administrators role-based dashboards and essential reports.
+* Demonstrate secure access isolation, audit logging, backups and recoverability before live student data is used.
+E.2 MVP scope: must-have
+MVP moduleIncluded capabilitiesExplicit MVP boundaryFoundation and accessSign-in, password reset, verified accounts, profile, RBAC, scoped permissions, RLS, audit logNo complex enterprise SSO unless required for launchUniversity setupFaculties, departments, programmes, courses, academic year/term, grading scales, fee scheduleOnly approved configuration screens needed for pilotAdmissionsApplication form, document upload, review checklist, decision, offer and conversion to studentAdvanced scoring/AI screening excludedStudent recordsStudent number, programme/cohort, status, contact details and status historyNo full CRM or clinical/welfare case systemRegistrationRegistration window, prerequisites, credit limit, course capacity, enrolment confirmationManual approval for exceptional overridesTimetableBasic timetable creation and student/lecturer views; clash validationAdvanced optimization and room-planning analytics excludedFinanceFee assessment, invoice, payment initiation, verified payment, receipt, transaction history and basic reconciliationNo full general ledger, payroll or payment-gateway operationLecturer workflowAssigned courses, class list, assessment marks, submit marksBasic grading workflow; advanced moderation features can followResultsApprover review, publish/lock results, student result view, amendment request auditOnly institution-approved grade rules includedNotificationsIn-app plus transactional email for core eventsSMS is optional for MVPReportsAdmissions status, student register, enrolment list, results summary, invoice/payment statusAdvanced BI/data warehouse excludedOperationsStaging/production, CI checks, backups, monitoring, runbook and support processFormal high-availability multi-region design excluded unless required
+E.3 Defer until after MVP
+* Full library circulation, hostel allocation and maintenance.
+* Full HR, leave management and payroll.
+* Advanced student advising, case management and early-warning analytics.
+* LMS integration, online assignments, quizzes and plagiarism tools.
+* Mobile applications, biometric attendance and hardware integrations.
+* Advanced financial accounting/general ledger and complex sponsor billing.
+* Data warehouse, predictive analytics, AI assistants and automated decisions.
+* Multi-university tenancy and public SaaS billing.
+E.4 MVP user journeys that must work
+72. Applicant registers, submits an application and documents; admissions reviews, issues a decision and converts an accepted offer into a student record.
+73. Administrator creates a term and course offerings; student registers only for eligible courses and sees confirmed enrolments.
+74. Finance issues a fee invoice; student completes provider checkout; server verifies payment; one receipt is generated; reconciliation can match the transaction.
+75. Lecturer enters marks for an assigned offering; authorized officer approves and publishes results; student can view published results only.
+76. Administrator grants a scoped role; access is verified by positive and negative tests; the grant is recorded in the audit trail.
+E.5 MVP go/no-go criteria
+* No unresolved critical/high security finding without documented risk acceptance by the accountable owner.
+* RLS and authorization tests prove that students cannot access other students' records and lecturers cannot access unassigned courses.
+* Duplicate payment webhook tests do not create duplicate payments, allocations or receipts.
+* Academic calculations match signed-off test examples supplied by the university.
+* Migration totals and key student records are reconciled and signed off by Registry and Finance.
+* Backups are configured and a restoration test has succeeded.
+* Critical user journeys pass automated end-to-end tests in staging.
+* Support ownership, incident contacts, training materials and rollback plan are ready.
+Appendix F. Complete Product and Engineering Roadmap
+This roadmap is a proposed sequence, not a fixed calendar commitment. Phase duration depends on team size, integration access, data quality, policy readiness and review cycles. Each phase must end with a demonstrable increment, test evidence and business-owner sign-off.
+F.1 Roadmap phases and deliverables
+PhaseWorkstreamsDeliverables / exit gate0. Discovery and governanceStakeholder interviews; process mapping; policy inventory; data inventory; success metrics; risk and compliance reviewSigned scope, product backlog, owners, decision log, data dictionary outline and acceptance criteria1. UX and solution designUser journeys; navigation; wireframes; design system; architecture; threat model; ERD; integration designApproved UX flows, architecture decision records, initial ERD and security plan2. Engineering foundationRepository; environments; CI/CD; lint/type checks; design tokens; error handling; logging; secrets managementRepeatable staging deployment; automated checks; environment separation3. Identity and security baselineSupabase Auth; profiles; RBAC; scoped roles; RLS; private storage; audit events; account lifecycleAuthorization matrix implemented; positive/negative access tests pass4. University configurationCampuses; faculties; departments; programmes; curriculum versions; courses; academic years; terms; roomsAdmin can configure a term and catalogue without direct database edits5. Admissions MVPCycles; application forms; uploads; review checklist; decisions; offers; communications; conversionApplicant-to-student workflow passes UAT6. Student records and registrationStudent profile; status history; holds; eligibility; course selection; capacity; add/drop; enrolment chargesRegistration workflow and concurrency/capacity tests pass7. Timetable and attendanceRoom/staff/cohort conflict checks; publication; attendance sessions; correction workflowStudents and lecturers see correct published schedules; attendance is scoped8. Finance MVPFee schedules; invoices; provider checkout; webhook verification; receipts; allocations; reconciliation; refunds workflowPayment sandbox tests, idempotency and finance reconciliation signed off9. Assessment and resultsAssessment components; marks entry; grading; moderation/approval; publication; amendment historyGrade/GPA calculations verified against approved university cases10. Registry and documentsTranscript/letter requests; templates; issuance; document verification; service queuesOfficial documents require authorization and have issuance history11. Communications and reportingEmail/in-app notifications; reports; filters; exports; scheduled jobsCore reports reconciled; export permissions and expiry work12. Optional campus modulesLibrary; hostel; student support; HR; staff leave; LMS integrationEach module has a defined owner, acceptance tests and privacy review13. Quality and hardeningAccessibility; security review; performance/load testing; concurrency; dependency scanning; restore drillCritical findings resolved; performance and recovery objectives agreed14. Migration and trainingData cleansing; trial migration; reconciliations; user training; guides; cutover rehearsalRegistry and Finance sign off migration; key users complete training15. Pilot and go-liveLimited cohort; support desk; issue triage; daily monitoring; rollback readinessGo/no-go signed by sponsor, Registrar, Finance and IT/security16. Stabilization and optimizationBug fixes; adoption review; report tuning; user feedback; backlog reprioritizationService metrics stable; phase-2 roadmap updated from evidence
+F.2 Suggested release milestones
+ReleaseContentsRelease conditionR0 — FoundationRepository, environments, UI system, authentication, role model, RLS, audit and CISecurity and deployment foundation approvedR1 — Admissions pilotAdmissions, document uploads, decisions, offers and student conversionPilot applicants can complete the end-to-end journeyR2 — Academic operationsAcademic setup, student records, registration, timetable and basic attendancePilot cohort can register and use timetableR3 — Finance and resultsInvoices, verified payments, receipts, reconciliation, marks and results publicationFinance and Academic Affairs sign off critical workflowsR4 — Registry and service deliveryTranscripts, letters, support cases, notification improvements and expanded reportsRegistry workflow and document controls passR5 — Campus servicesSelected library, hostel, HR and LMS integrationsEach optional module passes its own UAT and security reviewR6 — OptimizationPerformance, accessibility, analytics, workflow automation and user feedback improvementsOperational KPIs and support burden meet agreed targets
+F.3 Workstream backlog checklist
+* Product: user stories, acceptance criteria, decision log, release notes and change control.
+* Design: personas, user journeys, accessible components, responsive states and usability review.
+* Frontend: role-based layouts, forms, data tables, filters, pagination, loading/error/empty states.
+* Backend: use cases, server-side validation, permission checks, transaction boundaries and error contracts.
+* Database: ERD, migrations, constraints, indexes, RLS, seed data, data retention and migration scripts.
+* Integrations: provider credentials, sandbox tests, retries, idempotency, monitoring and reconciliation.
+* QA: unit, integration, authorization, concurrency, end-to-end, accessibility and load tests.
+* Operations: deployment pipeline, secrets, alerts, backups, restore drills, incident runbook and access reviews.
+* Enablement: admin guides, lecturer guides, student guides, support playbooks and training sessions.
+F.4 Dependencies and critical path
+77. Policy decisions and ownership must precede hard-coded academic and financial rules.
+78. The identity model, permissions and RLS must precede private modules and real-data migration.
+79. Academic structure and student identity must precede registration and result workflows.
+80. Payment provider onboarding and finance rules must precede live payment collection.
+81. Approved grading formulas and test fixtures must precede result publication.
+82. Data profiling and mapping must precede final migration and cutover.
+83. Security review, recovery test, user training and go/no-go sign-off must precede production launch.
+F.5 Post-launch roadmap
+* Measure adoption and workflow completion; remove unnecessary manual steps.
+* Expand self-service for deferrals, programme changes, appeals and document requests.
+* Add LMS, library, identity and accounting integrations where they reduce duplicate work.
+* Improve early-warning reporting using transparent, policy-approved indicators and human review.
+* Add advanced workload planning, timetable optimization and financial analytics.
+* Review permission assignments, retention schedules, vendor dependencies and disaster recovery at agreed intervals.
+UNIVERSITY MANAGEMENT SYSTEM | PRODUCT & TECHNICAL SPECIFICATION
+
+Confidential project specification • Version 1.0 • 28 October 2026
+

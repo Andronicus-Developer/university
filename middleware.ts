@@ -198,6 +198,18 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  if (pathname.startsWith("/finance") || pathname.startsWith("/api/finance")) {
+    const hasFinanceAccess =
+      roles.some((r) => [...ADMIN_STAFF_ROLES, "bursar", "finance_officer", "accountant"].includes(r));
+    if (!hasFinanceAccess) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Forbidden: Finance access required" }, { status: 403 });
+      }
+      return buildUnauthorizedRedirect(pathname);
+    }
+    return supabaseResponse;
+  }
+
   return supabaseResponse;
 }
 
