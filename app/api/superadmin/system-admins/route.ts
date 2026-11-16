@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSystemAdmins, createSystemAdmin } from "@/lib/superadmin/service";
+import {
+  getSystemAdmins,
+  createSystemAdmin,
+  updateSystemAdmin,
+  deleteSystemAdmin,
+} from "@/lib/superadmin/service";
 
 export async function GET() {
   try {
@@ -45,3 +50,53 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+
+    if (!body.id) {
+      return NextResponse.json({ error: "System Admin ID is required for updating." }, { status: 400 });
+    }
+
+    const updated = await updateSystemAdmin(body.id, {
+      full_name: body.full_name?.trim(),
+      email: body.email?.trim() ? body.email.trim().toLowerCase() : undefined,
+      phone: body.phone?.trim(),
+      university_id: body.university_id,
+      university_name: body.university_name,
+      account_status: body.account_status,
+      password: body.password?.trim() ? body.password : undefined,
+    });
+
+    return NextResponse.json(updated);
+  } catch (error: any) {
+    console.error("Error updating system admin:", error);
+    return NextResponse.json({ error: error.message || "Failed to update system admin" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    let id = searchParams.get("id");
+
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id;
+      } catch {
+        // No json body
+      }
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "System Admin ID is required for deletion." }, { status: 400 });
+    }
+
+    const result = await deleteSystemAdmin(id);
+    return NextResponse.json(result);
+  } catch (error: any) {
+    console.error("Error deleting system admin:", error);
+    return NextResponse.json({ error: error.message || "Failed to delete system admin" }, { status: 500 });
+  }
+}

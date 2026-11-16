@@ -18,6 +18,8 @@ import {
 function UnauthorizedContent() {
   const searchParams = useSearchParams();
   const fromPath = searchParams?.get("from") || "";
+  const reason = searchParams?.get("reason") || "";
+  const isUniversityDeleted = reason === "university_deleted";
 
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [userEmail, setUserEmail] = useState<string>("");
@@ -31,6 +33,11 @@ function UnauthorizedContent() {
 
     async function resolveSession() {
       try {
+        if (isUniversityDeleted) {
+          if (isMounted) setIsChecking(false);
+          return;
+        }
+
         // 1. Fetch server-validated session details from /api/auth/me
         const res = await fetch("/api/auth/me", { cache: "no-store" });
         if (res.ok) {
@@ -40,7 +47,7 @@ function UnauthorizedContent() {
             setUserRoles(data.roles || []);
             setTargetDashboard(data.targetDashboard || "/admin/dashboard");
 
-            if (data.isSystemAdmin) {
+            if (data.isSystemAdmin && !isUniversityDeleted) {
               window.location.assign("/admin/dashboard");
               return;
             }
@@ -86,8 +93,9 @@ function UnauthorizedContent() {
           }
 
           if (
-            combinedRoles.includes("system_admin") ||
-            normalizedEmail === "admin@university.edu.gh"
+            !isUniversityDeleted &&
+            (combinedRoles.includes("system_admin") ||
+              normalizedEmail === "admin@university.edu.gh")
           ) {
             window.location.assign("/admin/dashboard");
             return;
@@ -105,7 +113,7 @@ function UnauthorizedContent() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isUniversityDeleted]);
 
   const handleReturnDashboard = () => {
     if (
@@ -183,11 +191,15 @@ function UnauthorizedContent() {
         </div>
 
         <h1 className="text-2xl font-black text-[#0E1045] tracking-tight">
-          Access Restricted
+          {isUniversityDeleted ? "Institution Access Revoked" : "Access Restricted"}
         </h1>
 
         <p className="text-sm text-[#656C9E] mt-2 leading-relaxed">
-          {fromPath ? (
+          {isUniversityDeleted ? (
+            <span className="text-red-600 font-medium">
+              Your university tenant has been deleted or deactivated by the Super Administrator. Access to all campus portals and services has been revoked for this institution.
+            </span>
+          ) : fromPath ? (
             <>
               Your account does not have permission to view{" "}
               <span className="font-semibold text-[#0E1045] break-all">{fromPath}</span>. The

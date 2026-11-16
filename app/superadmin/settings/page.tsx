@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   Sliders,
   Check,
@@ -28,46 +29,49 @@ export default function PlatformSettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-            <Sliders className="h-6 w-6 text-purple-400" />
-            Platform Infrastructure Settings
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Global security parameters, maintenance scheduling, and tenant isolation policies
-          </p>
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12 font-sans">
+      {/* Sub-Header: Breadcrumbs + Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+          <Link
+            href="/superadmin/dashboard"
+            className="text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+          >
+            Super Admin
+          </Link>
+          <span className="text-slate-300">/</span>
+          <span>Security & Operations</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-800 font-semibold">Maintenance & Platform Settings</span>
         </div>
 
         <button
           onClick={handleSave}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
         >
           <Check className="h-4 w-4" />
-          Save Configurations
+          <span>Save Configurations</span>
         </button>
       </div>
 
       {savedSuccess && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          Platform configuration changes persisted and broadcast across all instances.
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 shadow-2xs">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <span>Platform configuration changes persisted and broadcast across all instances.</span>
         </div>
       )}
 
       {/* Settings Sections */}
-      <div className="space-y-5">
+      <div className="max-w-4xl space-y-5">
         {/* Maintenance Controls */}
-        <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-4">
+        <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-400" />
-                Global Maintenance Mode
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span>Global Maintenance Mode</span>
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500 max-w-xl">
                 When enabled, tenant portals will display a scheduled maintenance screen. Only Super Administrators can log in.
               </p>
             </div>
@@ -75,7 +79,7 @@ export default function PlatformSettingsPage() {
               type="button"
               onClick={() => setMaintenanceMode(!maintenanceMode)}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
-                maintenanceMode ? "bg-amber-600" : "bg-slate-700"
+                maintenanceMode ? "bg-amber-500" : "bg-slate-200"
               }`}
             >
               <span
@@ -86,108 +90,138 @@ export default function PlatformSettingsPage() {
             </button>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-              Public Maintenance Notice Message
-            </label>
-            <input
-              type="text"
-              value={platformNotice}
-              onChange={(e) => setPlatformNotice(e.target.value)}
-              placeholder="e.g. Scheduled system upgrade in progress. Estimated completion: 04:00 GMT."
-              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-purple-500 outline-none"
-            />
-          </div>
+          {maintenanceMode && (
+            <div className="pt-3 border-t border-slate-100">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Public Maintenance Notice
+              </label>
+              <input
+                type="text"
+                value={platformNotice}
+                onChange={(e) => setPlatformNotice(e.target.value)}
+                placeholder="Scheduled database upgrades in progress. Expected restoration: 02:00 UTC."
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+              />
+            </div>
+          )}
         </div>
 
         {/* Security & Access Policies */}
-        <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Lock className="h-4 w-4 text-purple-400" />
-            Security & Authentication Policies
-          </h3>
+        <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-5">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-blue-600" />
+              <span>Authentication & Session Policies</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Enforce least-privilege session timeouts, lockout thresholds, and MFA requirements.
+            </p>
+          </div>
 
-          <div className="space-y-4 text-xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-700/40">
-              <div>
-                <div className="font-semibold text-slate-200">Enforce MFA for Administrators</div>
-                <div className="text-[11px] text-slate-400">
-                  Require 2-Factor Authentication (TOTP) on System Admin and Super Admin accounts
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEnforceMfaForAdmins(!enforceMfaForAdmins)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
-                  enforceMfaForAdmins ? "bg-purple-600" : "bg-slate-700"
-                }`}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Admin Session Inactivity Timeout
+              </label>
+              <select
+                value={sessionTimeoutHours}
+                onChange={(e) => setSessionTimeoutHours(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    enforceMfaForAdmins ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
+                <option value="1">1 Hour</option>
+                <option value="4">4 Hours</option>
+                <option value="8">8 Hours (Standard)</option>
+                <option value="24">24 Hours</option>
+              </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                  Session Expiration Timeout
-                </label>
-                <select
-                  value={sessionTimeoutHours}
-                  onChange={(e) => setSessionTimeoutHours(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
-                >
-                  <option value="2">2 Hours (High Security)</option>
-                  <option value="4">4 Hours</option>
-                  <option value="8">8 Hours (Standard Workday)</option>
-                  <option value="24">24 Hours</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Max Failed Login Attempts (Lockout)
+              </label>
+              <select
+                value={maxLoginAttempts}
+                onChange={(e) => setMaxLoginAttempts(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
+              >
+                <option value="3">3 Attempts</option>
+                <option value="5">5 Attempts (Recommended)</option>
+                <option value="10">10 Attempts</option>
+              </select>
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                  Max Consecutive Failed Login Attempts
-                </label>
-                <select
-                  value={maxLoginAttempts}
-                  onChange={(e) => setMaxLoginAttempts(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
-                >
-                  <option value="3">3 Attempts (Lock 15 min)</option>
-                  <option value="5">5 Attempts (Standard)</option>
-                  <option value="10">10 Attempts</option>
-                </select>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <div>
+              <div className="text-xs font-semibold text-slate-800">
+                Enforce Multi-Factor Authentication (MFA) for Elevated Roles
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Requires TOTP or biometric verification on login for System Administrators and Bursars.
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setEnforceMfaForAdmins(!enforceMfaForAdmins)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
+                enforceMfaForAdmins ? "bg-blue-600" : "bg-slate-200"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  enforceMfaForAdmins ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <div>
+              <div className="text-xs font-semibold text-slate-800">
+                Allow Open Applicant Self-Registration
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Permits prospective students to create admissions applicant accounts without invitation.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAllowSelfRegistration(!allowSelfRegistration)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
+                allowSelfRegistration ? "bg-blue-600" : "bg-slate-200"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  allowSelfRegistration ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
           </div>
         </div>
 
-        {/* Database & Cloud Connection Details */}
-        <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Database className="h-4 w-4 text-emerald-400" />
-            Supabase Cloud Database Infrastructure
-          </h3>
-          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-400 space-y-1">
-            <div className="flex justify-between">
-              <span>PostgreSQL Schema:</span>
-              <span className="text-white">public (102 active tables)</span>
+        {/* Database & Cloud Persistence */}
+        <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Database className="h-4 w-4 text-emerald-600" />
+                <span>Cloud Storage Database Engine</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Target bucket: <code className="font-mono text-blue-600">institutional-reports</code> (Key: <code className="font-mono text-blue-600">ums-virtual-db.json</code>)
+              </p>
             </div>
-            <div className="flex justify-between">
-              <span>RBAC Engine:</span>
-              <span className="text-emerald-400 font-semibold">PostgreSQL Security Definer</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Active Super Admin Account:</span>
-              <span className="text-purple-400">superadmin@university.edu.gh</span>
-            </div>
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              SYNCHRONIZED
+            </span>
+          </div>
+
+          <div className="text-xs text-slate-600 leading-relaxed">
+            All 75+ relational database tables, dynamic sidebar modules, registered universities, system admin accounts, and security audit logs are continuously mirrored to private cloud storage. Reads operate at in-memory sub-millisecond speeds with zero cold starts.
           </div>
         </div>
       </div>
     </div>
   );
 }
-

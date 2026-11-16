@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   Boxes,
   Check,
@@ -13,6 +14,7 @@ import {
   BusFront,
   FileCheck2,
   Sparkles,
+  Sliders,
 } from "lucide-react";
 
 interface ModuleConfig {
@@ -58,25 +60,25 @@ export default function PlatformModulesPage() {
       id: "mod-exams",
       name: "Examinations & Senate Broadsheet",
       code: "EXAMS_GRADING",
-      description: "Continuous assessment weighting, mark moderation, senate grade approvals, and transcript generation.",
+      description: "Lecturer marks entry, moderation approval workflow, GPA/CGPA computation, and sealed broadsheet outputs.",
       icon: FileCheck2,
       isEnabled: true,
       tier: "Enterprise",
     },
     {
-      id: "mod-hostel",
-      name: "Hostels & Bed Allocation",
-      code: "HOSTEL_RESIDENCE",
-      description: "Halls of residence, room inventory, bed space reservation, key issue tracking, and maintenance logs.",
+      id: "mod-hostels",
+      name: "Hostel & Room Allocation",
+      code: "CAMPUS_HOUSING",
+      description: "Hall, block, room, and bed inventory management, applicant quotas, check-in, and maintenance ticketing.",
       icon: Building2,
       isEnabled: true,
       tier: "Enterprise",
     },
     {
       id: "mod-transport",
-      name: "Campus Fleet & Transport",
-      code: "FLEET_LOGISTICS",
-      description: "Bus routes, transport vehicle tracking, maintenance scheduling, and student bus pass issuance.",
+      name: "Fleet & Transport Logistics",
+      code: "CAMPUS_FLEET",
+      description: "Bus routes, stops, driver assignments, pass issuance, and vehicle maintenance logs.",
       icon: BusFront,
       isEnabled: true,
       tier: "Standard",
@@ -97,70 +99,88 @@ export default function PlatformModulesPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-            <Boxes className="h-6 w-6 text-purple-400" />
-            Institutional Feature Modules
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Centrally govern feature flags, enterprise modules, and platform capabilities across institutions
-          </p>
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12 font-sans">
+      {/* Sub-Header: Breadcrumbs + Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+          <Link
+            href="/superadmin/dashboard"
+            className="text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+          >
+            Super Admin
+          </Link>
+          <span className="text-slate-300">/</span>
+          <span>Security & Operations</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-800 font-semibold">Feature Flags & Modules</span>
         </div>
 
         <button
           onClick={handleSave}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
         >
           <Check className="h-4 w-4" />
-          Save Module Policies
+          <span>Apply Feature Flags</span>
         </button>
       </div>
 
       {savedSuccess && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-          Platform feature module configurations synchronized across all university instances!
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium shadow-2xs">
+          Feature flags successfully synced across all tenant workspaces!
         </div>
       )}
 
+      {/* Modules Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {modules.map((m) => {
           const Icon = m.icon;
           return (
             <div
               key={m.id}
-              className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
+              className={`p-5 rounded-2xl bg-white border transition-all shadow-xs flex flex-col justify-between space-y-4 ${
                 m.isEnabled
-                  ? "bg-slate-800/80 border-slate-700/80 shadow-sm"
-                  : "bg-slate-900/60 border-slate-800 opacity-60"
+                  ? "border-slate-200/80 hover:border-blue-300 hover:shadow-md"
+                  : "border-slate-200 opacity-60"
               }`}
             >
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <div className="flex items-start justify-between gap-3">
+                  <div
+                    className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      m.isEnabled
+                        ? "bg-blue-50 text-blue-600 border border-blue-100"
+                        : "bg-slate-100 text-slate-400"
+                    }`}
+                  >
                     <Icon className="h-5 w-5" />
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-950 text-purple-300 border border-purple-800/50 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                     {m.tier}
                   </span>
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-bold text-white">{m.name}</h3>
-                  <span className="text-[10.5px] font-mono text-purple-400 font-semibold">{m.code}</span>
-                  <p className="text-xs text-slate-300 leading-relaxed mt-2">{m.description}</p>
+                  <h3 className="text-sm font-bold text-slate-900 leading-snug">{m.name}</h3>
+                  <div className="text-[10.5px] font-mono text-blue-600 font-semibold mt-0.5">
+                    {m.code}
+                  </div>
                 </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed">{m.description}</p>
               </div>
 
-              <div className="pt-3 border-t border-slate-700/50 flex items-center justify-between">
-                <span className="text-xs text-slate-400">Status:</span>
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">
+                  Status:{" "}
+                  <strong className={m.isEnabled ? "text-emerald-600" : "text-slate-400"}>
+                    {m.isEnabled ? "Active" : "Disabled"}
+                  </strong>
+                </span>
                 <button
                   type="button"
                   onClick={() => toggleModule(m.id)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                    m.isEnabled ? "bg-purple-600" : "bg-slate-700"
+                    m.isEnabled ? "bg-blue-600" : "bg-slate-200"
                   }`}
                 >
                   <span
@@ -177,4 +197,3 @@ export default function PlatformModulesPage() {
     </div>
   );
 }
-

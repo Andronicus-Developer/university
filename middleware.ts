@@ -153,8 +153,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(dashboardPath, request.url));
   }
 
-  // Allow unauthorized notice page (auto-recover privileged admins back to dashboard)
+  // Allow unauthorized notice page (auto-recover privileged admins back to dashboard UNLESS university is deleted)
   if (pathname === "/unauthorized") {
+    const reason = request.nextUrl.searchParams.get("reason");
+    if (reason === "university_deleted" || reason === "account_suspended") {
+      return supabaseResponse;
+    }
     if (isSuperAdmin) {
       return NextResponse.redirect(new URL("/superadmin/dashboard", request.url));
     }
@@ -162,6 +166,63 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
     return supabaseResponse;
+  }
+
+  // 4.2. University Deletion & Deactivation Barrier
+  // If user is NOT superadmin, verify their university has not been deleted or suspended
+  if (!isSuperAdmin && supabase) {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("account_status, metadata")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile) {
+        const metadata = (profile.metadata || {}) as Record<string, any>;
+        const accountStatus = (profile.account_status as string) || "";
+        const isBlocked =
+          accountStatus === "suspended" ||
+          accountStatus === "deleted" ||
+          metadata.university_status === "deleted";
+
+        if (isBlocked) {
+          if (pathname.startsWith("/api/")) {
+            return NextResponse.json(
+              { error: "Access Denied: Your institution has been deleted or deactivated." },
+              { status: 403 }
+            );
+          }
+          const url = new URL("/unauthorized", request.url);
+          url.searchParams.set("reason", "university_deleted");
+          return NextResponse.redirect(url);
+        }
+
+        const userUnivId = metadata.university_id || (user.user_metadata as any)?.university_id;
+        if (userUnivId) {
+          const { data: settingRow } = await (supabase
+            .from("system_settings" as any)
+            .select("setting_value")
+            .eq("setting_key", "deleted_universities")
+            .maybeSingle() as any);
+
+          const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
+          if (deletedList.some((d: any) => d?.id === userUnivId || d?.code === metadata.university_code)) {
+            if (pathname.startsWith("/api/")) {
+              return NextResponse.json(
+                { error: "Access Denied: Your institution has been deleted." },
+                { status: 403 }
+              );
+            }
+            const url = new URL("/unauthorized", request.url);
+            url.searchParams.set("reason", "university_deleted");
+            return NextResponse.redirect(url);
+          }
+        }
+      }
+    } catch (univCheckErr) {
+      console.warn("Could not perform university deletion check in middleware:", univCheckErr);
+    }
   }
 
   const buildUnauthorizedRedirect = (targetPath: string) => {
