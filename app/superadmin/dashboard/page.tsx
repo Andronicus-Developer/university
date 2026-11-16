@@ -646,20 +646,31 @@ export default function SuperAdminDashboardPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              u.status === "active"
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}
-                          >
+                          <div className="flex flex-col gap-1">
                             <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                u.status === "active" ? "bg-emerald-500" : "bg-amber-500"
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit ${
+                                u.status === "active"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
                               }`}
-                            />
-                            {u.status ? u.status.charAt(0).toUpperCase() + u.status.slice(1) : "Active"}
-                          </span>
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  u.status === "active" ? "bg-emerald-500" : "bg-amber-500"
+                                }`}
+                              />
+                              {u.status ? u.status.charAt(0).toUpperCase() + u.status.slice(1) : "Active"}
+                            </span>
+                            {u.full_access !== false ? (
+                              <span className="text-[9.5px] font-medium text-emerald-700">
+                                Full Access
+                              </span>
+                            ) : (
+                              <span className="text-[9.5px] font-medium text-indigo-700">
+                                {u.max_users ? `Max ${u.max_users} users` : "Custom Limits"}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">

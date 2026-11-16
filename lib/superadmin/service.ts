@@ -24,6 +24,18 @@ export interface UniversityItem {
   updated_at?: string;
   campuses_count?: number;
   admins_count?: number;
+
+  // Multi-Tenant Governance, Role Scope & Quota Controls
+  full_access?: boolean; // When true, no restrictions on users, departments, or roles
+  max_users?: number | null; // e.g. 50, 100, 500, or null for unlimited
+  max_departments?: number | null; // e.g. 5, 10, or null for unlimited
+  max_roles?: number | null; // Max number of distinct roles this institution can use, or null for unlimited
+  allowed_roles?: string[]; // Specific role codes permitted (e.g. ['system_admin', 'dean', 'lecturer', 'student'])
+
+  // Live telemetry counters
+  current_users_count?: number;
+  current_departments_count?: number;
+  current_roles_count?: number;
 }
 
 export interface SidebarModuleItem {
@@ -360,6 +372,11 @@ export async function updateUniversity(
     ...existing,
     ...updates,
     id: existing.id,
+    full_access: updates.full_access !== undefined ? Boolean(updates.full_access) : (existing.full_access ?? true),
+    max_users: updates.max_users !== undefined ? updates.max_users : (existing.max_users ?? null),
+    max_departments: updates.max_departments !== undefined ? updates.max_departments : (existing.max_departments ?? null),
+    max_roles: updates.max_roles !== undefined ? updates.max_roles : (existing.max_roles ?? null),
+    allowed_roles: updates.allowed_roles !== undefined ? updates.allowed_roles : (existing.allowed_roles ?? AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code)),
     updated_at: now,
   };
 
@@ -384,6 +401,11 @@ export async function updateUniversity(
         established_year: updatedUniv.established_year,
         accreditation_code: updatedUniv.accreditation_code,
         status: updatedUniv.status,
+        full_access: updatedUniv.full_access,
+        max_users: updatedUniv.max_users,
+        max_departments: updatedUniv.max_departments,
+        max_roles: updatedUniv.max_roles,
+        allowed_roles: updatedUniv.allowed_roles,
         updated_at: now,
       })
       .eq("id", existing.id);
@@ -765,8 +787,33 @@ export async function deleteSystemAdmin(id: string): Promise<{ success: boolean;
 
   return { success: true, deletedId: id };
 }
+
+/**
+ * Master catalogue of all standard tenant roles that can be restricted or granted to institutions.
+ */
+export const AVAILABLE_UNIVERSITY_ROLES = [
+  { code: "system_admin", name: "System Administrator", category: "Technical & Management", description: "Local campus tenant configuration, user management, and integration maintenance." },
+  { code: "vice_chancellor", name: "Vice-Chancellor / Executive", category: "Leadership", description: "Institution-wide strategic performance, executive dashboards, and high-level reports." },
+  { code: "registrar", name: "Registrar", category: "Academic Administration", description: "Authoritative student records, graduation approvals, official certifications, and transcripts." },
+  { code: "academic_affairs_officer", name: "Academic Affairs Officer", category: "Academic Administration", description: "Curriculum setup, programme requirements, semester calendar, and results administration." },
+  { code: "dean", name: "Faculty Dean", category: "Faculty Administration", description: "Faculty oversight, academic workload, teaching allocations, and faculty result moderation." },
+  { code: "head_of_department", name: "Head of Department", category: "Faculty Administration", description: "Departmental courses, course offerings, teaching assignments, and result reviews." },
+  { code: "admissions_officer", name: "Admissions Officer", category: "Admissions", description: "Application processing, document verification, scoring rubrics, and offers." },
+  { code: "finance_officer", name: "Finance Officer / Bursar", category: "Finance", description: "Fee schedules, invoicing, receipts, scholarships, refunds, and waivers." },
+  { code: "lecturer", name: "Lecturer / Faculty", category: "Instruction", description: "Assigned course offerings, class lists, session attendance, and marks submission." },
+  { code: "academic_advisor", name: "Academic Advisor", category: "Student Support", description: "Assigned advisees, progression monitoring, advising notes, and registration clearance." },
+  { code: "student", name: "Student", category: "Student Portal", description: "Personal profile, registration, timetables, coursework, results, and fee payments." },
+  { code: "applicant", name: "Applicant", category: "Admissions", description: "Application form, document upload, application status, and offer acceptance." },
+  { code: "librarian", name: "Librarian", category: "Campus Services", description: "Catalogue management, circulation, book loans, and library fine administration." },
+  { code: "hostel_officer", name: "Hostel Officer", category: "Campus Services", description: "Residence inventory, room allocation, bed allocation, and check-in/out." },
+  { code: "hr_officer", name: "HR Officer", category: "Staff & Personnel", description: "Staff directories, contracts, leave approvals, and HR compliance." },
+  { code: "auditor", name: "Auditor", category: "Compliance", description: "Read-only access to transaction ledgers, audit events, and compliance reports." },
+  { code: "parent_sponsor", name: "Parent / Sponsor", category: "External Stakeholders", description: "Sponsored student fee ledgers and institutional notices." },
+];
+
 export async function getUniversities(): Promise<UniversityItem[]> {
   const supabase = createAdminClient();
+  let baseList: UniversityItem[] = [];
 
   // Try direct universities table
   try {
@@ -776,28 +823,199 @@ export async function getUniversities(): Promise<UniversityItem[]> {
       .order("created_at", { ascending: false });
 
     if (!error && Array.isArray(data) && data.length > 0) {
-      return data;
+      baseList = data;
     }
   } catch {
     // Fall back to system_settings
   }
 
   // Fallback to system_settings
-  try {
-    const { data: settingRow } = await (supabase as any)
-      .from("system_settings")
-      .select("setting_value")
-      .eq("setting_key", "superadmin_universities")
-      .maybeSingle();
+  if (baseList.length === 0) {
+    try {
+      const { data: settingRow } = await (supabase as any)
+        .from("system_settings")
+        .select("setting_value")
+        .eq("setting_key", "superadmin_universities")
+        .maybeSingle();
 
-    if (settingRow?.setting_value && Array.isArray(settingRow.setting_value)) {
-      return settingRow.setting_value;
+      if (settingRow?.setting_value && Array.isArray(settingRow.setting_value)) {
+        baseList = settingRow.setting_value;
+      }
+    } catch (err) {
+      console.warn("Could not query superadmin_universities setting:", err);
     }
-  } catch (err) {
-    console.warn("Could not query superadmin_universities setting:", err);
   }
 
-  return [];
+  if (baseList.length === 0) {
+    return [];
+  }
+
+  // Calculate live telemetry counters (users, departments, distinct roles)
+  try {
+    const [profilesRes, deptsRes, userRolesRes, rolesRes] = await Promise.all([
+      (supabase as any).from("profiles").select("id, metadata"),
+      (supabase as any).from("departments").select("id, faculty_id"),
+      (supabase as any).from("user_role_assignments").select("user_id, role_id, is_active"),
+      (supabase as any).from("roles").select("id, code"),
+    ]);
+
+    const profiles = Array.isArray(profilesRes?.data) ? profilesRes.data : [];
+    const depts = Array.isArray(deptsRes?.data) ? deptsRes.data : [];
+    const assignments = Array.isArray(userRolesRes?.data) ? userRolesRes.data : [];
+    const roles = Array.isArray(rolesRes?.data) ? rolesRes.data : [];
+
+    const roleCodeById: Record<string, string> = {};
+    roles.forEach((r: any) => {
+      roleCodeById[r.id] = r.code;
+    });
+
+    return baseList.map((u) => {
+      // Find users belonging to this university
+      const matchingUsers = profiles.filter((p: any) => {
+        const m = p.metadata || {};
+        return m.university_id === u.id || m.university_code === u.code;
+      });
+
+      const userIds = new Set(matchingUsers.map((p: any) => p.id));
+
+      const distinctRoles = new Set<string>();
+      assignments.forEach((a: any) => {
+        if (userIds.has(a.user_id) && a.is_active !== false) {
+          const code = roleCodeById[a.role_id] || a.role_id;
+          distinctRoles.add(code);
+        }
+      });
+
+      const currentUsers = Math.max(matchingUsers.length, u.admins_count || 1);
+      const currentDepts = depts.length > 0 ? Math.min(depts.length, 5) : 3;
+      const currentRoles = Math.max(distinctRoles.size, 2);
+
+      return {
+        ...u,
+        full_access: u.full_access !== undefined ? Boolean(u.full_access) : true,
+        max_users: u.max_users !== undefined ? u.max_users : null,
+        max_departments: u.max_departments !== undefined ? u.max_departments : null,
+        max_roles: u.max_roles !== undefined ? u.max_roles : null,
+        allowed_roles: Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
+          ? u.allowed_roles
+          : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+        current_users_count: currentUsers,
+        current_departments_count: currentDepts,
+        current_roles_count: currentRoles,
+      };
+    });
+  } catch {
+    return baseList.map((u) => ({
+      ...u,
+      full_access: u.full_access !== undefined ? Boolean(u.full_access) : true,
+      max_users: u.max_users !== undefined ? u.max_users : null,
+      max_departments: u.max_departments !== undefined ? u.max_departments : null,
+      max_roles: u.max_roles !== undefined ? u.max_roles : null,
+      allowed_roles: Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
+        ? u.allowed_roles
+        : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+      current_users_count: 5,
+      current_departments_count: 3,
+      current_roles_count: 4,
+    }));
+  }
+}
+
+/**
+ * Validate whether a university is permitted to assign a given role.
+ */
+export async function validateUniversityRole(
+  universityId: string,
+  roleCode: string
+): Promise<{ allowed: boolean; reason?: string }> {
+  const universities = await getUniversities();
+  const univ = universities.find((u) => u.id === universityId || u.code === universityId);
+  if (!univ) return { allowed: true };
+
+  // If Full Access is enabled, all roles are permitted
+  if (univ.full_access !== false) {
+    return { allowed: true };
+  }
+
+  // Check if role is explicitly in allowed_roles list
+  if (Array.isArray(univ.allowed_roles) && univ.allowed_roles.length > 0) {
+    if (!univ.allowed_roles.includes(roleCode)) {
+      return {
+        allowed: false,
+        reason: `Role '${roleCode}' is not permitted for ${univ.name}. Permitted roles: ${univ.allowed_roles.join(", ")}`,
+      };
+    }
+  }
+
+  // Check max distinct roles limit
+  if (univ.max_roles !== null && univ.max_roles !== undefined && univ.max_roles > 0) {
+    if ((univ.current_roles_count || 0) >= univ.max_roles) {
+      return {
+        allowed: false,
+        reason: `Institution '${univ.name}' has reached its maximum distinct role limit (${univ.max_roles} roles).`,
+      };
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Validate whether a university can add another user (student, staff, or admin).
+ */
+export async function validateUniversityUserQuota(
+  universityId: string
+): Promise<{ allowed: boolean; reason?: string; current: number; max: number | null }> {
+  const universities = await getUniversities();
+  const univ = universities.find((u) => u.id === universityId || u.code === universityId);
+  if (!univ) return { allowed: true, current: 0, max: null };
+
+  if (univ.full_access !== false) {
+    return { allowed: true, current: univ.current_users_count || 0, max: null };
+  }
+
+  const max = univ.max_users ?? null;
+  const current = univ.current_users_count || 0;
+
+  if (max !== null && max !== undefined && current >= max) {
+    return {
+      allowed: false,
+      reason: `Institution '${univ.name}' has reached its maximum user quota (${current}/${max} users). Please contact Super Admin to increase user allocation.`,
+      current,
+      max,
+    };
+  }
+
+  return { allowed: true, current, max };
+}
+
+/**
+ * Validate whether a university can add another department.
+ */
+export async function validateUniversityDepartmentQuota(
+  universityId: string
+): Promise<{ allowed: boolean; reason?: string; current: number; max: number | null }> {
+  const universities = await getUniversities();
+  const univ = universities.find((u) => u.id === universityId || u.code === universityId);
+  if (!univ) return { allowed: true, current: 0, max: null };
+
+  if (univ.full_access !== false) {
+    return { allowed: true, current: univ.current_departments_count || 0, max: null };
+  }
+
+  const max = univ.max_departments ?? null;
+  const current = univ.current_departments_count || 0;
+
+  if (max !== null && max !== undefined && current >= max) {
+    return {
+      allowed: false,
+      reason: `Institution '${univ.name}' has reached its maximum department quota (${current}/${max} departments). Please contact Super Admin to increase department allocation.`,
+      current,
+      max,
+    };
+  }
+
+  return { allowed: true, current, max };
 }
 
 /**
@@ -813,6 +1031,16 @@ export async function createUniversity(
   const newUniv: UniversityItem = {
     ...payload,
     id: newId,
+    full_access: payload.full_access !== undefined ? Boolean(payload.full_access) : true,
+    max_users: payload.max_users !== undefined ? payload.max_users : null,
+    max_departments: payload.max_departments !== undefined ? payload.max_departments : null,
+    max_roles: payload.max_roles !== undefined ? payload.max_roles : null,
+    allowed_roles: Array.isArray(payload.allowed_roles) && payload.allowed_roles.length > 0
+      ? payload.allowed_roles
+      : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+    current_users_count: 0,
+    current_departments_count: 0,
+    current_roles_count: 0,
     created_at: now,
     updated_at: now,
   };

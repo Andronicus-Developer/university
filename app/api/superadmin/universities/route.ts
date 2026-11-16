@@ -42,6 +42,11 @@ export async function POST(request: NextRequest) {
       established_year: body.established_year ? Number(body.established_year) : undefined,
       accreditation_code: body.accreditation_code?.trim() || "",
       status: body.status || "active",
+      full_access: body.full_access !== undefined ? Boolean(body.full_access) : true,
+      max_users: body.max_users !== undefined && body.max_users !== null && body.max_users !== "" ? Number(body.max_users) : null,
+      max_departments: body.max_departments !== undefined && body.max_departments !== null && body.max_departments !== "" ? Number(body.max_departments) : null,
+      max_roles: body.max_roles !== undefined && body.max_roles !== null && body.max_roles !== "" ? Number(body.max_roles) : null,
+      allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : undefined,
     });
 
     return NextResponse.json(created, { status: 201 });
@@ -77,6 +82,11 @@ export async function PUT(request: NextRequest) {
       established_year: body.established_year ? Number(body.established_year) : undefined,
       accreditation_code: body.accreditation_code?.trim(),
       status: body.status,
+      full_access: body.full_access !== undefined ? Boolean(body.full_access) : undefined,
+      max_users: body.max_users !== undefined ? (body.max_users === null || body.max_users === "" ? null : Number(body.max_users)) : undefined,
+      max_departments: body.max_departments !== undefined ? (body.max_departments === null || body.max_departments === "" ? null : Number(body.max_departments)) : undefined,
+      max_roles: body.max_roles !== undefined ? (body.max_roles === null || body.max_roles === "" ? null : Number(body.max_roles)) : undefined,
+      allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : undefined,
     });
 
     return NextResponse.json(updated);
