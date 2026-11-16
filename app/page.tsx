@@ -60,7 +60,12 @@ export default function Home() {
 
         // Determine target portal based on role
         let targetPath = "/admin/dashboard";
+        const isSuperAdmin =
+          roles.includes("superadmin") ||
+          data.user.email === "superadmin@university.edu.gh";
+
         const isSystemAdmin =
+          isSuperAdmin ||
           roles.includes("system_admin") ||
           data.user.email === "admin@university.edu.gh";
 
@@ -86,7 +91,9 @@ export default function Home() {
             ].includes(r)
           );
 
-        if (isFinanceStaff && !isSystemAdmin) {
+        if (isSuperAdmin) {
+          targetPath = "/superadmin/dashboard";
+        } else if (isFinanceStaff && !isSystemAdmin) {
           targetPath = "/finance/dashboard";
         } else if (isAdminStaff) {
           targetPath = "/admin/dashboard";
@@ -137,6 +144,12 @@ export default function Home() {
   const fillAdminCredentials = () => {
     setUsername("admin@university.edu.gh");
     setPassword("Admin@123456");
+    setErrorMessage(null);
+  };
+
+  const fillSuperAdminCredentials = () => {
+    setUsername("superadmin@university.edu.gh");
+    setPassword("SuperAdmin@123456");
     setErrorMessage(null);
   };
 
@@ -211,16 +224,34 @@ export default function Home() {
                 Welcome back
               </h1>
 
-              {/* Demo Admin Quick Fill Pill */}
-              <div className="mt-3.5 flex items-center justify-between bg-blue-50/90 border border-blue-200/80 rounded-xl px-3 py-1.5 text-[11px] text-blue-700 shadow-2xs">
-                <span className="font-semibold">Demo System Admin:</span>
-                <button
-                  type="button"
-                  onClick={fillAdminCredentials}
-                  className="font-bold underline hover:text-blue-900 transition-colors cursor-pointer"
-                >
-                  Quick Fill
-                </button>
+              {/* Quick Fill Pills for Super Admin & System Admin */}
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-xl px-2.5 py-1 text-[11px] text-purple-800 shadow-2xs">
+                  <span className="font-semibold flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
+                    Demo Super Admin:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={fillSuperAdminCredentials}
+                    className="font-bold underline hover:text-purple-950 transition-colors cursor-pointer"
+                  >
+                    Quick Fill
+                  </button>
+                </div>
+                <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 rounded-xl px-2.5 py-1 text-[11px] text-blue-700 shadow-2xs">
+                  <span className="font-semibold flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+                    Demo System Admin:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={fillAdminCredentials}
+                    className="font-bold underline hover:text-blue-900 transition-colors cursor-pointer"
+                  >
+                    Quick Fill
+                  </button>
+                </div>
               </div>
 
               {/* Error Alert */}

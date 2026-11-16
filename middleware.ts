@@ -18,11 +18,13 @@ const ADMIN_STAFF_ROLES = [
   "auditor",
 ];
 
-function getTargetDashboardForRoles(roles: string[]): string {
+function getTargetDashboardForRoles(roles: string[], email?: string): string {
+  if (roles.includes("superadmin") || email === "superadmin@university.edu.gh") {
+    return "/superadmin/dashboard";
+  }
   const isSysAdmin =
     roles.includes("system_admin") ||
     roles.includes("admin") ||
-    roles.includes("superadmin") ||
     roles.includes("administrator");
 
   if (!isSysAdmin && (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant"))) {
@@ -130,30 +132,35 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const isSuperAdmin =
+    roles.includes("superadmin") ||
+    normalizedEmail === "superadmin@university.edu.gh";
+
   const isSystemAdmin =
+    isSuperAdmin ||
     roles.includes("system_admin") ||
     roles.includes("admin") ||
-    roles.includes("superadmin") ||
     roles.includes("administrator") ||
     normalizedEmail === "admin@university.edu.gh";
 
   // If already authenticated and visiting the login page, redirect to dashboard
   if (isLoginPage) {
-    const dashboardPath = isSystemAdmin ? "/admin/dashboard" : getTargetDashboardForRoles(roles);
+    const dashboardPath = isSuperAdmin
+      ? "/superadmin/dashboard"
+      : isSystemAdmin
+      ? "/admin/dashboard"
+      : getTargetDashboardForRoles(roles, normalizedEmail);
     return NextResponse.redirect(new URL(dashboardPath, request.url));
   }
 
-  // Allow unauthorized notice page (auto-recover system_admin back to dashboard)
+  // Allow unauthorized notice page (auto-recover privileged admins back to dashboard)
   if (pathname === "/unauthorized") {
+    if (isSuperAdmin) {
+      return NextResponse.redirect(new URL("/superadmin/dashboard", request.url));
+    }
     if (isSystemAdmin) {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
-    return supabaseResponse;
-  }
-
-  // 5. Role-Based Access Control (RBAC) boundaries
-  // System Admin holds universal superuser bypass across all portals
-  if (isSystemAdmin) {
     return supabaseResponse;
   }
 
@@ -162,6 +169,23 @@ export async function middleware(request: NextRequest) {
     url.searchParams.set("from", targetPath);
     return NextResponse.redirect(url);
   };
+
+  // 4.5. Super Admin Exclusive Barrier (ONLY superadmin can access /superadmin)
+  if (pathname.startsWith("/superadmin") || pathname.startsWith("/api/superadmin")) {
+    if (!isSuperAdmin) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Forbidden: Super Admin access required" }, { status: 403 });
+      }
+      return buildUnauthorizedRedirect(pathname);
+    }
+    return supabaseResponse;
+  }
+
+  // 5. Role-Based Access Control (RBAC) boundaries
+  // System Admin and Super Admin hold universal superuser bypass across other portals
+  if (isSystemAdmin) {
+    return supabaseResponse;
+  }
 
   if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
     const hasAdminAccess = roles.some((r) => ADMIN_STAFF_ROLES.includes(r));

@@ -9,6 +9,7 @@ import {
   isFallbackJwt,
   FALLBACK_REFRESH_PREFIX,
 } from "@/lib/supabase/fetch";
+import { handleVirtualPostgrestRequest } from "@/lib/supabase/virtual-db";
 
 const FORWARDED_REQUEST_HEADERS = [
   "apikey",
@@ -120,27 +121,21 @@ async function handleFallbackRequest(
     );
   }
 
-  // 5. Generic PostgREST fallback (/rest/v1/*) so dashboards don't crash when offline
+  // 5. PostgREST fallback (/rest/v1/*) via Cloud-Synced Virtual UMS DB
   if (subPath.startsWith("rest/v1/")) {
-    const accept = request.headers.get("accept") || "";
-    const prefer = request.headers.get("prefer") || "";
-    const headers = new Headers({
-      "content-type": "application/json; charset=utf-8",
+    const virtualRes = await handleVirtualPostgrestRequest(
+      `http://localhost:3000/${subPath}${request.nextUrl.search}`,
+      {
+        method,
+        headers: request.headers,
+        body: bodyBuffer && bodyBuffer.byteLength > 0 ? bodyBuffer : undefined,
+      }
+    );
+    const resBody = method === "HEAD" ? null : await virtualRes.arrayBuffer();
+    return new NextResponse(resBody, {
+      status: virtualRes.status,
+      headers: virtualRes.headers,
     });
-
-    if (prefer.includes("count=")) {
-      headers.set("content-range", "0-0/0");
-    }
-
-    if (method === "HEAD") {
-      return new NextResponse(null, { status: 200, headers });
-    }
-
-    if (accept.includes("application/vnd.pgrst.object+json")) {
-      return NextResponse.json(null, { status: 200, headers });
-    }
-
-    return NextResponse.json([], { status: 200, headers });
   }
 
   return NextResponse.json({ status: "ok" }, { status: 200 });

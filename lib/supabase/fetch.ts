@@ -4,6 +4,12 @@
  * in Next.js Edge Middleware and Node.js Route Handlers without Node `Buffer`.
  */
 
+import {
+  isPostgrestUrl,
+  handleVirtualPostgrestRequest,
+  getVirtualDb,
+} from "@/lib/supabase/virtual-db";
+
 export interface FallbackUserSpec {
   id: string;
   email: string;
@@ -16,14 +22,34 @@ const FALLBACK_SIG_PREFIX = "local-fallback-sig-";
 export const FALLBACK_REFRESH_PREFIX = "fallback-refresh-";
 
 const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> = {
+  "superadmin@university.edu.gh": {
+    password: "SuperAdmin@123456",
+    spec: {
+      id: "1440ed7e-cb23-4248-a372-f38b20d01554",
+      email: "superadmin@university.edu.gh",
+      full_name: "Master Super Administrator",
+      role: "superadmin",
+      role_name: "Super Administrator",
+    },
+  },
   "admin@university.edu.gh": {
     password: "Admin@123456",
     spec: {
       id: "a0000000-0000-0000-0000-000000000001",
       email: "admin@university.edu.gh",
-      full_name: "System Administrator",
+      full_name: "Andronicus Johnson",
       role: "system_admin",
       role_name: "System Administrator",
+    },
+  },
+  "eugenedoeteh@university.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
+      email: "eugenedoeteh@university.edu.gh",
+      full_name: "Eugene Doeteh",
+      role: "finance_officer",
+      role_name: "Finance Officer / Bursar",
     },
   },
   "lecturer@university.edu.gh": {
@@ -116,6 +142,23 @@ export function resolveFallbackUserByEmail(email: string, password?: string): Fa
       return null;
     }
     return known.spec;
+  }
+
+  const vdb = (globalThis as any).__UMS_VIRTUAL_DB__;
+  if (vdb && Array.isArray(vdb.profiles)) {
+    const prof = vdb.profiles.find(
+      (p: any) => String(p.email || "").trim().toLowerCase() === normalized
+    );
+    if (prof) {
+      const role = prof.metadata?.role || prof.metadata?.default_role || "student";
+      return {
+        id: prof.id,
+        email: prof.email,
+        full_name: prof.full_name || prof.email,
+        role,
+        role_name: role,
+      };
+    }
   }
 
   return null;
@@ -448,12 +491,124 @@ export function extractUserFromCookies(
   return jwtUser;
 }
 
+async function handleVirtualAdminAuthRequest(
+  urlStr: string,
+  init?: RequestInit
+): Promise<Response> {
+  const method = (init?.method || "GET").toUpperCase();
+  const headers = new Headers({ "Content-Type": "application/json; charset=utf-8" });
+  const db = await getVirtualDb();
+
+  let bodyObj: Record<string, any> = {};
+  if (init?.body) {
+    try {
+      const text =
+        typeof init.body === "string"
+          ? init.body
+          : init.body instanceof ArrayBuffer
+          ? new TextDecoder().decode(init.body)
+          : ArrayBuffer.isView(init.body)
+          ? new TextDecoder().decode(init.body)
+          : "";
+      if (text) bodyObj = JSON.parse(text);
+    } catch {
+      // ignore
+    }
+  }
+
+  // GET /auth/v1/admin/users
+  if (method === "GET" && urlStr.includes("/admin/users")) {
+    const users = (db.profiles || []).map((p) =>
+      buildSupabaseUserObject({
+        id: p.id,
+        email: p.email,
+        full_name: p.full_name || p.email,
+        role: p.metadata?.role || "student",
+        role_name: p.metadata?.role || "Student",
+      })
+    );
+    headers.set("x-total-count", String(users.length));
+    return new Response(JSON.stringify({ users, aud: "authenticated" }), {
+      status: 200,
+      headers,
+    });
+  }
+
+  // POST /auth/v1/admin/users
+  if (method === "POST" && urlStr.includes("/admin/users")) {
+    const email = String(bodyObj.email || "").trim().toLowerCase();
+    const fullName = bodyObj.user_metadata?.full_name || email;
+    const role = bodyObj.user_metadata?.role || bodyObj.user_metadata?.default_role || "student";
+    const id = crypto.randomUUID();
+    const spec: FallbackUserSpec = {
+      id,
+      email,
+      full_name: fullName,
+      role,
+      role_name: role,
+    };
+    if (email) {
+      DEMO_USERS[email] = {
+        password: bodyObj.password || undefined,
+        spec,
+      };
+    }
+    const userObj = buildSupabaseUserObject(spec);
+    return new Response(JSON.stringify(userObj), { status: 200, headers });
+  }
+
+  // PUT /auth/v1/admin/users/:id
+  if (method === "PUT" && urlStr.includes("/admin/users/")) {
+    const id = urlStr.split("/admin/users/")[1]?.split("?")[0] || crypto.randomUUID();
+    const prof = (db.profiles || []).find((p) => String(p.id) === String(id));
+    const email = bodyObj.email || prof?.email || "user@university.edu.gh";
+    const fullName = bodyObj.user_metadata?.full_name || prof?.full_name || email;
+    const role = bodyObj.user_metadata?.role || prof?.metadata?.role || "student";
+    const spec: FallbackUserSpec = {
+      id,
+      email,
+      full_name: fullName,
+      role,
+      role_name: role,
+    };
+    if (email && bodyObj.password) {
+      DEMO_USERS[email.toLowerCase()] = {
+        password: bodyObj.password,
+        spec,
+      };
+    }
+    return new Response(JSON.stringify(buildSupabaseUserObject(spec)), {
+      status: 200,
+      headers,
+    });
+  }
+
+  // DELETE /auth/v1/admin/users/:id
+  if (method === "DELETE" && urlStr.includes("/admin/users/")) {
+    return new Response(JSON.stringify({ user: null }), { status: 200, headers });
+  }
+
+  return new Response(JSON.stringify({ status: "ok" }), { status: 200, headers });
+}
+
 export async function supabaseFetchWithRetry(
   input: RequestInfo | URL,
   init?: RequestInit,
   maxRetries = 1,
   timeoutMs = 12000
 ): Promise<Response> {
+  const urlStr =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.toString()
+      : input.url;
+
+  // Route PostgREST (/rest/v1/*) directly through our Cloud-Synced Virtual UMS DB
+  if (isPostgrestUrl(urlStr)) {
+    return handleVirtualPostgrestRequest(input, init);
+  }
+
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -476,6 +631,10 @@ export async function supabaseFetchWithRetry(
         continue;
       }
 
+      if (!response.ok && urlStr.includes("/auth/v1/admin/users")) {
+        return handleVirtualAdminAuthRequest(urlStr, init);
+      }
+
       return response;
     } catch (err) {
       clearTimeout(timer);
@@ -485,6 +644,10 @@ export async function supabaseFetchWithRetry(
         continue;
       }
     }
+  }
+
+  if (urlStr.includes("/auth/v1/admin/users")) {
+    return handleVirtualAdminAuthRequest(urlStr, init);
   }
 
   throw lastError instanceof Error
