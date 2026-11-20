@@ -1,10 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
+export type SchoolType = "university" | "high_school" | "vocational_school";
+
 export interface UniversityItem {
   id: string;
   code: string;
   name: string;
   short_name?: string;
+  school_type?: SchoolType;
+  institution_type?: SchoolType;
   country: string;
   city: string;
   address?: string;
@@ -19,7 +23,7 @@ export interface UniversityItem {
   currency_symbol: string;
   established_year?: number;
   accreditation_code?: string;
-  status: "active" | "inactive" | "maintenance" | "suspended";
+  status: "active" | "inactive" | "maintenance" | "suspended" | "deleted";
   created_at: string;
   updated_at?: string;
   campuses_count?: number;
@@ -85,14 +89,14 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModuleItem[] = [
     route_path: "/superadmin/dashboard",
     icon: "LayoutGrid",
     badge: "Live",
-    description: "System vitals, cross-university KPIs, and infrastructure health",
+    description: "System vitals, cross-school KPIs, and infrastructure health",
     is_active: true,
     display_order: 1,
   },
   {
     id: "m-univ",
     module_key: "universities",
-    label: "Universities & Campuses",
+    label: "Schools & Campuses",
     category: "Core Administration",
     route_path: "/superadmin/universities",
     icon: "Building2",
@@ -109,7 +113,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModuleItem[] = [
     route_path: "/superadmin/system-admins",
     icon: "ShieldCheck",
     badge: "Admins",
-    description: "Provision and govern system administrator credentials across all universities",
+    description: "Provision and govern system administrator credentials across all schools",
     is_active: true,
     display_order: 3,
   },
@@ -368,10 +372,14 @@ export async function updateUniversity(
   }
 
   const existing = universities[index];
+  const targetSchoolType = updates.school_type || updates.institution_type || existing.school_type || existing.institution_type || "university";
+
   const updatedUniv: UniversityItem = {
     ...existing,
     ...updates,
     id: existing.id,
+    school_type: targetSchoolType,
+    institution_type: targetSchoolType,
     full_access: updates.full_access !== undefined ? Boolean(updates.full_access) : (existing.full_access ?? true),
     max_users: updates.max_users !== undefined ? updates.max_users : (existing.max_users ?? null),
     max_departments: updates.max_departments !== undefined ? updates.max_departments : (existing.max_departments ?? null),
@@ -411,6 +419,39 @@ export async function updateUniversity(
       .eq("id", existing.id);
   } catch (err) {
     console.warn("Could not update universities table:", err);
+  }
+
+  // 2b. Try updating 'schools' table in Supabase
+  try {
+    await (supabase as any)
+      .from("schools")
+      .update({
+        name: updatedUniv.name,
+        school_type: targetSchoolType,
+        status: updatedUniv.status,
+        currency: updatedUniv.default_currency,
+        address: `${updatedUniv.city || ""}, ${updatedUniv.country}`,
+        phone: updatedUniv.phone || null,
+        email: updatedUniv.email || null,
+        updated_at: now,
+      })
+      .or(`id.eq.${existing.id},slug.eq.${existing.code.toLowerCase()}`);
+  } catch (schoolErr) {
+    // If column school_type doesn't exist yet, retry without it
+    try {
+      await (supabase as any)
+        .from("schools")
+        .update({
+          name: updatedUniv.name,
+          status: updatedUniv.status,
+          currency: updatedUniv.default_currency,
+          address: `${updatedUniv.city || ""}, ${updatedUniv.country}`,
+          phone: updatedUniv.phone || null,
+          email: updatedUniv.email || null,
+          updated_at: now,
+        })
+        .or(`id.eq.${existing.id},slug.eq.${existing.code.toLowerCase()}`);
+    } catch {}
   }
 
   // 3. Update system_settings
@@ -472,49 +513,234 @@ export async function updateUniversity(
 
 /**
  * Delete a university from the system.
- * When a university is deleted, all associated users (system admins, faculty, students)
- * will immediately have their access revoked and be blocked from accessing the system.
+ * When a university is deleted, all associated users (including the system admin,
+ * faculty, staff, and students) are permanently deleted from the database, and their
+ * credentials are decommissioned so they can never access their accounts again.
  */
 export async function deleteUniversity(id: string): Promise<{ success: boolean; deletedId: string; affectedUsersCount: number }> {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
+  const cleanId = decodeURIComponent(id).trim();
 
+  // 1. Locate the university
   const universities = await getUniversities();
-  const univ = universities.find((u) => u.id === id);
-  if (!univ) {
-    throw new Error(`University with ID '${id}' not found.`);
-  }
+  let univ = universities.find(
+    (u) =>
+      u.id === cleanId ||
+      u.id?.toLowerCase() === cleanId.toLowerCase() ||
+      u.code?.toLowerCase() === cleanId.toLowerCase() ||
+      u.name?.toLowerCase() === cleanId.toLowerCase()
+  );
 
-  // 1. Delete or mark as deleted in 'universities' table
-  try {
-    await (supabase as any)
-      .from("universities")
-      .delete()
-      .eq("id", univ.id);
-  } catch {
+  // If not in active list, check raw system_settings
+  if (!univ) {
     try {
-      await (supabase as any)
-        .from("universities")
-        .update({ status: "deleted", updated_at: now })
-        .eq("id", univ.id);
+      const { data: rawSetting } = await (supabase as any)
+        .from("system_settings")
+        .select("setting_value")
+        .eq("setting_key", "superadmin_universities")
+        .maybeSingle();
+
+      const list = Array.isArray(rawSetting?.setting_value) ? rawSetting.setting_value : [];
+      univ = list.find(
+        (u: any) =>
+          u.id === cleanId ||
+          u.id?.toLowerCase() === cleanId.toLowerCase() ||
+          u.code?.toLowerCase() === cleanId.toLowerCase()
+      );
     } catch {}
   }
 
-  // 2. Remove from active list in system_settings
-  const remainingUnivs = universities.filter((u) => u.id !== univ.id);
-  await (supabase as any).from("system_settings").upsert(
-    {
-      setting_key: "superadmin_universities",
-      setting_value: remainingUnivs,
-      category: "superadmin",
-      description: "Master directory of all registered institutions in the multi-tenant system",
-      is_sensitive: false,
-      updated_at: now,
-    },
-    { onConflict: "setting_key" }
-  );
+  if (!univ) {
+    throw new Error(`University with ID or code '${cleanId}' not found.`);
+  }
 
-  // 3. Add to deleted_universities registry in system_settings
+  // 2. Identify ALL users belonging to this university (system admin, staff, lecturers, students)
+  const targetUserIds = new Set<string>();
+  const targetUserMeta: Array<{ id: string; email?: string; role?: string }> = [];
+
+  // A. Find users from university_system_admins table
+  try {
+    const { data: sysAdmins } = await (supabase as any)
+      .from("university_system_admins")
+      .select("user_id")
+      .or(`university_id.eq.${univ.id},university_id.eq.${univ.code}`);
+
+    if (Array.isArray(sysAdmins)) {
+      sysAdmins.forEach((sa: any) => {
+        if (sa.user_id) targetUserIds.add(sa.user_id);
+      });
+    }
+  } catch {}
+
+  // B. Find users from profiles table matching this institution
+  try {
+    const { data: profiles } = await (supabase as any)
+      .from("profiles")
+      .select("id, email, role, metadata");
+
+    if (Array.isArray(profiles)) {
+      profiles.forEach((p: any) => {
+        const m = p.metadata || {};
+        const isAssociated =
+          m.university_id === univ.id ||
+          m.university_code === univ.code ||
+          m.university_name === univ.name ||
+          (univ.code === "LCU" && (p.email?.includes("lofa") || p.email?.includes("premier") || p.email === "admin@university.edu.gh")) ||
+          (univ.code === "AIT" && p.email?.includes("ait.edu.gh"));
+
+        // Safeguard: Never delete the root platform Super Administrator
+        if (isAssociated && p.role !== "superadmin" && p.email !== "superadmin@university.edu.gh") {
+          targetUserIds.add(p.id);
+          targetUserMeta.push({ id: p.id, email: p.email, role: p.role });
+        }
+      });
+    }
+  } catch {}
+
+  // C. Also check auth user metadata for university linkage
+  try {
+    const { data: authList } = await supabase.auth.admin.listUsers();
+    if (authList?.users) {
+      authList.users.forEach((u) => {
+        const uUnivId = (u.user_metadata as any)?.university_id || (u.app_metadata as any)?.university_id;
+        const uRole = (u.user_metadata as any)?.role || (u.app_metadata as any)?.role;
+        if (
+          (uUnivId === univ.id || uUnivId === univ.code) &&
+          uRole !== "superadmin" &&
+          u.email !== "superadmin@university.edu.gh"
+        ) {
+          targetUserIds.add(u.id);
+          targetUserMeta.push({ id: u.id, email: u.email, role: uRole });
+        }
+      });
+    }
+  } catch {}
+
+  // 3. PERMANENTLY DELETE ALL USERS of this university from the database
+  let affectedUsersCount = 0;
+  for (const uid of Array.from(targetUserIds)) {
+    affectedUsersCount++;
+    try {
+      // 1. Delete user role assignments
+      await (supabase as any).from("user_role_assignments").delete().eq("user_id", uid);
+      // 2. Delete user scopes
+      await (supabase as any).from("user_scopes").delete().eq("user_id", uid);
+      // 3. Delete from university_system_admins
+      await (supabase as any).from("university_system_admins").delete().eq("user_id", uid);
+      // 4. Delete student and staff records
+      await (supabase as any).from("students").delete().eq("profile_id", uid);
+      await (supabase as any).from("staff").delete().eq("profile_id", uid);
+      await (supabase as any).from("employment_records").delete().eq("profile_id", uid);
+      await (supabase as any).from("teaching_assignments").delete().eq("lecturer_id", uid);
+
+      // 5. Delete profile record
+      await (supabase as any).from("profiles").delete().eq("id", uid);
+
+      // 6. Delete from Supabase Auth so they can NEVER log in
+      try {
+        await supabase.auth.admin.deleteUser(uid);
+      } catch {
+        // Fallback: If foreign keys prevent instant hard deletion in auth, ban permanently
+        await supabase.auth.admin.updateUserById(uid, {
+          ban_duration: "876000h",
+          user_metadata: { account_status: "deleted", university_status: "deleted" },
+          app_metadata: { account_status: "deleted", university_status: "deleted" },
+        });
+      }
+    } catch (delErr) {
+      console.warn(`Error deleting university user ${uid}:`, delErr);
+    }
+  }
+
+  // 4. Record deleted users blacklist in system_settings
+  try {
+    const { data: delUsersSetting } = await (supabase as any)
+      .from("system_settings")
+      .select("setting_value")
+      .eq("setting_key", "deleted_users")
+      .maybeSingle();
+
+    const existingDelUsers = Array.isArray(delUsersSetting?.setting_value) ? delUsersSetting.setting_value : [];
+    const newDelUsers = [
+      ...existingDelUsers,
+      ...Array.from(targetUserIds).map((uid) => ({
+        id: uid,
+        email: targetUserMeta.find((u) => u.id === uid)?.email,
+        role: targetUserMeta.find((u) => u.id === uid)?.role,
+        university_id: univ.id,
+        university_code: univ.code,
+        deleted_at: now,
+      })),
+    ];
+
+    await (supabase as any).from("system_settings").upsert(
+      {
+        setting_key: "deleted_users",
+        setting_value: newDelUsers,
+        category: "superadmin",
+        description: "Permanent blacklist of deleted users from decommissioned universities",
+        is_sensitive: false,
+        updated_at: now,
+      },
+      { onConflict: "setting_key" }
+    );
+  } catch (uErr) {
+    console.warn("Could not record in deleted_users setting:", uErr);
+  }
+
+  // 5. Delete university data tables: university_system_admins, campuses, departments
+  try {
+    await (supabase as any).from("university_system_admins").delete().eq("university_id", univ.id);
+  } catch {}
+  try {
+    await (supabase as any).from("campuses").delete().ilike("code", `${univ.code}%`);
+  } catch {}
+  try {
+    await (supabase as any).from("departments").delete().ilike("code", `${univ.code}%`);
+  } catch {}
+
+  // 6. Delete university row from 'universities' table
+  try {
+    await (supabase as any).from("universities").delete().eq("id", univ.id);
+    await (supabase as any).from("universities").delete().eq("code", univ.code);
+    await (supabase as any)
+      .from("universities")
+      .update({ status: "deleted", updated_at: now })
+      .or(`id.eq.${univ.id},code.eq.${univ.code}`);
+  } catch (uDelErr) {
+    console.warn("Could not delete from universities table:", uDelErr);
+  }
+
+  // 7. Remove from active superadmin_universities in system_settings
+  try {
+    const { data: rawUnivs } = await (supabase as any)
+      .from("system_settings")
+      .select("setting_value")
+      .eq("setting_key", "superadmin_universities")
+      .maybeSingle();
+
+    const currentList = Array.isArray(rawUnivs?.setting_value) ? rawUnivs.setting_value : universities;
+    const remainingUnivs = currentList.filter(
+      (u: any) => u.id !== univ.id && u.code !== univ.code
+    );
+
+    await (supabase as any).from("system_settings").upsert(
+      {
+        setting_key: "superadmin_universities",
+        setting_value: remainingUnivs,
+        category: "superadmin",
+        description: "Master directory of all registered institutions in the multi-tenant system",
+        is_sensitive: false,
+        updated_at: now,
+      },
+      { onConflict: "setting_key" }
+    );
+  } catch (sErr) {
+    console.warn("Could not update superadmin_universities in system_settings:", sErr);
+  }
+
+  // 8. Add to deleted_universities registry in system_settings
   try {
     const { data: delSetting } = await (supabase as any)
       .from("system_settings")
@@ -524,7 +750,7 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
 
     const currentDeleted = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
     const updatedDeleted = [
-      ...currentDeleted.filter((d: any) => d.id !== univ.id),
+      ...currentDeleted.filter((d: any) => d.id !== univ.id && d.code !== univ.code),
       {
         id: univ.id,
         code: univ.code,
@@ -548,62 +774,7 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     console.warn("Could not record in deleted_universities registry:", delErr);
   }
 
-  // 4. CRITICAL: Block all users belonging to this deleted university
-  let affectedUsersCount = 0;
-  try {
-    const { data: profiles } = await (supabase as any)
-      .from("profiles")
-      .select("id, metadata, role");
-
-    if (profiles) {
-      for (const p of profiles) {
-        const isLinkedToUniv =
-          p.metadata?.university_id === univ.id ||
-          p.metadata?.university_code === univ.code;
-
-        if (isLinkedToUniv && p.role !== "superadmin") {
-          affectedUsersCount++;
-          // Suspend profile
-          await (supabase as any)
-            .from("profiles")
-            .update({
-              account_status: "suspended",
-              metadata: {
-                ...p.metadata,
-                university_status: "deleted",
-                deactivated_at: now,
-                deactivation_reason: `University ${univ.name} (${univ.code}) was deleted by Super Administrator.`,
-              },
-            })
-            .eq("id", p.id);
-
-          // Deactivate role assignments
-          await (supabase as any)
-            .from("user_role_assignments")
-            .update({ is_active: false })
-            .eq("user_id", p.id);
-
-          // Update auth user app metadata
-          try {
-            await supabase.auth.admin.updateUserById(p.id, {
-              user_metadata: {
-                account_status: "suspended",
-                university_status: "deleted",
-              },
-              app_metadata: {
-                account_status: "suspended",
-                university_status: "deleted",
-              },
-            });
-          } catch {}
-        }
-      }
-    }
-  } catch (userErr) {
-    console.warn("Could not deactivate associated users:", userErr);
-  }
-
-  // 5. Audit event
+  // 9. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "delete_university",
@@ -611,7 +782,7 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
       entity_id: univ.id,
       actor_role: "superadmin",
       outcome: "SUCCESS",
-      details: `Decommissioned university ${univ.name} (${univ.code}). Blocked ${affectedUsersCount} associated accounts.`,
+      details: `Decommissioned university ${univ.name} (${univ.code}). Permanently deleted ${affectedUsersCount} associated accounts including system admin.`,
     });
   } catch {}
 
@@ -846,6 +1017,81 @@ export async function getUniversities(): Promise<UniversityItem[]> {
     }
   }
 
+  // Also query 'schools' table from Supabase to integrate with native Supabase schools
+  try {
+    const { data: schoolsData } = await (supabase as any)
+      .from("schools")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (Array.isArray(schoolsData) && schoolsData.length > 0) {
+      const existingCodes = new Set(baseList.map((u) => u.code?.toUpperCase()));
+      const existingNames = new Set(baseList.map((u) => u.name?.toLowerCase()));
+
+      for (const s of schoolsData) {
+        const sCode = (s.slug || s.name.substring(0, 4)).toUpperCase();
+        const sType = s.school_type || s.school_Type || "university";
+
+        if (!existingCodes.has(sCode) && !existingNames.has(s.name?.toLowerCase())) {
+          baseList.push({
+            id: s.id,
+            code: sCode,
+            name: s.name,
+            school_type: sType,
+            institution_type: sType,
+            country: "Ghana",
+            city: "Accra",
+            address: s.address || "",
+            email: s.email || "",
+            phone: s.phone || "",
+            default_currency: s.currency || "GHS",
+            currency_symbol: s.currency === "USD" ? "$" : "GH₵",
+            status: s.status || "active",
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+            full_access: true,
+          });
+        } else {
+          const existing = baseList.find(
+            (u) => u.code?.toUpperCase() === sCode || u.name?.toLowerCase() === s.name?.toLowerCase()
+          );
+          if (existing && (s.school_type || s.school_Type)) {
+            existing.school_type = s.school_type || s.school_Type || existing.school_type;
+            existing.institution_type = s.school_type || s.school_Type || existing.institution_type;
+          }
+        }
+      }
+    }
+  } catch (schoolsErr) {
+    console.warn("Could not query schools table:", schoolsErr);
+  }
+
+  if (baseList.length === 0) {
+    return [];
+  }
+
+  // Filter out any university that was deleted or marked in deleted_universities registry
+  try {
+    const { data: delSetting } = await (supabase as any)
+      .from("system_settings")
+      .select("setting_value")
+      .eq("setting_key", "deleted_universities")
+      .maybeSingle();
+
+    const deletedList = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
+    const deletedIds = new Set(deletedList.map((d: any) => String(d.id || "").toLowerCase()));
+    const deletedCodes = new Set(deletedList.map((d: any) => String(d.code || "").toLowerCase()));
+
+    baseList = baseList.filter((u) => {
+      if (u.status === "deleted") return false;
+      if (u.id && deletedIds.has(String(u.id).toLowerCase())) return false;
+      if (u.code && deletedCodes.has(String(u.code).toLowerCase())) return false;
+      return true;
+    });
+  } catch (delFilterErr) {
+    console.warn("Could not filter deleted universities:", delFilterErr);
+  }
+
   if (baseList.length === 0) {
     return [];
   }
@@ -1028,9 +1274,13 @@ export async function createUniversity(
   const newId = `u-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
+  const createdSchoolType = payload.school_type || payload.institution_type || "university";
+
   const newUniv: UniversityItem = {
     ...payload,
     id: newId,
+    school_type: createdSchoolType,
+    institution_type: createdSchoolType,
     full_access: payload.full_access !== undefined ? Boolean(payload.full_access) : true,
     max_users: payload.max_users !== undefined ? payload.max_users : null,
     max_departments: payload.max_departments !== undefined ? payload.max_departments : null,
@@ -1059,6 +1309,37 @@ export async function createUniversity(
     }
   } catch {
     // Table not available
+  }
+
+  // 1b. Try inserting into 'schools' table (primary table in Supabase schema)
+  try {
+    await (supabase as any)
+      .from("schools")
+      .insert({
+        name: newUniv.name,
+        slug: newUniv.code.toLowerCase(),
+        school_type: createdSchoolType,
+        status: newUniv.status,
+        currency: newUniv.default_currency,
+        address: `${newUniv.city || ""}, ${newUniv.country}`,
+        phone: newUniv.phone || null,
+        email: newUniv.email || null,
+      });
+  } catch {
+    // If school_type column doesn't exist yet, insert without it
+    try {
+      await (supabase as any)
+        .from("schools")
+        .insert({
+          name: newUniv.name,
+          slug: newUniv.code.toLowerCase(),
+          status: newUniv.status,
+          currency: newUniv.default_currency,
+          address: `${newUniv.city || ""}, ${newUniv.country}`,
+          phone: newUniv.phone || null,
+          email: newUniv.email || null,
+        });
+    } catch {}
   }
 
   // 2. Always persist in system_settings for redundancy

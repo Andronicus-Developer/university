@@ -38,6 +38,7 @@ import {
   Globe,
   CheckSquare,
   UserCheck,
+  ArrowUpDown,
 } from "lucide-react";
 import type { UniversityItem, SystemAdminItem, SuperAdminStats } from "@/lib/superadmin/service";
 
@@ -68,6 +69,7 @@ export default function SuperAdminDashboardPage() {
   const [systemAdmins, setSystemAdmins] = useState<SystemAdminItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [countrySortOrder, setCountrySortOrder] = useState<"asc" | "desc">("asc");
 
   // Modals
   const [showUnivModal, setShowUnivModal] = useState(false);
@@ -76,6 +78,7 @@ export default function SuperAdminDashboardPage() {
   // University Form State
   const [univName, setUnivName] = useState("");
   const [univCode, setUnivCode] = useState("");
+  const [univSchoolType, setUnivSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
   const [univCountry, setUnivCountry] = useState("Ghana");
   const [univCity, setUnivCity] = useState("Accra");
   const [univEmail, setUnivEmail] = useState("");
@@ -154,19 +157,44 @@ export default function SuperAdminDashboardPage() {
 
   useEffect(() => {
     fetchDashboardData();
+
+    const handleGlobalSearch = (e: any) => {
+      if (e.detail && typeof e.detail.query === "string") {
+        setSearchQuery(e.detail.query);
+      }
+    };
+
+    window.addEventListener("global_search_query", handleGlobalSearch);
+    return () => window.removeEventListener("global_search_query", handleGlobalSearch);
   }, []);
 
-  // Filtered universities
+  // Filtered and country-sorted universities
   const filteredUniversities = useMemo(() => {
-    if (!searchQuery.trim()) return universities;
-    const q = searchQuery.toLowerCase();
-    return universities.filter(
-      (u) =>
-        u.name.toLowerCase().includes(q) ||
-        u.code.toLowerCase().includes(q) ||
-        u.city.toLowerCase().includes(q)
-    );
-  }, [universities, searchQuery]);
+    const q = searchQuery.trim().toLowerCase();
+    const list = !q
+      ? [...universities]
+      : universities.filter(
+          (u) =>
+            (u.name || "").toLowerCase().includes(q) ||
+            (u.code || "").toLowerCase().includes(q) ||
+            (u.city || "").toLowerCase().includes(q) ||
+            (u.country || "").toLowerCase().includes(q)
+        );
+
+    list.sort((a, b) => {
+      const countryA = (a.country || "Ghana").toLowerCase();
+      const countryB = (b.country || "Ghana").toLowerCase();
+      const nameA = (a.name || "").toLowerCase();
+      const nameB = (b.name || "").toLowerCase();
+      const cmp =
+        countrySortOrder === "asc"
+          ? countryA.localeCompare(countryB)
+          : countryB.localeCompare(countryA);
+      return cmp || nameA.localeCompare(nameB);
+    });
+
+    return list;
+  }, [universities, searchQuery, countrySortOrder]);
 
   // Handle Add University
   const handleCreateUniversity = async (e: React.FormEvent) => {
@@ -175,7 +203,7 @@ export default function SuperAdminDashboardPage() {
     setUnivSuccess("");
 
     if (!univName || !univCode) {
-      setUnivError("Please enter university name and short code.");
+      setUnivError("Please enter school name and short code.");
       return;
     }
 
@@ -187,6 +215,8 @@ export default function SuperAdminDashboardPage() {
         body: JSON.stringify({
           name: univName,
           code: univCode.toUpperCase(),
+          school_type: univSchoolType,
+          institution_type: univSchoolType,
           country: univCountry,
           city: univCity,
           email: univEmail,
@@ -200,12 +230,13 @@ export default function SuperAdminDashboardPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create university");
+        throw new Error(data.error || "Failed to create school");
       }
 
       setUnivSuccess(`Successfully registered ${univName}!`);
       setUnivName("");
       setUnivCode("");
+      setUnivSchoolType("university");
       setUnivEmail("");
       setUnivPhone("");
       setUnivWebsite("");
@@ -215,7 +246,7 @@ export default function SuperAdminDashboardPage() {
         setUnivSuccess("");
       }, 1200);
     } catch (err: any) {
-      setUnivError(err.message || "Failed to create university");
+      setUnivError(err.message || "Failed to create school");
     } finally {
       setIsSubmittingUniv(false);
     }
@@ -297,7 +328,7 @@ export default function SuperAdminDashboardPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add University</span>
+            <span>Add School</span>
           </button>
 
           <button
@@ -344,16 +375,12 @@ export default function SuperAdminDashboardPage() {
 
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
           <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-medium text-blue-200 mb-2 backdrop-blur-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Central Multi-Tenant Infrastructure Active
-            </div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
               <span>Welcome Back, {superAdminName}</span>
               <span className="text-2xl">👋</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 font-normal">
-              University Management System • Central Multi-Tenant Governance & Operational Control
+              School Management System • Central Multi-Tenant Governance & Operational Control
             </p>
           </div>
 
@@ -389,7 +416,7 @@ export default function SuperAdminDashboardPage() {
                 {stats.totalUniversities}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
-                Total Universities
+                Total Schools
               </div>
             </div>
           </div>
@@ -572,7 +599,7 @@ export default function SuperAdminDashboardPage() {
                   <Building2 className="h-4 w-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-900">Registered Universities</h2>
+                  <h2 className="text-sm font-bold text-slate-900">Registered Schools</h2>
                   <p className="text-[11px] text-slate-500">Multi-tenant institutional registry</p>
                 </div>
                 <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">
@@ -581,14 +608,26 @@ export default function SuperAdminDashboardPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCountrySortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                  }
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 text-slate-700 hover:text-blue-700 text-xs font-semibold transition-all cursor-pointer"
+                  title="Sort schools by country"
+                >
+                  <Globe className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Country ({countrySortOrder === "asc" ? "A→Z" : "Z→A"})</span>
+                  <ArrowUpDown className="h-3 w-3 opacity-75" />
+                </button>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter universities..."
-                    className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:bg-white focus:outline-none focus:border-blue-500 w-36 sm:w-48"
+                    placeholder="Filter schools, country..."
+                    className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:bg-white focus:outline-none focus:border-blue-500 w-36 sm:w-44"
                   />
                 </div>
                 <button
@@ -606,7 +645,19 @@ export default function SuperAdminDashboardPage() {
                 <thead className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   <tr>
                     <th className="py-3 px-4">Institution</th>
-                    <th className="py-3 px-4">Location</th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCountrySortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                        }
+                        className="inline-flex items-center gap-1 hover:text-blue-600 cursor-pointer uppercase font-bold"
+                        title="Click to sort by country"
+                      >
+                        <span>Location / Country</span>
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </th>
                     <th className="py-3 px-4">Currency</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Actions</th>
@@ -616,7 +667,7 @@ export default function SuperAdminDashboardPage() {
                   {filteredUniversities.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-slate-400">
-                        No universities found. Click "Add University" to register one.
+                        No schools found. Click "Add School" to register one.
                       </td>
                     </tr>
                   ) : (
@@ -628,8 +679,23 @@ export default function SuperAdminDashboardPage() {
                               {u.code.slice(0, 3)}
                             </div>
                             <div className="min-w-0">
-                              <div className="font-semibold text-slate-900 truncate max-w-[200px]">
-                                {u.name}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-slate-900 truncate max-w-[180px]">
+                                  {u.name}
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                                  (u.school_type || u.institution_type) === "high_school"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : (u.school_type || u.institution_type) === "vocational_school"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : "bg-blue-50 text-blue-700 border border-blue-200"
+                                }`}>
+                                  {(u.school_type || u.institution_type) === "high_school"
+                                    ? "High School"
+                                    : (u.school_type || u.institution_type) === "vocational_school"
+                                    ? "Vocational"
+                                    : "University"}
+                                </span>
                               </div>
                               <div className="text-[10px] text-slate-500 font-mono">
                                 Code: {u.code}
@@ -698,7 +764,7 @@ export default function SuperAdminDashboardPage() {
             </div>
 
             <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-500">
-              <span>Showing {filteredUniversities.length} registered universities</span>
+              <span>Showing {filteredUniversities.length} registered schools</span>
               <Link
                 href="/superadmin/universities"
                 className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
@@ -931,7 +997,7 @@ export default function SuperAdminDashboardPage() {
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-blue-50 hover:border-blue-200 text-slate-700 hover:text-blue-700 text-xs font-medium transition-all text-left cursor-pointer"
               >
                 <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
-                <span>Add University</span>
+                <span>Add School</span>
               </button>
 
               <button
@@ -991,7 +1057,7 @@ export default function SuperAdminDashboardPage() {
                   <Building2 className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Register New University</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Register New School</h3>
                   <p className="text-[11px] text-slate-500">Create an institutional tenant in UMS</p>
                 </div>
               </div>
@@ -1019,8 +1085,50 @@ export default function SuperAdminDashboardPage() {
               )}
 
               <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <label className="text-xs font-semibold text-slate-700">Type of School *</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUnivSchoolType("university")}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        univSchoolType === "university"
+                          ? "bg-blue-50 border-blue-500 text-blue-700 shadow-2xs font-bold"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Building2 className="h-3.5 w-3.5" />
+                      <span>University</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUnivSchoolType("high_school")}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        univSchoolType === "high_school"
+                          ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-2xs font-bold"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      <GraduationCap className="h-3.5 w-3.5" />
+                      <span>High School</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUnivSchoolType("vocational_school")}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        univSchoolType === "vocational_school"
+                          ? "bg-amber-50 border-amber-500 text-amber-700 shadow-2xs font-bold"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                      <span>Vocational</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-semibold text-slate-700">University Full Name *</label>
+                  <label className="text-xs font-semibold text-slate-700">School Full Name *</label>
                   <input
                     type="text"
                     required
@@ -1210,7 +1318,7 @@ export default function SuperAdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Assign to University Tenant</label>
+                  <label className="text-xs font-semibold text-slate-700">Assign to School Tenant</label>
                   <select
                     value={selectedUnivId}
                     onChange={(e) => setSelectedUnivId(e.target.value)}

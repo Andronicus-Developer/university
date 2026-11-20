@@ -10,6 +10,7 @@ import {
   FALLBACK_REFRESH_PREFIX,
 } from "@/lib/supabase/fetch";
 import { handleVirtualPostgrestRequest } from "@/lib/supabase/virtual-db";
+import { clearAllAuthCookies } from "@/app/api/auth/signout/route";
 
 const FORWARDED_REQUEST_HEADERS = [
   "apikey",
@@ -94,7 +95,12 @@ async function handleFallbackRequest(
 
   // 3. Auth Logout Endpoint (/auth/v1/logout)
   if (subPath === "auth/v1/logout") {
-    return new NextResponse(null, { status: 204 });
+    const res = new NextResponse(null, { status: 204 });
+    clearAllAuthCookies(
+      res,
+      request.cookies.getAll().map((c) => ({ name: c.name, value: c.value }))
+    );
+    return res;
   }
 
   // 4. RPC: get_user_roles (/rest/v1/rpc/get_user_roles)
@@ -237,18 +243,28 @@ async function proxySupabaseRequest(
       }
     }
 
+    let res: NextResponse;
     if (upstreamResponse.status === 204 || method === "HEAD") {
-      return new NextResponse(null, {
+      res = new NextResponse(null, {
+        status: upstreamResponse.status,
+        headers: responseHeaders,
+      });
+    } else {
+      const responseBody = await upstreamResponse.arrayBuffer();
+      res = new NextResponse(responseBody, {
         status: upstreamResponse.status,
         headers: responseHeaders,
       });
     }
 
-    const responseBody = await upstreamResponse.arrayBuffer();
-    return new NextResponse(responseBody, {
-      status: upstreamResponse.status,
-      headers: responseHeaders,
-    });
+    if (subPath === "auth/v1/logout") {
+      clearAllAuthCookies(
+        res,
+        request.cookies.getAll().map((c) => ({ name: c.name, value: c.value }))
+      );
+    }
+
+    return res;
   } catch (err) {
     console.warn(
       `[Supabase Proxy] Upstream connection failed for /${subPath} (${

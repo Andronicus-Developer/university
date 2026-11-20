@@ -260,7 +260,7 @@ export default function SystemAdminsPage() {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, email, university..."
+            placeholder="Search by name, email, school..."
             className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs"
           />
         </div>
@@ -271,7 +271,7 @@ export default function SystemAdminsPage() {
             onChange={(e) => setSelectedUnivFilter(e.target.value)}
             className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs focus:bg-white focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
           >
-            <option value="all">All Universities</option>
+            <option value="all">All Schools</option>
             {universities.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name} ({u.code})
@@ -464,7 +464,7 @@ export default function SystemAdminsPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Assign to University *
+                    Assign to School *
                   </label>
                   <select
                     value={univId}

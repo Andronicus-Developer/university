@@ -80,8 +80,11 @@ export async function updateSession(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      const fallbackUser = extractUserFromCookies(initialCookies);
-      return { supabaseResponse, user: fallbackUser, supabase };
+      if (isFallbackSessionInCookies(initialCookies)) {
+        const fallbackUser = extractUserFromCookies(initialCookies);
+        return { supabaseResponse, user: fallbackUser, supabase };
+      }
+      return { supabaseResponse, user: null, supabase };
     }
 
     if (pendingCookies.length > 0) {
@@ -96,8 +99,10 @@ export async function updateSession(request: NextRequest) {
 
     return { supabaseResponse, user, supabase };
   } catch (err) {
-    console.warn("Supabase updateSession fallback used:", err instanceof Error ? err.message : err);
-    const fallbackUser = extractUserFromCookies(initialCookies);
-    return { supabaseResponse, user: fallbackUser, supabase: null };
+    if (isFallbackSessionInCookies(initialCookies)) {
+      const fallbackUser = extractUserFromCookies(initialCookies);
+      return { supabaseResponse, user: fallbackUser, supabase: null };
+    }
+    return { supabaseResponse, user: null, supabase: null };
   }
 }

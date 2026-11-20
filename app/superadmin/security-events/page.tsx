@@ -94,7 +94,7 @@ export default function SecurityEventsPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-900">Security & Anomaly Guard</h3>
               <p className="text-[11px] text-slate-500">
-                Live perimeter surveillance across all tenant universities
+                Live perimeter surveillance across all tenant schools
               </p>
             </div>
           </div>

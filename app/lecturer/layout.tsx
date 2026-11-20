@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
 import {
   LayoutGrid,
   BookOpen,
@@ -101,10 +102,14 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
           data: { user },
         } = await supabase.auth.getUser();
 
-        if (user) {
-          setUserEmail(user.email || "lecturer@university.edu.gh");
-          const metaName = user.user_metadata?.full_name || "Faculty Member";
-          setUserName(metaName);
+        if (!user) {
+          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+          return;
+        }
+
+        setUserEmail(user.email || "lecturer@university.edu.gh");
+        const metaName = user.user_metadata?.full_name || "Faculty Member";
+        setUserName(metaName);
 
           // Query profile & staff details
           const { data: profile } = await db
@@ -140,7 +145,6 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
           } catch {
             // non-blocking
           }
-        }
       } catch (err) {
         console.warn("Could not load lecturer auth details:", err);
       }
@@ -215,20 +219,10 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name && /^sb-.*-auth-token/.test(name)) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
       setIsSigningOut(false);
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 

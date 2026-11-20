@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
 import {
   LayoutGrid,
   User,
@@ -111,8 +112,12 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
           data: { user },
         } = await supabase.auth.getUser();
 
-        if (user) {
-          setUserEmail(user.email || "ama.johnson@university.edu.gh");
+        if (!user) {
+          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+          return;
+        }
+
+        setUserEmail(user.email || "ama.johnson@university.edu.gh");
 
           // Check students table
           const { data: stu } = await db
@@ -152,7 +157,6 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
           } catch {
             // ignore
           }
-        }
       } catch (err) {
         console.warn("Could not load student auth details:", err);
       }
@@ -227,20 +231,10 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name && /^sb-.*-auth-token/.test(name)) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
       setIsSigningOut(false);
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 

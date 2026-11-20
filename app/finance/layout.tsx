@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
+import GlobalSearchBar from "@/app/components/GlobalSearchBar";
 import {
   LayoutGrid,
   CalendarRange,
@@ -104,22 +106,25 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (user) {
-        setUserEmail(user.email || "bursar@university.edu.gh");
-        const metaName = user.user_metadata?.full_name || "Bursar Officer";
-        setUserName(metaName);
-        setUserRole(user.user_metadata?.role || "Finance Officer / Bursar");
+      if (!user) {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
 
-        try {
-          const { count } = await (supabase as any)
-            .from("notifications")
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", user.id)
-            .eq("is_read", false);
-          if (count !== null) setUnreadNotifications(count);
-        } catch {
-          // non-blocking
-        }
+      setUserEmail(user.email || "bursar@university.edu.gh");
+      const metaName = user.user_metadata?.full_name || "Bursar Officer";
+      setUserName(metaName);
+      setUserRole(user.user_metadata?.role || "Finance Officer / Bursar");
+
+      try {
+        const { count } = await (supabase as any)
+          .from("notifications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("is_read", false);
+        if (count !== null) setUnreadNotifications(count);
+      } catch {
+        // non-blocking
       }
 
       // Academic Year
@@ -201,20 +206,10 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name && /^sb-.*-auth-token/.test(name)) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
       setIsSigningOut(false);
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 
@@ -429,17 +424,10 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
               <Menu className="h-4 w-4" />
             </button>
 
-            <div className="relative w-full">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search invoices, receipts, student accounts, vouchers..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <span className="hidden sm:inline-block absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-white border border-slate-200 rounded">
-                ⌘K
-              </span>
-            </div>
+            <GlobalSearchBar
+              portal="finance"
+              placeholder="Search invoices, receipts, student accounts, vouchers..."
+            />
           </div>
 
           {/* Center: Live Date & Time pill */}

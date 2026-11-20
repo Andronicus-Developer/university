@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
 import { FileText, LogOut, Upload, CheckCircle2 } from "lucide-react";
 
 export default function ApplicantDashboardPage() {
@@ -13,15 +14,17 @@ export default function ApplicantDashboardPage() {
     async function loadUser() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setEmail(user.email || "");
+      if (!user) {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
+      setEmail(user.email || "");
     }
     loadUser();
   }, []);
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/");
+    await signOutUser("/");
   };
 
   return (

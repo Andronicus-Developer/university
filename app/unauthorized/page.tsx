@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
 import {
   ShieldAlert,
   ArrowLeft,
@@ -138,24 +139,9 @@ function UnauthorizedContent() {
   const handleSignOut = async () => {
     try {
       setIsLoggingOut(true);
-      // Call server endpoint to clear all httpOnly cookies
-      await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
-
-      // Clear client-side Supabase state
-      const supabase = createClient();
-      await supabase.auth.signOut().catch(() => {});
-
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 
@@ -239,76 +225,99 @@ function UnauthorizedContent() {
 
         {/* Action Buttons */}
         <div className="mt-6 flex flex-col gap-2.5">
-          {/* If Student, show direct link to Student Portal */}
-          {isStudent && (
+          {isUniversityDeleted ? (
+            /* When university is deleted, user cannot return to any portal */
             <button
-              onClick={() => window.location.assign("/student/dashboard")}
-              className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
+              onClick={handleSignOut}
+              disabled={isLoggingOut}
+              className="w-full h-11 rounded-xl bg-[#0E1045] hover:bg-[#1A1E6B] text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
             >
-              <GraduationCap className="h-4 w-4" />
-              <span>Go to Student Portal</span>
+              {isLoggingOut ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-[#F59E0B]" />
+                  <span>Clearing session...</span>
+                </>
+              ) : (
+                <>
+                  <LogOut className="h-4 w-4 text-[#F59E0B]" />
+                  <span>Acknowledge & Return to Login</span>
+                </>
+              )}
             </button>
+          ) : (
+            <>
+              {/* If Student, show direct link to Student Portal */}
+              {isStudent && (
+                <button
+                  onClick={() => window.location.assign("/student/dashboard")}
+                  className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <GraduationCap className="h-4 w-4" />
+                  <span>Go to Student Portal</span>
+                </button>
+              )}
+
+              {/* If Lecturer, show direct link to Lecturer Portal */}
+              {isLecturer && (
+                <button
+                  onClick={() => window.location.assign("/lecturer/dashboard")}
+                  className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span>Go to Lecturer Portal</span>
+                </button>
+              )}
+
+              {/* If neither student nor lecturer identified, show general Return to Dashboard */}
+              {!isStudent && !isLecturer && (
+                <button
+                  onClick={handleReturnDashboard}
+                  className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Return to My Dashboard</span>
+                </button>
+              )}
+
+              {/* Switch to System Admin Button */}
+              <button
+                onClick={handleSwitchToAdmin}
+                disabled={isSwitching}
+                className="w-full h-11 rounded-xl bg-[#0E1045] hover:bg-[#1A1E6B] text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {isSwitching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-[#F59E0B]" />
+                    <span>Switching to Administrator...</span>
+                  </>
+                ) : (
+                  <>
+                    <Shield className="h-4 w-4 text-[#F59E0B]" />
+                    <span>Switch to System Administrator</span>
+                  </>
+                )}
+              </button>
+
+              {/* Sign Out Button */}
+              <button
+                onClick={handleSignOut}
+                disabled={isLoggingOut}
+                className="w-full h-11 rounded-xl bg-white hover:bg-[#F8F9FD] border border-[#DADBEE] text-[#424874] text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {isLoggingOut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-[#D32F2F]" />
+                    <span>Signing out...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-4 w-4 text-[#D32F2F]" />
+                    <span>Sign Out & Return to Login</span>
+                  </>
+                )}
+              </button>
+            </>
           )}
-
-          {/* If Lecturer, show direct link to Lecturer Portal */}
-          {isLecturer && (
-            <button
-              onClick={() => window.location.assign("/lecturer/dashboard")}
-              className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <BookOpen className="h-4 w-4" />
-              <span>Go to Lecturer Portal</span>
-            </button>
-          )}
-
-          {/* If neither student nor lecturer identified, show general Return to Dashboard */}
-          {!isStudent && !isLecturer && (
-            <button
-              onClick={handleReturnDashboard}
-              className="w-full h-11 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold transition-all shadow-md shadow-[#4F46E5]/20 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Return to My Dashboard</span>
-            </button>
-          )}
-
-          {/* Switch to System Admin Button */}
-          <button
-            onClick={handleSwitchToAdmin}
-            disabled={isSwitching}
-            className="w-full h-11 rounded-xl bg-[#0E1045] hover:bg-[#1A1E6B] text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-          >
-            {isSwitching ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-[#F59E0B]" />
-                <span>Switching to Administrator...</span>
-              </>
-            ) : (
-              <>
-                <Shield className="h-4 w-4 text-[#F59E0B]" />
-                <span>Switch to System Administrator</span>
-              </>
-            )}
-          </button>
-
-          {/* Sign Out Button */}
-          <button
-            onClick={handleSignOut}
-            disabled={isLoggingOut}
-            className="w-full h-11 rounded-xl bg-white hover:bg-[#F8F9FD] border border-[#DADBEE] text-[#424874] text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-          >
-            {isLoggingOut ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-[#D32F2F]" />
-                <span>Signing out...</span>
-              </>
-            ) : (
-              <>
-                <LogOut className="h-4 w-4 text-[#D32F2F]" />
-                <span>Sign Out & Return to Login</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>

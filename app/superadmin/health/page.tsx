@@ -119,7 +119,7 @@ export default function PlatformHealthPage() {
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
             <div>
-              <div className="text-xs font-bold text-slate-900">Multi-Tenant University Isolation Barrier</div>
+              <div className="text-xs font-bold text-slate-900">Multi-Tenant School Isolation Barrier</div>
               <div className="text-[11px] text-slate-500">Strict foreign key tenant separation enforced on all database queries</div>
             </div>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">

@@ -1,0 +1,379 @@
+[
+  {
+    "id": "dashboard",
+    "label": "Dashboard",
+    "href": "/admin/dashboard",
+    "category": "Core Administration",
+    "icon": "LayoutGrid",
+    "badge": null,
+    "description": "Institutional overview, enrollment KPIs, and operational control center.",
+    "school_types": [
+      "vocational_school",
+      "university",
+      "high_school"
+    ],
+    "is_active": true,
+    "display_order": 1,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true,
+    "updated_at": "2026-11-19T19:33:58.128Z"
+  },
+  {
+    "id": "students",
+    "label": "Students",
+    "href": "/admin/students",
+    "category": "Core Administration",
+    "icon": "GraduationCap",
+    "badge": null,
+    "description": "Student records, cohort directory, enrollment numbers, and academic statuses.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 2,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "teachers",
+    "label": "Teachers & Faculty",
+    "href": "/admin/teachers",
+    "category": "Core Administration",
+    "icon": "UserCheck",
+    "badge": null,
+    "description": "Faculty roster, teacher assignments, qualifications, and teaching loads.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 3,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "staff",
+    "label": "Staff Members",
+    "href": "/admin/staff",
+    "category": "Core Administration",
+    "icon": "Users",
+    "badge": null,
+    "description": "Administrative personnel, support staff, and non-teaching employment records.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 4,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "admissions",
+    "label": "Admissions",
+    "href": "/admin/admissions",
+    "category": "Core Administration",
+    "icon": "UserPlus",
+    "badge": "New",
+    "description": "Applications intake, document verification, review queues, and offer decisions.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 5,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "courses",
+    "label": "Courses & Subjects",
+    "href": "/admin/courses",
+    "category": "Academics & Schedule",
+    "icon": "BookOpen",
+    "badge": null,
+    "description": "Curriculum requirements, course offerings, syllabus modules, and prerequisites.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 6,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "routine",
+    "label": "Class Routine",
+    "href": "/admin/routine",
+    "category": "Academics & Schedule",
+    "icon": "CalendarDays",
+    "badge": null,
+    "description": "Weekly timetables, period allocations, room schedules, and recurring routines.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 7,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "exams",
+    "label": "Examinations",
+    "href": "/admin/exams",
+    "category": "Academics & Schedule",
+    "icon": "FileCheck2",
+    "badge": null,
+    "description": "Assessment schedules, grading scales, mark submissions, and result publishing.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 8,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "attendance",
+    "label": "Attendance",
+    "href": "/admin/attendance",
+    "category": "Academics & Schedule",
+    "icon": "CheckSquare",
+    "badge": null,
+    "description": "Daily session registers, student presence tracking, and absence alerts.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 9,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "fees",
+    "label": "Fees & Invoices",
+    "href": "/admin/fees",
+    "category": "Finance & Accounts",
+    "icon": "CreditCard",
+    "badge": null,
+    "description": "Fee schedules, student invoice generation, payment receipts, and fee balances.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 10,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "reports",
+    "label": "Financial Reports",
+    "href": "/admin/reports",
+    "category": "Finance & Accounts",
+    "icon": "BarChart3",
+    "badge": null,
+    "description": "Revenue statements, outstanding collections, and departmental cost audit.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 11,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "leave",
+    "label": "Leave Requests",
+    "href": "/admin/leave",
+    "category": "Campus Services",
+    "icon": "CalendarRange",
+    "badge": null,
+    "description": "Teacher and staff leave applications, approvals, and balance logs.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 12,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "notices",
+    "label": "Notice Board",
+    "href": "/admin/notices",
+    "category": "Campus Services",
+    "icon": "Megaphone",
+    "badge": null,
+    "description": "Institutional broadcasts, parent notices, circulars, and target audience delivery.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 13,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "library",
+    "label": "Library",
+    "href": "/admin/library",
+    "category": "Campus Services",
+    "icon": "BookMarked",
+    "badge": null,
+    "description": "Book catalog, lending circulation, active loans, and overdue fines.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 14,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "transport",
+    "label": "Transport & Fleet",
+    "href": "/admin/transport",
+    "category": "Campus Services",
+    "icon": "BusFront",
+    "badge": null,
+    "description": "Campus shuttle routes, vehicle fleet, driver schedules, and transport pass allocations.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 15,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "hostels",
+    "label": "Hostels & Housing",
+    "href": "/admin/hostels",
+    "category": "Campus Services",
+    "icon": "Building2",
+    "badge": null,
+    "description": "Residential halls, block rooms, bed space assignments, and maintenance logs.",
+    "school_types": [
+      "university"
+    ],
+    "is_active": true,
+    "display_order": 16,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "users",
+    "label": "Users & RBAC",
+    "href": "/admin/users",
+    "category": "Security & System",
+    "icon": "ShieldCheck",
+    "badge": null,
+    "description": "Staff and teacher account provisioning, passwords, and security rights.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 17,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "audit",
+    "label": "Audit Logs",
+    "href": "/admin/audit",
+    "category": "Security & System",
+    "icon": "FileText",
+    "badge": null,
+    "description": "Immutable system activity trail, security events, and compliance history.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 18,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "settings",
+    "label": "System Settings",
+    "href": "/admin/settings",
+    "category": "Security & System",
+    "icon": "Sliders",
+    "badge": null,
+    "description": "Institution identity, academic terms, grading scheme, and system preferences.",
+    "school_types": [
+      "university",
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 19,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
+    "id": "workshops-practical-labs",
+    "label": "Workshops & Practical Labs",
+    "href": "/admin/workshops",
+    "category": "Vocational & Practical Training",
+    "icon": "Wrench",
+    "badge": "New",
+    "description": "Vocational machinery, safety compliance, tool inventory, and practical training sessions.",
+    "school_types": [
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 25,
+    "created_at": "2026-11-19T18:56:26.201Z",
+    "updated_at": "2026-11-19T18:56:26.235Z",
+    "page_created": true
+  },
+  {
+    "id": "performance",
+    "label": "Performance",
+    "href": "/admin/performance",
+    "category": "Academics & Schedule",
+    "icon": "BarChart3",
+    "badge": null,
+    "description": "",
+    "school_types": [
+      "vocational_school",
+      "high_school",
+      "university"
+    ],
+    "is_active": true,
+    "display_order": 21,
+    "created_at": "2026-11-19T19:53:17.249Z",
+    "updated_at": "2026-11-19T19:53:17.249Z",
+    "page_created": true
+  }
+]

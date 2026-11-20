@@ -93,6 +93,129 @@ export type PermissionCode =
 export interface Database {
   public: {
     Tables: {
+      schools: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          school_type: "university" | "high_school" | "vocational_school";
+          status: string;
+          timezone: string;
+          currency: string;
+          locale: string;
+          address: string | null;
+          phone: string | null;
+          email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          school_type?: "university" | "high_school" | "vocational_school";
+          status?: string;
+          timezone?: string;
+          currency?: string;
+          locale?: string;
+          address?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          school_type?: "university" | "high_school" | "vocational_school";
+          status?: string;
+          timezone?: string;
+          currency?: string;
+          locale?: string;
+          address?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      universities: {
+        Row: {
+          id: string;
+          code: string;
+          name: string;
+          short_name: string | null;
+          school_type: "university" | "high_school" | "vocational_school";
+          country: string;
+          city: string;
+          address: string | null;
+          postal_code: string | null;
+          email: string | null;
+          phone: string | null;
+          website: string | null;
+          motto: string | null;
+          logo_url: string | null;
+          seal_url: string | null;
+          default_currency: string;
+          currency_symbol: string;
+          established_year: number | null;
+          accreditation_code: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          name: string;
+          short_name?: string | null;
+          school_type?: "university" | "high_school" | "vocational_school";
+          country?: string;
+          city?: string;
+          address?: string | null;
+          postal_code?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          website?: string | null;
+          motto?: string | null;
+          logo_url?: string | null;
+          seal_url?: string | null;
+          default_currency?: string;
+          currency_symbol?: string;
+          established_year?: number | null;
+          accreditation_code?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          code?: string;
+          name?: string;
+          short_name?: string | null;
+          school_type?: "university" | "high_school" | "vocational_school";
+          country?: string;
+          city?: string;
+          address?: string | null;
+          postal_code?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          website?: string | null;
+          motto?: string | null;
+          logo_url?: string | null;
+          seal_url?: string | null;
+          default_currency?: string;
+          currency_symbol?: string;
+          established_year?: number | null;
+          accreditation_code?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;

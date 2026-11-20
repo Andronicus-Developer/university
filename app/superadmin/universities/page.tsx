@@ -30,6 +30,7 @@ import {
   Square,
   Sliders,
   Info,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   type UniversityItem,
@@ -41,6 +42,9 @@ export default function UniversitiesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterAccess, setFilterAccess] = useState<"all" | "full" | "restricted">("all");
+  const [filterType, setFilterType] = useState<"all" | "university" | "high_school" | "vocational_school">("all");
+  const [filterCountry, setFilterCountry] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"country_asc" | "country_desc" | "name_asc" | "name_desc" | "newest">("country_asc");
   const [isLoading, setIsLoading] = useState(true);
 
   // Add / Edit Modal state
@@ -52,6 +56,7 @@ export default function UniversitiesPage() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [shortName, setShortName] = useState("");
+  const [schoolType, setSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
   const [country, setCountry] = useState("Ghana");
   const [city, setCity] = useState("Accra");
   const [address, setAddress] = useState("");
@@ -60,7 +65,7 @@ export default function UniversitiesPage() {
   const [website, setWebsite] = useState("");
   const [currency, setCurrency] = useState("GHS");
   const [establishedYear, setEstablishedYear] = useState("");
-  const [status, setStatus] = useState<"active" | "inactive" | "maintenance" | "suspended">("active");
+  const [status, setStatus] = useState<"active" | "inactive" | "maintenance" | "suspended" | "deleted">("active");
 
   // Governance & Quota fields
   const [fullAccess, setFullAccess] = useState(true);
@@ -100,6 +105,23 @@ export default function UniversitiesPage() {
 
   useEffect(() => {
     loadUniversities();
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlSearch = params.get("search");
+      if (urlSearch) {
+        setSearchTerm(urlSearch);
+      }
+    }
+
+    const handleGlobalSearch = (e: any) => {
+      if (e.detail && typeof e.detail.query === "string") {
+        setSearchTerm(e.detail.query);
+      }
+    };
+
+    window.addEventListener("global_search_query", handleGlobalSearch);
+    return () => window.removeEventListener("global_search_query", handleGlobalSearch);
   }, []);
 
   const openAddModal = () => {
@@ -108,6 +130,7 @@ export default function UniversitiesPage() {
     setName("");
     setCode("");
     setShortName("");
+    setSchoolType("university");
     setCountry("Ghana");
     setCity("Accra");
     setAddress("");
@@ -138,6 +161,7 @@ export default function UniversitiesPage() {
     setName(u.name);
     setCode(u.code);
     setShortName(u.short_name || "");
+    setSchoolType(u.school_type || u.institution_type || "university");
     setCountry(u.country || "Ghana");
     setCity(u.city || "Accra");
     setAddress(u.address || "");
@@ -190,7 +214,7 @@ export default function UniversitiesPage() {
     e.preventDefault();
     setErrorMsg("");
     if (!name || !code) {
-      setErrorMsg("University name and code are required.");
+      setErrorMsg("School name and code are required.");
       return;
     }
 
@@ -216,6 +240,8 @@ export default function UniversitiesPage() {
         name: name.trim(),
         code: code.trim().toUpperCase(),
         short_name: shortName.trim(),
+        school_type: schoolType,
+        institution_type: schoolType,
         country: country.trim(),
         city: city.trim(),
         address: address.trim(),
@@ -241,7 +267,7 @@ export default function UniversitiesPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to save university");
+        throw new Error(data.error || "Failed to save school");
       }
 
       setSuccessMsg(
@@ -267,44 +293,98 @@ export default function UniversitiesPage() {
         `/api/superadmin/universities?id=${encodeURIComponent(deletingUniv.id)}`,
         {
           method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: deletingUniv.id, code: deletingUniv.code }),
         }
       );
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete university");
+        throw new Error(data.error || "Failed to delete school");
       }
 
+      // Immediately purge from local state for instant UI update
+      setUniversities((prev) =>
+        prev.filter((u) => u.id !== deletingUniv.id && u.code !== deletingUniv.code)
+      );
+
       setSuccessMsg(
-        `University ${deletingUniv.name} has been deleted. All ${
+        `School '${deletingUniv.name}' and all ${
           data.affectedUsersCount ?? "associated"
-        } users have had their access revoked.`
+        } user accounts (including the system admin) have been permanently deleted from the database. System access is completely revoked.`
       );
       setDeletingUniv(null);
       await loadUniversities();
-      setTimeout(() => setSuccessMsg(""), 4000);
+      setTimeout(() => setSuccessMsg(""), 5000);
     } catch (err: any) {
-      alert(err.message || "Failed to delete university");
+      alert(err.message || "Failed to delete school");
     } finally {
       setIsDeleting(false);
     }
   };
 
+  const availableCountries = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const u of universities) {
+      const c = (u.country || "Ghana").trim();
+      if (c) {
+        counts[c] = (counts[c] || 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([countryName, count]) => ({ countryName, count }));
+  }, [universities]);
+
   const filtered = useMemo(() => {
-    return universities.filter((u) => {
+    const result = universities.filter((u) => {
       const matchesSearch =
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.country.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.city.toLowerCase().includes(searchTerm.toLowerCase());
+        (u.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.code || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.country || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.city || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = filterStatus === "all" || u.status === filterStatus;
       const matchesAccess =
         filterAccess === "all" ||
         (filterAccess === "full" && u.full_access !== false) ||
         (filterAccess === "restricted" && u.full_access === false);
-      return matchesSearch && matchesStatus && matchesAccess;
+      const matchesType =
+        filterType === "all" ||
+        (u.school_type || u.institution_type || "university") === filterType;
+      const matchesCountry =
+        filterCountry === "all" ||
+        (u.country || "Ghana").toLowerCase() === filterCountry.toLowerCase();
+      return matchesSearch && matchesStatus && matchesAccess && matchesType && matchesCountry;
     });
-  }, [universities, searchTerm, filterStatus, filterAccess]);
+
+    result.sort((a, b) => {
+      const countryA = (a.country || "Ghana").toLowerCase();
+      const countryB = (b.country || "Ghana").toLowerCase();
+      const nameA = (a.name || "").toLowerCase();
+      const nameB = (b.name || "").toLowerCase();
+
+      if (sortBy === "country_asc") {
+        return countryA.localeCompare(countryB) || nameA.localeCompare(nameB);
+      }
+      if (sortBy === "country_desc") {
+        return countryB.localeCompare(countryA) || nameA.localeCompare(nameB);
+      }
+      if (sortBy === "name_asc") {
+        return nameA.localeCompare(nameB);
+      }
+      if (sortBy === "name_desc") {
+        return nameB.localeCompare(nameA);
+      }
+      if (sortBy === "newest") {
+        return (
+          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+      }
+      return 0;
+    });
+
+    return result;
+  }, [universities, searchTerm, filterStatus, filterAccess, filterType, filterCountry, sortBy]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-16 font-sans">
@@ -321,7 +401,7 @@ export default function UniversitiesPage() {
             <span className="text-slate-300">/</span>
             <span>Core Administration</span>
             <span className="text-slate-300">/</span>
-            <span className="text-slate-800 font-semibold">Universities & Governance</span>
+            <span className="text-slate-800 font-semibold">Schools & Governance</span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 mt-1">Institutions & Quota Governance</h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -335,7 +415,7 @@ export default function UniversitiesPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            <span>Register University</span>
+            <span>Register A School</span>
           </button>
           <button
             onClick={loadUniversities}
@@ -361,27 +441,62 @@ export default function UniversitiesPage() {
         </div>
       )}
 
-      {/* Filter / Search Bar */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="relative w-full md:w-80">
+      {/* Filter & Sort Bar */}
+      <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+        <div className="relative w-full xl:w-72">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search university, code, country..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+            placeholder="Search school, code, city, country..."
+            className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+          {/* Country Filter */}
+          <select
+            value={filterCountry}
+            onChange={(e) => setFilterCountry(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
+          >
+            <option value="all">All Countries</option>
+            {availableCountries.map((c) => (
+              <option key={c.countryName} value={c.countryName}>
+                {c.countryName} ({c.count})
+              </option>
+            ))}
+          </select>
+
+          {/* School Type Filter */}
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
+          >
+            <option value="all">All School Types</option>
+            <option value="university">University</option>
+            <option value="high_school">High School</option>
+            <option value="vocational_school">Vocational School</option>
+          </select>
+
           {/* Status Filter */}
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
+            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
           >
-            <option value="all">All Operating Statuses</option>
+            <option value="all">All Statuses</option>
             <option value="active">Active Only</option>
             <option value="maintenance">Maintenance</option>
             <option value="suspended">Suspended</option>
@@ -391,28 +506,29 @@ export default function UniversitiesPage() {
           <select
             value={filterAccess}
             onChange={(e) => setFilterAccess(e.target.value as any)}
-            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
+            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Access Tiers</option>
-            <option value="full">Full Access (Unrestricted)</option>
+            <option value="full">Full Access</option>
             <option value="restricted">Restricted Quotas</option>
           </select>
 
-          <span className="text-xs text-slate-500 hidden sm:inline">
-            Showing <strong className="text-slate-800">{filtered.length}</strong> of {universities.length}
+          <span className="text-xs text-slate-500 ml-auto">
+            Showing <strong className="text-slate-800">{filtered.length}</strong> of{" "}
+            {universities.length}
           </span>
         </div>
       </div>
 
-      {/* Universities Cards Grid */}
+      {/* Schools Cards Grid */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center space-y-2 text-slate-400 bg-white rounded-2xl border border-slate-200/80 shadow-xs">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <span className="text-xs">Fetching universities and telemetry...</span>
+          <span className="text-xs">Fetching schools and telemetry...</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200/80 shadow-xs">
-          No matching universities found. Click &quot;Register University&quot; to add one.
+          No matching schools found. Click &quot;Register A School&quot; to add one.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -431,9 +547,24 @@ export default function UniversitiesPage() {
                       </div>
                       <div>
                         <h3 className="text-base font-bold text-slate-900 leading-tight">{u.name}</h3>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
                           <span className="text-xs font-mono font-bold text-blue-600">{u.code}</span>
                           {u.short_name && <span className="text-xs text-slate-500">• {u.short_name}</span>}
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider ${
+                              (u.school_type || u.institution_type) === "high_school"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : (u.school_type || u.institution_type) === "vocational_school"
+                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                : "bg-blue-50 text-blue-700 border border-blue-200"
+                            }`}
+                          >
+                            {(u.school_type || u.institution_type) === "high_school"
+                              ? "High School"
+                              : (u.school_type || u.institution_type) === "vocational_school"
+                              ? "Vocational"
+                              : "University"}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -503,11 +634,26 @@ export default function UniversitiesPage() {
                   )}
 
                   <div className="space-y-1.5 text-xs text-slate-600 pt-2 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span>
-                        {u.city}, {u.country}
-                      </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>{u.city}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFilterCountry((prev) =>
+                            prev.toLowerCase() === (u.country || "Ghana").toLowerCase()
+                              ? "all"
+                              : u.country || "Ghana"
+                          )
+                        }
+                        title={`Filter schools in ${u.country || "Ghana"}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                      >
+                        <Globe className="h-3 w-3 text-blue-600" />
+                        <span>{u.country || "Ghana"}</span>
+                      </button>
                     </div>
                     {u.email && (
                       <div className="flex items-center gap-2 truncate">
@@ -526,14 +672,14 @@ export default function UniversitiesPage() {
                     <button
                       onClick={() => openEditModal(u)}
                       className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors cursor-pointer"
-                      title="Edit University & Governance Limits"
+                      title="Edit School & Governance Limits"
                     >
                       <Edit2 className="h-3.5 w-3.5" />
                     </button>
                     <button
                       onClick={() => setDeletingUniv(u)}
                       className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
-                      title="Delete University (Blocks all users)"
+                      title="Delete School (Blocks all users)"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -563,7 +709,7 @@ export default function UniversitiesPage() {
             <div className="h-14 px-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                 <Building2 className="h-5 w-5 text-blue-600" />
-                <span>{editingId ? `Edit ${name || "University"}` : "Register New Institution"}</span>
+                <span>{editingId ? `Edit ${name || "School"}` : "Register New School"}</span>
               </div>
               <button
                 onClick={() => setShowModal(false)}
@@ -616,9 +762,71 @@ export default function UniversitiesPage() {
               {/* TAB 1: GENERAL INFORMATION */}
               {modalTab === "general" && (
                 <div className="grid grid-cols-2 gap-4">
+                  {/* School Type Selector */}
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
+                      School Type *
+                    </label>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setSchoolType("university")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          schoolType === "university"
+                            ? "border-blue-500 bg-blue-50/70 text-blue-900 shadow-2xs ring-1 ring-blue-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Building2 className={`h-4 w-4 ${schoolType === "university" ? "text-blue-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">University</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          Tertiary & Degree Institution
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSchoolType("high_school")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          schoolType === "high_school"
+                            ? "border-emerald-500 bg-emerald-50/70 text-emerald-900 shadow-2xs ring-1 ring-emerald-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <GraduationCap className={`h-4 w-4 ${schoolType === "high_school" ? "text-emerald-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">High School</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          Secondary & Senior High
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSchoolType("vocational_school")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          schoolType === "vocational_school"
+                            ? "border-amber-500 bg-amber-50/70 text-amber-900 shadow-2xs ring-1 ring-amber-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Layers className={`h-4 w-4 ${schoolType === "vocational_school" ? "text-amber-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">Vocational</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          TVET & Technical Trades
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="col-span-2">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      University Full Legal Name *
+                      School Full Legal Name *
                     </label>
                     <input
                       type="text"
@@ -986,7 +1194,7 @@ export default function UniversitiesPage() {
                               Permitted Role Types ({allowedRoles.length} of {AVAILABLE_UNIVERSITY_ROLES.length} selected)
                             </label>
                             <p className="text-[10.5px] text-slate-500">
-                              Only the selected roles can be provisioned or assigned within this university
+                              Only the selected roles can be provisioned or assigned within this school
                             </p>
                           </div>
                           <div className="flex items-center gap-2 text-[11px]">
@@ -1130,7 +1338,24 @@ export default function UniversitiesPage() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">{inspectUniv.name}</h3>
-                  <p className="text-[11px] text-slate-500 font-mono">Code: {inspectUniv.code}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] text-slate-500 font-mono">Code: {inspectUniv.code}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                        (inspectUniv.school_type || inspectUniv.institution_type) === "high_school"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : (inspectUniv.school_type || inspectUniv.institution_type) === "vocational_school"
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : "bg-blue-50 text-blue-700 border border-blue-200"
+                      }`}
+                    >
+                      {(inspectUniv.school_type || inspectUniv.institution_type) === "high_school"
+                        ? "High School"
+                        : (inspectUniv.school_type || inspectUniv.institution_type) === "vocational_school"
+                        ? "Vocational School"
+                        : "University"}
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
@@ -1288,7 +1513,7 @@ export default function UniversitiesPage() {
             </h3>
 
             <div className="mt-3 p-3.5 rounded-xl bg-red-50/80 border border-red-200 text-xs text-red-800 leading-relaxed">
-              <strong>CRITICAL WARNING:</strong> When this university is deleted, all of its system
+              <strong>CRITICAL WARNING:</strong> When this school is deleted, all of its system
               administrators, faculty members, and students will <strong>immediately lose access and be blocked</strong> from accessing the system.
             </div>
 

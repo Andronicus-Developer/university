@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
+import GlobalSearchBar from "@/app/components/GlobalSearchBar";
 import {
   LayoutGrid,
   Building2,
@@ -59,7 +61,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const [userName, setUserName] = useState<string>("Super Administrator");
   const [userEmail, setUserEmail] = useState<string>("superadmin@university.edu.gh");
   const [userRole, setUserRole] = useState<string>("Root Super Administrator");
-  const [schoolName, setSchoolName] = useState<string>("University Management System");
+  const [schoolName, setSchoolName] = useState<string>("School Management System");
   const [unreadNotifications, setUnreadNotifications] = useState<number>(3);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
@@ -100,24 +102,27 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           data: { user },
         } = await supabase.auth.getUser();
 
-        if (user) {
-          setUserEmail(user.email || "superadmin@university.edu.gh");
-          const metaName = user.user_metadata?.full_name || "Super Administrator";
-          setUserName(metaName);
-          setUserRole("Super Administrator");
+        if (!user) {
+          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+          return;
+        }
 
-          try {
-            const { count } = await (supabase as any)
-              .from("notifications")
-              .select("*", { count: "exact", head: true })
-              .eq("user_id", user.id)
-              .eq("is_read", false);
-            if (count !== null && count !== undefined) {
-              setUnreadNotifications(count);
-            }
-          } catch {
-            // ignore
+        setUserEmail(user.email || "superadmin@university.edu.gh");
+        const metaName = user.user_metadata?.full_name || "Super Administrator";
+        setUserName(metaName);
+        setUserRole("Super Administrator");
+
+        try {
+          const { count } = await (supabase as any)
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("is_read", false);
+          if (count !== null && count !== undefined) {
+            setUnreadNotifications(count);
           }
+        } catch {
+          // ignore
         }
       } catch (err) {
         console.warn("Could not load auth user in superadmin:", err);
@@ -130,20 +135,10 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name && /^sb-.*-auth-token/.test(name)) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
       setIsSigningOut(false);
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 
@@ -153,7 +148,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       title: "Core Administration",
       items: [
         { id: "dashboard", label: "System Overview", href: "/superadmin/dashboard", icon: LayoutGrid, badge: "Live" },
-        { id: "universities", label: "Universities & Campuses", href: "/superadmin/universities", icon: Building2, badge: "Tenants" },
+        { id: "universities", label: "Schools & Campuses", href: "/superadmin/universities", icon: Building2, badge: "Tenants" },
         { id: "system-admins", label: "System Administrators", href: "/superadmin/system-admins", icon: ShieldCheck, badge: "Admins" },
         { id: "users", label: "Users & Directory", href: "/superadmin/users", icon: Users },
         { id: "roles", label: "Roles & Permissions", href: "/superadmin/roles", icon: UserCheck },
@@ -180,7 +175,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         { id: "health", label: "Monitoring & Health", href: "/superadmin/health", icon: Activity, badge: "99.9%" },
         { id: "backups", label: "Backup & Recovery Status", href: "/superadmin/backups", icon: Database },
         { id: "modules", label: "Feature Flags", href: "/superadmin/modules", icon: Sliders },
-        { id: "settings", label: "Maintenance Mode", href: "/superadmin/settings", icon: Sliders },
+        { id: "settings", label: "Settings & School Menus", href: "/superadmin/settings", icon: Sliders },
       ],
     },
   ];
@@ -374,17 +369,10 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               <Menu className="h-4 w-4" />
             </button>
 
-            <div className="relative w-full">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search universities, admins, background jobs, logs..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <span className="hidden sm:inline-block absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-white border border-slate-200 rounded">
-                ⌘K
-              </span>
-            </div>
+            <GlobalSearchBar
+              portal="superadmin"
+              placeholder="Search schools, modules, admins, background jobs, logs..."
+            />
           </div>
 
           {/* Center: Live Date & Time pill */}
@@ -398,18 +386,12 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
 
           {/* Right: Scope Badge & Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Multi-Tenant Scope Badge */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-blue-50/80 border border-blue-200/70 rounded-xl text-xs text-blue-800 font-semibold shadow-2xs">
-              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
-              <span>Scope: Global Multi-Tenant</span>
-            </div>
-
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
               {/* Region Flag */}
               <div
                 className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-sm cursor-default"
-                title="Ghana University Region"
+                title="Ghana Region"
               >
                 🇬🇭
               </div>

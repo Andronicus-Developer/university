@@ -24,10 +24,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "University name and code are required." }, { status: 400 });
     }
 
+    const schoolType = body.school_type || body.institution_type || "university";
+
     const created = await createUniversity({
       name: body.name.trim(),
       code: body.code.trim().toUpperCase(),
       short_name: body.short_name?.trim() || "",
+      school_type: schoolType,
+      institution_type: schoolType,
       country: body.country?.trim() || "Ghana",
       city: body.city?.trim() || "Accra",
       address: body.address?.trim() || "",
@@ -68,6 +72,8 @@ export async function PUT(request: NextRequest) {
       name: body.name?.trim(),
       code: body.code?.trim() ? body.code.trim().toUpperCase() : undefined,
       short_name: body.short_name?.trim(),
+      school_type: body.school_type || body.institution_type,
+      institution_type: body.school_type || body.institution_type,
       country: body.country?.trim(),
       city: body.city?.trim(),
       address: body.address?.trim(),

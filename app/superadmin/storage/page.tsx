@@ -39,7 +39,7 @@ export default function StorageFilePoliciesPage() {
     {
       name: "public-assets",
       isPrivate: false,
-      description: "University logos, faculty seals, verified prospectus PDFs, and public emblems.",
+      description: "School logos, faculty seals, verified prospectus PDFs, and public emblems.",
       objectsCount: 88,
     },
   ];

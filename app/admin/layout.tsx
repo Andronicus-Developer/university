@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { signOutUser } from "@/lib/auth/signout";
+import GlobalSearchBar from "@/app/components/GlobalSearchBar";
 import {
   LayoutGrid,
   GraduationCap,
@@ -35,7 +37,50 @@ import {
   Menu,
   X,
   Loader2,
+  Wrench,
+  Layers,
+  Briefcase,
+  Boxes,
+  Activity,
+  Database,
+  Sparkles,
+  Folder,
+  Check,
 } from "lucide-react";
+
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  LayoutGrid,
+  GraduationCap,
+  Users,
+  UserCheck,
+  BookOpen,
+  CalendarDays,
+  FileCheck2,
+  CheckSquare,
+  CreditCard,
+  CalendarRange,
+  Megaphone,
+  BookMarked,
+  BusFront,
+  Building2,
+  Sliders,
+  ShieldCheck,
+  FileText,
+  BarChart3,
+  UserPlus,
+  Wrench,
+  Layers,
+  Briefcase,
+  Boxes,
+  Clock,
+  Activity,
+  Database,
+  Sparkles,
+  Folder,
+  Check,
+  Bell,
+  Search,
+};
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -64,6 +109,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [schoolType, setSchoolType] = useState<string>("university");
+  const [dynamicCategories, setDynamicCategories] = useState<NavCategory[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -104,22 +151,25 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (user) {
-        setUserEmail(user.email || "admin@university.edu.gh");
-        const metaName = user.user_metadata?.full_name || "System Administrator";
-        setUserName(metaName);
-        setUserRole(user.user_metadata?.role || "Super Administrator");
+      if (!user) {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
 
-        try {
-          const { count } = await (supabase as any)
-            .from("notifications")
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", user.id)
-            .eq("is_read", false);
-          if (count !== null) setUnreadNotifications(count);
-        } catch {
-          // ignore
-        }
+      setUserEmail(user.email || "admin@university.edu.gh");
+      const metaName = user.user_metadata?.full_name || "System Administrator";
+      setUserName(metaName);
+      setUserRole(user.user_metadata?.role || "Super Administrator");
+
+      try {
+        const { count } = await (supabase as any)
+          .from("notifications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("is_read", false);
+        if (count !== null) setUnreadNotifications(count);
+      } catch {
+        // ignore
       }
 
       try {
@@ -137,6 +187,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       }
 
       // Fetch School / Institution Info directly from database
+      let currentSchoolType = "university";
       try {
         const res = await fetch("/api/settings/institution");
         if (res.ok) {
@@ -145,11 +196,42 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             setSchoolName(data.name);
             if (data.abbreviation) setSchoolAbbr(data.abbreviation);
             if (data.logo_url) setSchoolLogo(data.logo_url);
-            return;
+            if (data.school_type) {
+              currentSchoolType = data.school_type;
+              setSchoolType(data.school_type);
+            }
           }
         }
       } catch {
         // Fallback directly to supabase table
+      }
+
+      // Fetch dynamic configurable school sidebar menu items
+      try {
+        const resMenu = await fetch(`/api/admin/sidebar-menu?school_type=${currentSchoolType}`);
+        if (resMenu.ok) {
+          const menuItems = await resMenu.json();
+          if (Array.isArray(menuItems) && menuItems.length > 0) {
+            const grouped: Record<string, NavCategory> = {};
+            for (const m of menuItems) {
+              const catTitle = m.category || "Core Administration";
+              if (!grouped[catTitle]) {
+                grouped[catTitle] = { title: catTitle, items: [] };
+              }
+              const IconC = ICON_MAP[m.icon] || Boxes;
+              grouped[catTitle].items.push({
+                id: m.id,
+                label: m.label,
+                href: m.href,
+                icon: IconC,
+                badge: m.badge || undefined,
+              });
+            }
+            setDynamicCategories(Object.values(grouped));
+          }
+        }
+      } catch (menuErr) {
+        console.warn("Could not load dynamic school sidebar menu:", menuErr);
       }
 
       try {
@@ -183,29 +265,25 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
     };
 
+    const handleSchoolMenuUpdate = () => {
+      loadAdminData();
+    };
+
     window.addEventListener("institution_updated", handleInstitutionUpdate);
+    window.addEventListener("school_menu_updated", handleSchoolMenuUpdate);
     return () => {
       window.removeEventListener("institution_updated", handleInstitutionUpdate);
+      window.removeEventListener("school_menu_updated", handleSchoolMenuUpdate);
     };
   }, []);
 
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      if (typeof document !== "undefined") {
-        document.cookie.split(";").forEach((c) => {
-          const name = c.split("=")[0]?.trim();
-          if (name && /^sb-.*-auth-token/.test(name)) {
-            document.cookie = `${name}=; Max-Age=0; path=/`;
-          }
-        });
-      }
-      window.location.assign("/");
+      await signOutUser("/");
     } catch {
       setIsSigningOut(false);
-      window.location.assign("/");
+      window.location.replace("/");
     }
   };
 
@@ -290,9 +368,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </button>
       </div>
 
-      {/* Navigation Links (Static Fixed Width, Scrollable Nav) */}
+      {/* Navigation Links (Configurable Dynamic Nav, Scrollable) */}
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-200">
-        {navCategories.map((group, groupIdx) => (
+        {(dynamicCategories.length > 0 ? dynamicCategories : navCategories).map((group, groupIdx) => (
           <div key={groupIdx} className="space-y-1">
             <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               {group.title}
@@ -417,17 +495,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <Menu className="h-4 w-4" />
             </button>
 
-            <div className="relative w-full">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search students, staff, modules, courses..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <span className="hidden sm:inline-block absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-white border border-slate-200 rounded">
-                ⌘K
-              </span>
-            </div>
+            <GlobalSearchBar
+              portal="admin"
+              placeholder="Search students, staff, modules, courses..."
+            />
           </div>
 
           {/* Center: Live Date & Time pill */}

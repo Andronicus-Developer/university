@@ -51,6 +51,74 @@ function getTargetDashboardForRoles(roles: string[], email?: string): string {
   return "/admin/dashboard";
 }
 
+function respondNotFound(
+  request: NextRequest,
+  sourceResponse?: NextResponse
+): NextResponse {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    const res = NextResponse.json(
+      { error: "Not Found", message: "The requested resource was not found on this server." },
+      { status: 404 }
+    );
+    res.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+    );
+    res.headers.set("Pragma", "no-cache");
+    res.headers.set("Expires", "0");
+    return res;
+  }
+
+  // Rewrite to /not-found: preserves the URL the user typed in their browser bar,
+  // renders the Not Found 404 UI, and sends HTTP status code 404.
+  const notFoundUrl = new URL("/not-found", request.url);
+  const res = NextResponse.rewrite(notFoundUrl, {
+    status: 404,
+    statusText: "Not Found",
+  });
+
+  if (sourceResponse) {
+    sourceResponse.cookies.getAll().forEach((c) => {
+      res.cookies.set(c);
+    });
+    const setCookies = sourceResponse.headers.getSetCookie?.() || [];
+    setCookies.forEach((header) => {
+      res.headers.append("Set-Cookie", header);
+    });
+  }
+
+  res.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+  );
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
+}
+
+function createRedirectWithCookies(
+  url: URL,
+  sourceResponse?: NextResponse
+): NextResponse {
+  const res = NextResponse.redirect(url);
+  if (sourceResponse) {
+    sourceResponse.cookies.getAll().forEach((c) => {
+      res.cookies.set(c);
+    });
+    const setCookies = sourceResponse.headers.getSetCookie?.() || [];
+    setCookies.forEach((header) => {
+      res.headers.append("Set-Cookie", header);
+    });
+  }
+  res.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+  );
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -69,6 +137,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const isLoginPage = pathname === "/" || pathname === "/login";
+  const isPublicPage = isLoginPage || pathname === "/not-found" || pathname === "/404";
 
   // 2. Safe session resolution
   let supabaseResponse = NextResponse.next({ request });
@@ -85,9 +154,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. Unauthenticated User Handling:
-  // ONLY login page is accessible to unauthenticated users.
+  // ONLY login page and 404 error page are accessible to unauthenticated users.
   if (!user) {
-    if (isLoginPage) {
+    if (isPublicPage) {
       return supabaseResponse;
     }
     if (pathname.startsWith("/api/")) {
@@ -95,7 +164,7 @@ export async function middleware(request: NextRequest) {
     }
     const redirectUrl = new URL("/", request.url);
     redirectUrl.searchParams.set("redirectedFrom", pathname);
-    return NextResponse.redirect(redirectUrl);
+    return createRedirectWithCookies(redirectUrl, supabaseResponse);
   }
 
   // 4. Authenticated User Handling:
@@ -169,27 +238,94 @@ export async function middleware(request: NextRequest) {
   }
 
   // 4.2. University Deletion & Deactivation Barrier
-  // If user is NOT superadmin, verify their university has not been deleted or suspended
+  // If user is NOT superadmin, verify their university and account have not been deleted
   if (!isSuperAdmin && supabase) {
     try {
+      // 1. Check deleted_users blacklist in system_settings
+      const { data: delUsersRow } = await (supabase
+        .from("system_settings" as any)
+        .select("setting_value")
+        .eq("setting_key", "deleted_users")
+        .maybeSingle() as any);
+
+      const deletedUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
+      const isUserBlacklisted = deletedUsersList.some(
+        (u: any) => u?.id === user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
+      );
+
+      if (isUserBlacklisted) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Access Denied: Your account has been permanently deleted from the database." },
+            { status: 403 }
+          );
+        }
+        const url = new URL("/unauthorized", request.url);
+        url.searchParams.set("reason", "university_deleted");
+        return NextResponse.redirect(url);
+      }
+
+      // 2. Query profile from database
       const { data: profile } = await supabase
         .from("profiles")
         .select("account_status, metadata")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (profile) {
-        const metadata = (profile.metadata || {}) as Record<string, any>;
-        const accountStatus = (profile.account_status as string) || "";
-        const isBlocked =
-          accountStatus === "suspended" ||
-          accountStatus === "deleted" ||
-          metadata.university_status === "deleted";
+      // If user profile no longer exists in DB (was deleted with university):
+      if (!profile) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Access Denied: Account not found or has been deleted." },
+            { status: 403 }
+          );
+        }
+        const url = new URL("/unauthorized", request.url);
+        url.searchParams.set("reason", "university_deleted");
+        return NextResponse.redirect(url);
+      }
 
-        if (isBlocked) {
+      const metadata = (profile.metadata || {}) as Record<string, any>;
+      const accountStatus = (profile.account_status as string) || "";
+      const isBlocked =
+        accountStatus === "suspended" ||
+        accountStatus === "deleted" ||
+        metadata.university_status === "deleted";
+
+      if (isBlocked) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Access Denied: Your institution and account have been deleted or deactivated." },
+            { status: 403 }
+          );
+        }
+        const url = new URL("/unauthorized", request.url);
+        url.searchParams.set("reason", "university_deleted");
+        return NextResponse.redirect(url);
+      }
+
+      // 3. Check if user's university is in deleted_universities registry
+      const userUnivId = metadata.university_id || (user.user_metadata as any)?.university_id;
+      const userUnivCode = metadata.university_code || (user.user_metadata as any)?.university_code;
+
+      if (userUnivId || userUnivCode) {
+        const { data: settingRow } = await (supabase
+          .from("system_settings" as any)
+          .select("setting_value")
+          .eq("setting_key", "deleted_universities")
+          .maybeSingle() as any);
+
+        const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
+        if (
+          deletedList.some(
+            (d: any) =>
+              (userUnivId && d?.id === userUnivId) ||
+              (userUnivCode && d?.code === userUnivCode)
+          )
+        ) {
           if (pathname.startsWith("/api/")) {
             return NextResponse.json(
-              { error: "Access Denied: Your institution has been deleted or deactivated." },
+              { error: "Access Denied: Your institution has been deleted." },
               { status: 403 }
             );
           }
@@ -197,114 +333,150 @@ export async function middleware(request: NextRequest) {
           url.searchParams.set("reason", "university_deleted");
           return NextResponse.redirect(url);
         }
-
-        const userUnivId = metadata.university_id || (user.user_metadata as any)?.university_id;
-        if (userUnivId) {
-          const { data: settingRow } = await (supabase
-            .from("system_settings" as any)
-            .select("setting_value")
-            .eq("setting_key", "deleted_universities")
-            .maybeSingle() as any);
-
-          const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
-          if (deletedList.some((d: any) => d?.id === userUnivId || d?.code === metadata.university_code)) {
-            if (pathname.startsWith("/api/")) {
-              return NextResponse.json(
-                { error: "Access Denied: Your institution has been deleted." },
-                { status: 403 }
-              );
-            }
-            const url = new URL("/unauthorized", request.url);
-            url.searchParams.set("reason", "university_deleted");
-            return NextResponse.redirect(url);
-          }
-        }
       }
     } catch (univCheckErr) {
       console.warn("Could not perform university deletion check in middleware:", univCheckErr);
     }
   }
 
-  const buildUnauthorizedRedirect = (targetPath: string) => {
-    const url = new URL("/unauthorized", request.url);
-    url.searchParams.set("from", targetPath);
-    return NextResponse.redirect(url);
-  };
+  // Enforce zero cache on all protected views so browser cannot serve from bfcache after logout
+  supabaseResponse.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+  );
+  supabaseResponse.headers.set("Pragma", "no-cache");
+  supabaseResponse.headers.set("Expires", "0");
 
   // 4.5. Super Admin Exclusive Barrier (ONLY superadmin can access /superadmin)
   if (pathname.startsWith("/superadmin") || pathname.startsWith("/api/superadmin")) {
     if (!isSuperAdmin) {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Forbidden: Super Admin access required" }, { status: 403 });
-      }
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
 
   // 5. Role-Based Access Control (RBAC) boundaries
-  // System Admin and Super Admin hold universal superuser bypass across other portals
+  // Check Admin portal access
+  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+    const hasAdminAccess = roles.some((r) => ADMIN_STAFF_ROLES.includes(r));
+    if (!hasAdminAccess) {
+      return respondNotFound(request, supabaseResponse);
+    }
+
+    // Granular permissions within /admin for non-system admins:
+    if (!isSystemAdmin) {
+      // /admin/users & /admin/settings: strictly for system administrators
+      if (
+        pathname.startsWith("/admin/users") ||
+        pathname.startsWith("/api/admin/users") ||
+        pathname.startsWith("/admin/settings") ||
+        pathname.startsWith("/api/admin/settings")
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/audit: auditor, registrar
+      if (
+        (pathname.startsWith("/admin/audit") || pathname.startsWith("/api/admin/audit")) &&
+        !roles.includes("auditor") &&
+        !roles.includes("registrar")
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/fees: finance roles, registrar, dean
+      if (
+        (pathname.startsWith("/admin/fees") || pathname.startsWith("/api/admin/fees")) &&
+        !roles.some((r) => ["bursar", "finance_officer", "accountant", "registrar", "dean"].includes(r))
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/library: librarian, dean
+      if (
+        (pathname.startsWith("/admin/library") || pathname.startsWith("/api/admin/library")) &&
+        !roles.includes("librarian") &&
+        !roles.includes("dean")
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/hostels: hostel_officer, dean
+      if (
+        (pathname.startsWith("/admin/hostels") || pathname.startsWith("/api/admin/hostels")) &&
+        !roles.includes("hostel_officer") &&
+        !roles.includes("dean")
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/admissions: admissions_officer, registrar, dean
+      if (
+        (pathname.startsWith("/admin/admissions") || pathname.startsWith("/api/admin/admissions")) &&
+        !roles.some((r) => ["admissions_officer", "registrar", "dean", "academic_affairs_officer"].includes(r))
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+
+      // /admin/leave & /admin/staff: hr_officer, registrar, dean, vice_chancellor
+      if (
+        (pathname.startsWith("/admin/leave") ||
+          pathname.startsWith("/api/admin/leave") ||
+          pathname.startsWith("/admin/staff") ||
+          pathname.startsWith("/api/admin/staff")) &&
+        !roles.some((r) => ["hr_officer", "registrar", "dean", "vice_chancellor"].includes(r))
+      ) {
+        return respondNotFound(request, supabaseResponse);
+      }
+    }
+
+    return supabaseResponse;
+  }
+
+  // System Admin and Super Admin hold universal access across non-superadmin portals
   if (isSystemAdmin) {
     return supabaseResponse;
   }
 
-  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
-    const hasAdminAccess = roles.some((r) => ADMIN_STAFF_ROLES.includes(r));
-    if (!hasAdminAccess) {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
-      }
-      if (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant")) {
-        return NextResponse.redirect(new URL("/finance/dashboard", request.url));
-      }
-      return buildUnauthorizedRedirect(pathname);
-    }
-    return supabaseResponse;
-  }
-
-  if (pathname.startsWith("/lecturer")) {
-    const hasLecturerAccess = roles.includes("lecturer") || roles.includes("system_admin");
+  if (pathname.startsWith("/lecturer") || pathname.startsWith("/api/lecturer")) {
+    const hasLecturerAccess = roles.includes("lecturer");
     if (!hasLecturerAccess) {
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
 
-  if (pathname.startsWith("/student")) {
-    const hasStudentAccess = roles.includes("student") || roles.includes("system_admin");
+  if (pathname.startsWith("/student") || pathname.startsWith("/api/student")) {
+    const hasStudentAccess = roles.includes("student");
     if (!hasStudentAccess) {
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
 
-  if (pathname.startsWith("/applicant")) {
+  if (pathname.startsWith("/applicant") || pathname.startsWith("/api/applicant")) {
     const hasApplicantAccess =
       roles.includes("applicant") ||
-      roles.includes("system_admin") ||
       roles.includes("admissions_officer");
     if (!hasApplicantAccess) {
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
 
-  if (pathname.startsWith("/advisor")) {
-    const hasAdvisorAccess = roles.includes("academic_advisor") || roles.includes("system_admin");
+  if (pathname.startsWith("/advisor") || pathname.startsWith("/api/advisor")) {
+    const hasAdvisorAccess = roles.includes("academic_advisor") || roles.includes("advisor");
     if (!hasAdvisorAccess) {
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
 
   if (pathname.startsWith("/finance") || pathname.startsWith("/api/finance")) {
     const hasFinanceAccess =
-      roles.some((r) => [...ADMIN_STAFF_ROLES, "bursar", "finance_officer", "accountant"].includes(r));
+      roles.some((r) => ["bursar", "finance_officer", "accountant", "auditor"].includes(r));
     if (!hasFinanceAccess) {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Forbidden: Finance access required" }, { status: 403 });
-      }
-      return buildUnauthorizedRedirect(pathname);
+      return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
   }
