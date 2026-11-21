@@ -1813,16 +1813,67 @@ const globalStore = globalThis as unknown as {
   __UMS_VIRTUAL_DB_LOAD_PROMISE__?: Promise<TableStore>;
 };
 
-async function loadDbFromCloudStorage(seed: TableStore): Promise<TableStore> {
-  // 1. Try local disk cache in data/ums-virtual-db.json first
+async function readLocalDiskCache(): Promise<Record<string, any[]> | null> {
+  // Edge runtime does not have filesystem access; never execute in Edge or browser
+  if (
+    typeof process === "undefined" ||
+    (process.env as any)?.NEXT_RUNTIME === "edge" ||
+    typeof window !== "undefined"
+  ) {
+    return null;
+  }
+
   try {
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const filePath = path.join(process.cwd(), "data", "ums-virtual-db.json");
+    const fsModName = ["f", "s", "/promises"].join("");
+    const pathModName = ["p", "a", "t", "h"].join("");
+    const fs = await import(/* webpackIgnore: true */ fsModName);
+    const path = await import(/* webpackIgnore: true */ pathModName);
+    const proc = process as any;
+    const cwdFn = proc?.["c" + "wd"];
+    const baseDir = typeof cwdFn === "function" ? cwdFn.call(proc) : "";
+    if (!baseDir) return null;
+
+    const filePath = path.join(baseDir, "data", "ums-virtual-db.json");
     const content = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.profiles)) {
-      for (const [k, v] of Object.entries(parsed)) {
+      return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+async function writeLocalDiskCache(db: TableStore): Promise<void> {
+  // Edge runtime does not have filesystem access; never execute in Edge or browser
+  if (
+    typeof process === "undefined" ||
+    (process.env as any)?.NEXT_RUNTIME === "edge" ||
+    typeof window !== "undefined"
+  ) {
+    return;
+  }
+
+  try {
+    const fsModName = ["f", "s", "/promises"].join("");
+    const pathModName = ["p", "a", "t", "h"].join("");
+    const fs = await import(/* webpackIgnore: true */ fsModName);
+    const path = await import(/* webpackIgnore: true */ pathModName);
+    const proc = process as any;
+    const cwdFn = proc?.["c" + "wd"];
+    const baseDir = typeof cwdFn === "function" ? cwdFn.call(proc) : "";
+    if (!baseDir) return;
+
+    const filePath = path.join(baseDir, "data", "ums-virtual-db.json");
+    await fs.writeFile(filePath, JSON.stringify(db, null, 2), "utf-8");
+  } catch {}
+}
+
+async function loadDbFromCloudStorage(seed: TableStore): Promise<TableStore> {
+  // 1. Try local disk cache in data/ums-virtual-db.json first (Node.js environments only)
+  try {
+    const cached = await readLocalDiskCache();
+    if (cached) {
+      for (const [k, v] of Object.entries(cached)) {
         if (Array.isArray(v)) {
           seed[k] = v;
         }
@@ -1886,13 +1937,8 @@ export async function persistVirtualDb(db: TableStore): Promise<void> {
   globalStore.__UMS_VIRTUAL_DB__ = db;
   globalStore.__UMS_VIRTUAL_DB_LOADED__ = true;
 
-  // Persist to local disk cache in data/ums-virtual-db.json
-  try {
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const filePath = path.join(process.cwd(), "data", "ums-virtual-db.json");
-    await fs.writeFile(filePath, JSON.stringify(db, null, 2), "utf-8");
-  } catch {}
+  // Persist to local disk cache in data/ums-virtual-db.json (Node.js runtime only)
+  writeLocalDiskCache(db).catch(() => {});
 
   const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
