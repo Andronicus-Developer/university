@@ -10,6 +10,58 @@ export async function GET(request: NextRequest) {
     }
 
     const normalizedEmail = user.email?.trim().toLowerCase();
+    const isRootSuperAdmin =
+      normalizedEmail === "superadmin@university.edu.gh" ||
+      user.app_metadata?.role === "superadmin";
+
+    // Deletion check
+    if (!isRootSuperAdmin) {
+      try {
+        const adminClient = getAdminClient();
+        const { data: delSetting } = await (adminClient as any)
+          .from("system_settings")
+          .select("setting_value")
+          .eq("setting_key", "deleted_users")
+          .maybeSingle();
+
+        const delList = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
+        const isDeleted = delList.some(
+          (d: any) => d?.id === user.id || (d?.email && d.email.toLowerCase() === normalizedEmail)
+        );
+
+        if (isDeleted) {
+          return NextResponse.json(
+            { authenticated: false, isDeleted: true, error: "Account deleted" },
+            { status: 200 }
+          );
+        }
+
+        let { data: profile } = await (adminClient as any)
+          .from("profiles")
+          .select("account_status, metadata, school_id, university_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!profile && normalizedEmail) {
+          try {
+            const { data: profByEmail } = await (adminClient as any)
+              .from("profiles")
+              .select("account_status, metadata, school_id, university_id")
+              .ilike("email", normalizedEmail)
+              .maybeSingle();
+            if (profByEmail) profile = profByEmail;
+          } catch {}
+        }
+
+        if (profile && profile.account_status === "deleted") {
+          return NextResponse.json(
+            { authenticated: false, isDeleted: true, error: "Account deleted" },
+            { status: 200 }
+          );
+        }
+      } catch {}
+    }
+
     let roles: string[] = [];
 
     const metaRole =

@@ -30,7 +30,8 @@ import {
   Square,
   Sliders,
   Info,
-  ArrowUpDown,
+  Table,
+  LayoutGrid,
 } from "lucide-react";
 import {
   type UniversityItem,
@@ -45,6 +46,7 @@ export default function UniversitiesPage() {
   const [filterType, setFilterType] = useState<"all" | "university" | "high_school" | "vocational_school">("all");
   const [filterCountry, setFilterCountry] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"country_asc" | "country_desc" | "name_asc" | "name_desc" | "newest">("country_asc");
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [isLoading, setIsLoading] = useState(true);
 
   // Add / Edit Modal state
@@ -520,7 +522,7 @@ export default function UniversitiesPage() {
         </div>
       </div>
 
-      {/* Schools Cards Grid */}
+      {/* Schools Display: Tabular Format (Default) or Cards Grid */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center space-y-2 text-slate-400 bg-white rounded-2xl border border-slate-200/80 shadow-xs">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -530,7 +532,263 @@ export default function UniversitiesPage() {
         <div className="py-20 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200/80 shadow-xs">
           No matching schools found. Click &quot;Register A School&quot; to add one.
         </div>
+      ) : viewMode === "table" ? (
+        /* ========================================================= */
+        /* TABULAR FORMAT: ADDED SCHOOLS ARRANGED IN A TABLE        */
+        /* ========================================================= */
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-500 font-bold text-[11px] select-none">
+                  <th className="py-3.5 px-4">School / Institution</th>
+                  <th className="py-3.5 px-3">School Type</th>
+                  <th className="py-3.5 px-3">Location / Country</th>
+                  <th className="py-3.5 px-3">Status</th>
+                  <th className="py-3.5 px-3 text-center">Users Quota</th>
+                  <th className="py-3.5 px-3 text-center">Depts Quota</th>
+                  <th className="py-3.5 px-3">Access Governance</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((u) => {
+                  const isFull = u.full_access !== false;
+                  const sType = u.school_type || u.institution_type || "university";
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50/80 transition-colors group">
+                      {/* School Name, Code, Logo */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`h-10 w-10 rounded-xl flex items-center justify-center text-white font-extrabold text-xs shrink-0 shadow-2xs ${
+                              sType === "high_school"
+                                ? "bg-gradient-to-tr from-emerald-600 to-teal-700"
+                                : sType === "vocational_school"
+                                ? "bg-gradient-to-tr from-amber-600 to-orange-700"
+                                : "bg-gradient-to-tr from-blue-600 to-indigo-700"
+                            }`}
+                          >
+                            {u.code.slice(0, 3)}
+                          </div>
+                          <div className="min-w-0 max-w-[280px]">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900 hover:text-blue-600 transition-colors text-[13px] truncate">
+                                {u.name}
+                              </span>
+                              <span className="font-mono text-[10px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                                {u.code}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 truncate">
+                              {u.short_name && <span>{u.short_name}</span>}
+                              {u.email && <span>• {u.email}</span>}
+                              {u.default_currency && (
+                                <span className="font-mono font-bold text-slate-500">
+                                  • {u.default_currency}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* School Type */}
+                      <td className="py-3.5 px-3">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
+                            sType === "high_school"
+                              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              : sType === "vocational_school"
+                              ? "bg-amber-50 text-amber-900 border border-amber-200"
+                              : "bg-blue-50 text-blue-800 border border-blue-200"
+                          }`}
+                        >
+                          {sType === "high_school"
+                            ? "High School"
+                            : sType === "vocational_school"
+                            ? "Vocational"
+                            : "University"}
+                        </span>
+                      </td>
+
+                      {/* Location & Country */}
+                      <td className="py-3.5 px-3">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-slate-800">{u.city}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFilterCountry((prev) =>
+                                prev.toLowerCase() === (u.country || "Ghana").toLowerCase()
+                                  ? "all"
+                                  : u.country || "Ghana"
+                              )
+                            }
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-blue-600 transition-colors cursor-pointer w-fit mt-0.5"
+                          >
+                            <Globe className="h-3 w-3 text-blue-500" />
+                            <span>{u.country || "Ghana"}</span>
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3.5 px-3">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] font-bold ${
+                            u.status === "active"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              u.status === "active" ? "bg-emerald-600 animate-pulse" : "bg-amber-600"
+                            }`}
+                          />
+                          {u.status ? u.status.charAt(0).toUpperCase() + u.status.slice(1) : "Active"}
+                        </span>
+                      </td>
+
+                      {/* Users Quota */}
+                      <td className="py-3.5 px-3 text-center">
+                        <div className="inline-flex flex-col items-center">
+                          <span className="font-bold text-slate-800 text-xs">
+                            {u.current_users_count ?? 1} / {isFull || !u.max_users ? "∞" : u.max_users}
+                          </span>
+                          {!isFull && u.max_users && (
+                            <div className="w-16 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                              <div
+                                className="h-full bg-blue-600 rounded-full"
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    ((u.current_users_count ?? 1) / Number(u.max_users)) * 100
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Departments Quota */}
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="font-bold text-slate-800 text-xs">
+                          {u.current_departments_count ?? 3} /{" "}
+                          {isFull || !u.max_departments ? "∞" : u.max_departments}
+                        </span>
+                      </td>
+
+                      {/* Access Governance */}
+                      <td className="py-3.5 px-3">
+                        <div className="flex flex-col items-start gap-1">
+                          {isFull ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Sparkles className="h-2.5 w-2.5 text-emerald-600" />
+                              Full Access
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <ShieldAlert className="h-2.5 w-2.5 text-indigo-600" />
+                              {u.allowed_roles?.length || 0} Roles Permitted
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setInspectUniv(u)}
+                            className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                          >
+                            Inspect Limits
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openEditModal(u)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors cursor-pointer"
+                            title="Edit School & Governance Limits"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingUniv(u)}
+                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
+                            title="Delete School"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                          <Link
+                            href="/admin/dashboard"
+                            target="_blank"
+                            className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                            title="Open Tenant School Portal"
+                          >
+                            <span>Portal</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table Footer Summary */}
+          <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <span>
+              Arranged in tabular format • Showing{" "}
+              <strong className="text-slate-800">{filtered.length}</strong> of{" "}
+              {universities.length} registered schools
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span>
+                  {
+                    filtered.filter(
+                      (u) => (u.school_type || u.institution_type) === "high_school"
+                    ).length
+                  }{" "}
+                  High Schools
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <span>
+                  {
+                    filtered.filter(
+                      (u) => (u.school_type || u.institution_type) === "vocational_school"
+                    ).length
+                  }{" "}
+                  Vocational
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                <span>
+                  {
+                    filtered.filter(
+                      (u) =>
+                        (u.school_type || u.institution_type || "university") === "university"
+                    ).length
+                  }{" "}
+                  Universities
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
       ) : (
+        /* ========================================================= */
+        /* CARDS GRID FORMAT                                         */
+        /* ========================================================= */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map((u) => {
             const isFull = u.full_access !== false;

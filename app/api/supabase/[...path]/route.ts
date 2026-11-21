@@ -54,6 +54,17 @@ async function handleFallbackRequest(
 
     if (grantType === "refresh_token" && typeof payload.refresh_token === "string") {
       const spec = resolveFallbackUserFromRefreshToken(payload.refresh_token);
+      if (!spec) {
+        return NextResponse.json(
+          {
+            code: "invalid_grant",
+            error: "invalid_grant",
+            error_description: "Invalid Refresh Token",
+            msg: "Invalid Refresh Token",
+          },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(buildFallbackSession(spec), { status: 200 });
     }
 
@@ -110,10 +121,14 @@ async function handleFallbackRequest(
       decodeUserFromJwt(authHeader) ||
       extractUserFromCookies(request.cookies.getAll());
 
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const roleCode =
-      user?.user_metadata?.role ||
-      user?.user_metadata?.default_role ||
-      "system_admin";
+      user.user_metadata?.role ||
+      user.user_metadata?.default_role ||
+      "student";
 
     return NextResponse.json(
       [
@@ -129,6 +144,20 @@ async function handleFallbackRequest(
 
   // 5. PostgREST fallback (/rest/v1/*) via Cloud-Synced Virtual UMS DB
   if (subPath.startsWith("rest/v1/")) {
+    const authHeader = request.headers.get("authorization") || "";
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const isServiceRole =
+      Boolean(serviceRoleKey) && authHeader === `Bearer ${serviceRoleKey}`;
+    const user =
+      isServiceRole
+        ? { id: "service_role", email: "superadmin@university.edu.gh" }
+        : decodeUserFromJwt(authHeader) ||
+          extractUserFromCookies(request.cookies.getAll());
+
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const virtualRes = await handleVirtualPostgrestRequest(
       `http://localhost:3000/${subPath}${request.nextUrl.search}`,
       {

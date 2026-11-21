@@ -38,7 +38,6 @@ import {
   Globe,
   CheckSquare,
   UserCheck,
-  ArrowUpDown,
 } from "lucide-react";
 import type { UniversityItem, SystemAdminItem, SuperAdminStats } from "@/lib/superadmin/service";
 
@@ -68,6 +67,7 @@ export default function SuperAdminDashboardPage() {
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [systemAdmins, setSystemAdmins] = useState<SystemAdminItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [inboundReplies, setInboundReplies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [countrySortOrder, setCountrySortOrder] = useState<"asc" | "desc">("asc");
 
@@ -124,11 +124,12 @@ export default function SuperAdminDashboardPage() {
     }
 
     try {
-      const [statsRes, univRes, adminRes, auditRes] = await Promise.all([
+      const [statsRes, univRes, adminRes, auditRes, commRes] = await Promise.all([
         fetch("/api/superadmin/stats"),
         fetch("/api/superadmin/universities"),
         fetch("/api/superadmin/system-admins"),
         fetch("/api/superadmin/audit"),
+        fetch("/api/superadmin/communications"),
       ]);
 
       if (statsRes.ok) {
@@ -147,6 +148,12 @@ export default function SuperAdminDashboardPage() {
       }
       if (auditRes.ok) {
         setAuditLogs(await auditRes.json());
+      }
+      if (commRes.ok) {
+        const commList = await commRes.json();
+        if (Array.isArray(commList)) {
+          setInboundReplies(commList.filter((c: any) => c.direction === "inbound"));
+        }
       }
     } catch (err) {
       console.error("Error loading super admin dashboard data:", err);
@@ -618,7 +625,7 @@ export default function SuperAdminDashboardPage() {
                 >
                   <Globe className="h-3.5 w-3.5 text-blue-600" />
                   <span>Country ({countrySortOrder === "asc" ? "A→Z" : "Z→A"})</span>
-                  <ArrowUpDown className="h-3 w-3 opacity-75" />
+                  <span className="text-[11px] opacity-75">⇅</span>
                 </button>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -655,7 +662,7 @@ export default function SuperAdminDashboardPage() {
                         title="Click to sort by country"
                       >
                         <span>Location / Country</span>
-                        <ArrowUpDown className="h-3 w-3" />
+                        <span className="text-[11px]">⇅</span>
                       </button>
                     </th>
                     <th className="py-3 px-4">Currency</th>
@@ -872,8 +879,69 @@ export default function SuperAdminDashboardPage() {
           </div>
         </div>
 
-        {/* Right Column: Telemetry, Audit Trail, Platform Actions */}
+        {/* Right Column: Inbox Replies, Telemetry, Audit Trail, Platform Actions */}
         <div className="lg:col-span-5 space-y-6">
+          {/* Widget 0: Received Email Replies (Inbox) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3.5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Mail className="h-4 w-4" />
+                </div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Received Email Replies (Inbox)
+                </h3>
+              </div>
+              <Link
+                href="/superadmin/communications?folder=inbox"
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+              >
+                <span>Open Inbox ({inboundReplies.length})</span>
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            </div>
+
+            {inboundReplies.length === 0 ? (
+              <div className="py-4 text-center text-xs text-slate-400">
+                No incoming email replies yet.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {inboundReplies.slice(0, 3).map((reply) => (
+                  <Link
+                    key={reply.id}
+                    href="/superadmin/communications?folder=inbox"
+                    className={`block p-3 rounded-xl border transition-all ${
+                      !reply.is_read
+                        ? "bg-blue-50/60 border-blue-200 hover:bg-blue-100/50"
+                        : "bg-slate-50/70 border-slate-200/80 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {!reply.is_read && (
+                          <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0 animate-pulse" />
+                        )}
+                        <span className="text-xs font-bold text-slate-900 truncate">
+                          {reply.sender_name}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 shrink-0">
+                        {reply.target_school || "School Reply"}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-blue-700 truncate mt-0.5">
+                      {reply.subject}
+                    </div>
+                    <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      {reply.body}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Widget 1: Platform Health & Monitoring */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">

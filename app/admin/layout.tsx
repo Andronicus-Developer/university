@@ -186,13 +186,15 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         // Fallback default
       }
 
-      // Fetch School / Institution Info directly from database
+      // Fetch Tenant School / Institution Info from SaaS tenant endpoint
       let currentSchoolType = "university";
+      let loadedFromTenantApi = false;
       try {
         const res = await fetch("/api/settings/institution");
         if (res.ok) {
           const data = await res.json();
           if (data?.name) {
+            loadedFromTenantApi = true;
             setSchoolName(data.name);
             if (data.abbreviation) setSchoolAbbr(data.abbreviation);
             if (data.logo_url) setSchoolLogo(data.logo_url);
@@ -206,7 +208,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         // Fallback directly to supabase table
       }
 
-      // Fetch dynamic configurable school sidebar menu items
+      // Fetch dynamic configurable school sidebar menu items for this school's type
       try {
         const resMenu = await fetch(`/api/admin/sidebar-menu?school_type=${currentSchoolType}`);
         if (resMenu.ok) {
@@ -234,24 +236,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         console.warn("Could not load dynamic school sidebar menu:", menuErr);
       }
 
-      try {
-        const { data: settingRow } = await (supabase as any)
-          .from("system_settings")
-          .select("setting_value")
-          .eq("setting_key", "institution_info")
-          .maybeSingle();
+      if (!loadedFromTenantApi) {
+        try {
+          const { data: settingRow } = await (supabase as any)
+            .from("system_settings")
+            .select("setting_value")
+            .eq("setting_key", "institution_info")
+            .maybeSingle();
 
-        if (settingRow?.setting_value?.name) {
-          setSchoolName(settingRow.setting_value.name);
-          if (settingRow.setting_value.abbreviation) {
-            setSchoolAbbr(settingRow.setting_value.abbreviation);
+          if (settingRow?.setting_value?.name) {
+            setSchoolName(settingRow.setting_value.name);
+            if (settingRow.setting_value.abbreviation) {
+              setSchoolAbbr(settingRow.setting_value.abbreviation);
+            }
+            if (settingRow.setting_value.logo_url) {
+              setSchoolLogo(settingRow.setting_value.logo_url);
+            }
           }
-          if (settingRow.setting_value.logo_url) {
-            setSchoolLogo(settingRow.setting_value.logo_url);
-          }
+        } catch (err) {
+          console.warn("Could not load institution info from DB:", err);
         }
-      } catch (err) {
-        console.warn("Could not load institution info from DB:", err);
       }
     }
 
@@ -353,8 +357,15 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             >
               {schoolName}
             </span>
-            <span className="text-[11px] font-medium text-slate-500">
-              Admin Portal
+            <span className="text-[10.5px] font-semibold text-blue-600 flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span>
+                {schoolType === "vocational_school"
+                  ? "Vocational SaaS Tenant"
+                  : schoolType === "high_school"
+                  ? "High School SaaS Tenant"
+                  : "University SaaS Tenant"}
+              </span>
             </span>
           </div>
         </Link>

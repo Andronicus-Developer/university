@@ -382,6 +382,14 @@ export async function getSchoolSidebarMenuItems(
   return items;
 }
 
+function sanitizeTsxText(input?: string | null): string {
+  if (!input) return "";
+  return String(input)
+    .replace(/[\r\n\\"'`${}<>]/g, "")
+    .trim()
+    .slice(0, 200);
+}
+
 /**
  * Automatically generate a page file for a new or updated sidebar menu item if not present.
  */
@@ -391,13 +399,17 @@ export async function generateSchoolAdminPage(
   try {
     // Sanitize route key: e.g. "/admin/workshops" -> "workshops", "/admin/ptc-meetings" -> "ptc-meetings"
     let routeKey = item.href.replace(/^\/admin\//, "").replace(/^\//, "").trim().toLowerCase();
-    routeKey = routeKey.replace(/[^a-z0-9_-]/g, "");
+    routeKey = routeKey.replace(/[^a-z0-9_-]/g, "").slice(0, 64);
 
     if (!routeKey || routeKey === "dashboard") {
       return { success: true, filePath: "", created: false };
     }
 
-    const targetDir = path.join(process.cwd(), "app", "admin", routeKey);
+    const adminRootDir = path.resolve(process.cwd(), "app", "admin");
+    const targetDir = path.resolve(adminRootDir, routeKey);
+    if (!targetDir.startsWith(adminRootDir + path.sep)) {
+      throw new Error("Invalid route path: directory traversal rejected.");
+    }
     const targetFilePath = path.join(targetDir, "page.tsx");
 
     // If file already exists, do not overwrite custom code
@@ -410,6 +422,15 @@ export async function generateSchoolAdminPage(
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
+    const safeItem: SchoolSidebarMenuItem = {
+      ...item,
+      label: sanitizeTsxText(item.label) || "Module",
+      category: sanitizeTsxText(item.category) || "Core Administration",
+      description: sanitizeTsxText(item.description),
+      badge: item.badge ? sanitizeTsxText(item.badge) : null,
+    };
+    item = safeItem;
+
     const schoolTypesList = item.school_types
       .map((t) => {
         if (t === "high_school") return "High School";
@@ -418,10 +439,12 @@ export async function generateSchoolAdminPage(
       })
       .join(", ");
 
-    const componentName = `${routeKey
+    const rawCompName = `${routeKey
       .split(/[-_]/)
+      .filter(Boolean)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join("")}Page`;
+    const componentName = /^[A-Z]/.test(rawCompName) ? rawCompName : `Module${rawCompName}`;
 
     const generatedPageContent = `"use client";
 

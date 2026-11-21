@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LoginIllustration } from "./components/LoginIllustration";
@@ -39,6 +40,96 @@ export default function Home() {
       }
 
       if (data?.user) {
+        const normalizedEmail = (data.user.email || "").trim().toLowerCase();
+        const isRootSuperAdmin =
+          normalizedEmail === "superadmin@university.edu.gh" ||
+          data.user.app_metadata?.role === "superadmin";
+
+        // Deletion & Blacklist Guard: Block deleted users and users of deleted schools immediately
+        if (!isRootSuperAdmin) {
+          try {
+            // 1. Check deleted_users registry
+            const { data: delUsersRow } = await (supabase as any)
+              .from("system_settings")
+              .select("setting_value")
+              .eq("setting_key", "deleted_users")
+              .maybeSingle();
+
+            const delUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
+            const isBlacklisted = delUsersList.some(
+              (u: any) => u?.id === data.user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
+            );
+
+            if (isBlacklisted) {
+              await supabase.auth.signOut();
+              setErrorMessage("Access Denied: This user account has been permanently deleted from the system.");
+              setIsLoading(false);
+              return;
+            }
+
+            // 2. Check profile existence and status
+            let { data: profile } = await (supabase as any)
+              .from("profiles")
+              .select("account_status, metadata, school_id, university_id")
+              .eq("id", data.user.id)
+              .maybeSingle();
+
+            if (!profile && normalizedEmail) {
+              try {
+                const { data: profByEmail } = await (supabase as any)
+                  .from("profiles")
+                  .select("account_status, metadata, school_id, university_id")
+                  .ilike("email", normalizedEmail)
+                  .maybeSingle();
+                if (profByEmail) profile = profByEmail;
+              } catch {}
+            }
+
+            if (profile && (profile.account_status === "deleted" || profile.metadata?.university_status === "deleted")) {
+              await supabase.auth.signOut();
+              setErrorMessage("Access Denied: Your account and associated institution have been decommissioned.");
+              setIsLoading(false);
+              return;
+            }
+
+            // 3. Check deleted_universities registry
+            const userSchoolId =
+              profile?.school_id ||
+              profile?.university_id ||
+              profile?.metadata?.school_id ||
+              profile?.metadata?.university_id ||
+              (data.user.user_metadata as any)?.school_id ||
+              (data.user.user_metadata as any)?.university_id;
+            const userSchoolCode =
+              profile?.metadata?.university_code ||
+              (data.user.user_metadata as any)?.university_code;
+
+            if (userSchoolId || userSchoolCode) {
+              const { data: delUnivsRow } = await (supabase as any)
+                .from("system_settings")
+                .select("setting_value")
+                .eq("setting_key", "deleted_universities")
+                .maybeSingle();
+
+              const delUnivsList = Array.isArray(delUnivsRow?.setting_value) ? delUnivsRow.setting_value : [];
+              const isSchoolDeleted = delUnivsList.some(
+                (d: any) =>
+                  (userSchoolId && (d?.id === userSchoolId || d?.code === userSchoolId)) ||
+                  (userSchoolCode && d?.code === userSchoolCode)
+              );
+
+              if (isSchoolDeleted) {
+                await supabase.auth.signOut();
+                setErrorMessage("Access Denied: Your school has been decommissioned by the Super Administrator. Access is revoked.");
+                setIsLoading(false);
+                return;
+              }
+            }
+          } catch (guardErr) {
+            console.warn("Could not check deletion status during sign in:", guardErr);
+          }
+        }
+
         const metaRole =
           data.user.user_metadata?.role ||
           data.user.user_metadata?.default_role ||
@@ -61,8 +152,9 @@ export default function Home() {
         // Determine target portal based on role
         let targetPath = "/admin/dashboard";
         const isSuperAdmin =
-          roles.includes("superadmin") ||
-          data.user.email === "superadmin@university.edu.gh";
+          data.user.email?.trim().toLowerCase() === "superadmin@university.edu.gh" ||
+          data.user.app_metadata?.role === "superadmin" ||
+          rpcRoles.includes("superadmin");
 
         const isSystemAdmin =
           isSuperAdmin ||
@@ -97,6 +189,10 @@ export default function Home() {
           targetPath = "/finance/dashboard";
         } else if (isAdminStaff) {
           targetPath = "/admin/dashboard";
+        } else if (roles.includes("teacher")) {
+          targetPath = "/teacher/dashboard";
+        } else if (roles.includes("parent") || roles.includes("parent_sponsor") || roles.includes("guardian")) {
+          targetPath = "/parent/dashboard";
         } else if (roles.includes("lecturer")) {
           targetPath = "/lecturer/dashboard";
         } else if (roles.includes("student")) {
@@ -116,12 +212,17 @@ export default function Home() {
           if (
             redirectedFrom &&
             redirectedFrom.startsWith("/") &&
-            !redirectedFrom.startsWith("//") &&
+            !/^\/[\\\/]/.test(redirectedFrom) &&
+            !redirectedFrom.includes("://") &&
             redirectedFrom !== "/" &&
             redirectedFrom !== "/unauthorized" &&
             redirectedFrom !== "/login"
           ) {
-            if (isAdminStaff || redirectedFrom.startsWith(`/${targetPath.split("/")[1]}`)) {
+            const allowsRedirect =
+              isSuperAdmin ||
+              (isAdminStaff && !redirectedFrom.startsWith("/superadmin")) ||
+              redirectedFrom.startsWith(`/${targetPath.split("/")[1]}`);
+            if (allowsRedirect) {
               targetPath = redirectedFrom;
             }
           }
@@ -143,6 +244,18 @@ export default function Home() {
 
   const fillAdminCredentials = () => {
     setUsername("admin@university.edu.gh");
+    setPassword("Admin@123456");
+    setErrorMessage(null);
+  };
+
+  const fillSchoolBCredentials = () => {
+    setUsername("admin@ktvi.edu.gh");
+    setPassword("Admin@123456");
+    setErrorMessage(null);
+  };
+
+  const fillSchoolCCredentials = () => {
+    setUsername("admin@achimota.edu.gh");
     setPassword("Admin@123456");
     setErrorMessage(null);
   };
@@ -217,40 +330,75 @@ export default function Home() {
           {/* Right Column: Login Form */}
           <div className="relative z-10 w-full lg:w-[43%] h-full flex flex-col justify-center px-6 lg:pl-3 lg:pr-8 py-3 overflow-hidden">
             <div className="w-full max-w-[320px] lg:max-w-[305px] xl:max-w-[325px] mx-auto lg:mx-0">
+              {/* SaaS Platform Badge */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Multi-Tenant SaaS Cloud • Strict School Isolation</span>
+              </div>
+
               {/* Heading */}
-              <h1 className="text-[28px] sm:text-[32px] lg:text-[34px] font-extrabold leading-[1.2] tracking-tight text-slate-900">
-                Hello,
+              <h1 className="text-[26px] sm:text-[30px] lg:text-[32px] font-extrabold leading-[1.15] tracking-tight text-slate-900">
+                School Cloud
                 <br />
-                Welcome back
+                SaaS Sign In
               </h1>
 
-              {/* Quick Fill Pills for Super Admin & System Admin */}
-              <div className="mt-3 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-xl px-2.5 py-1 text-[11px] text-purple-800 shadow-2xs">
+              {/* Quick Fill Pills for Super Admin & Isolated Tenant Schools */}
+              <div className="mt-2.5 flex flex-col gap-1">
+                <div className="flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-xl px-2.5 py-1 text-[10.5px] text-purple-800 shadow-2xs">
                   <span className="font-semibold flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
-                    Demo Super Admin:
+                    SaaS Super Admin:
                   </span>
                   <button
                     type="button"
                     onClick={fillSuperAdminCredentials}
                     className="font-bold underline hover:text-purple-950 transition-colors cursor-pointer"
                   >
-                    Quick Fill
+                    Fill Super Admin
                   </button>
                 </div>
-                <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 rounded-xl px-2.5 py-1 text-[11px] text-blue-700 shadow-2xs">
-                  <span className="font-semibold flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-                    Demo System Admin:
-                  </span>
+                <div className="grid grid-cols-3 gap-1">
                   <button
                     type="button"
                     onClick={fillAdminCredentials}
-                    className="font-bold underline hover:text-blue-900 transition-colors cursor-pointer"
+                    className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[10px] font-bold text-blue-800 text-center cursor-pointer transition-colors"
+                    title="School A: Accra Institute of Technology (University Tenant)"
                   >
-                    Quick Fill
+                    School A (Uni)
                   </button>
+                  <button
+                    type="button"
+                    onClick={fillSchoolBCredentials}
+                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-[10px] font-bold text-amber-800 text-center cursor-pointer transition-colors"
+                    title="School B: Kumasi Technical & Vocational Institute (Vocational Tenant)"
+                  >
+                    School B (Voc)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fillSchoolCCredentials}
+                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold text-emerald-800 text-center cursor-pointer transition-colors"
+                    title="School C: Achimota Senior High School (High School Tenant)"
+                  >
+                    School C (SHS)
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1 mt-0.5">
+                  <Link
+                    href="/teacher/dashboard"
+                    className="px-2 py-1 rounded-lg bg-emerald-100/70 hover:bg-emerald-200/80 border border-emerald-300 text-[10px] font-extrabold text-emerald-900 text-center transition-colors flex items-center justify-center gap-1"
+                    title="Teacher & Instructor Dashboard (High School & Vocational)"
+                  >
+                    <span>Teacher Portal</span>
+                  </Link>
+                  <Link
+                    href="/parent/dashboard"
+                    className="px-2 py-1 rounded-lg bg-indigo-100/70 hover:bg-indigo-200/80 border border-indigo-300 text-[10px] font-extrabold text-indigo-900 text-center transition-colors flex items-center justify-center gap-1"
+                    title="Parent & Guardian Dashboard (High School & Vocational)"
+                  >
+                    <span>Parent Portal</span>
+                  </Link>
                 </div>
               </div>
 

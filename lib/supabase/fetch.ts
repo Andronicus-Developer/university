@@ -16,12 +16,17 @@ export interface FallbackUserSpec {
   full_name: string;
   role: string;
   role_name: string;
+  school_id?: string | null;
 }
 
 const FALLBACK_SIG_PREFIX = "local-fallback-sig-";
 export const FALLBACK_REFRESH_PREFIX = "fallback-refresh-";
 
-const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> = {
+const SCHOOL_A_ID = "u0000001-0000-0000-0000-000000000001"; // Accra Institute of Technology (University)
+const SCHOOL_B_ID = "u0000002-0000-0000-0000-000000000002"; // Kumasi Technical & Vocational Institute (Vocational)
+const SCHOOL_C_ID = "u0000003-0000-0000-0000-000000000003"; // Achimota Senior High School (High School)
+
+export const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> = {
   "superadmin@university.edu.gh": {
     password: "SuperAdmin@123456",
     spec: {
@@ -30,6 +35,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Master Super Administrator",
       role: "superadmin",
       role_name: "Super Administrator",
+      school_id: null,
     },
   },
   "admin@university.edu.gh": {
@@ -40,6 +46,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Andronicus Johnson",
       role: "system_admin",
       role_name: "System Administrator",
+      school_id: SCHOOL_A_ID,
     },
   },
   "eugenedoeteh@university.edu.gh": {
@@ -50,6 +57,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Eugene Doeteh",
       role: "finance_officer",
       role_name: "Finance Officer / Bursar",
+      school_id: SCHOOL_A_ID,
     },
   },
   "lecturer@university.edu.gh": {
@@ -60,6 +68,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Dr. Kwame Mensah",
       role: "lecturer",
       role_name: "Lecturer / Instructor",
+      school_id: SCHOOL_A_ID,
     },
   },
   "adaahessel@university.edu.gh": {
@@ -70,6 +79,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Keziah Adaah Essel",
       role: "lecturer",
       role_name: "Lecturer / Instructor",
+      school_id: SCHOOL_A_ID,
     },
   },
   "student@university.edu.gh": {
@@ -80,6 +90,7 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Ama Osei",
       role: "student",
       role_name: "Student",
+      school_id: SCHOOL_A_ID,
     },
   },
   "ama.johnson@university.edu.gh": {
@@ -90,27 +101,87 @@ const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> 
       full_name: "Ama Johnson",
       role: "student",
       role_name: "Student",
+      school_id: SCHOOL_A_ID,
     },
   },
   "applicant@university.edu.gh": {
+    password: "Admin@123456",
     spec: {
       id: "a0000000-0000-0000-0000-000000000004",
       email: "applicant@university.edu.gh",
       full_name: "Kofi Boateng",
       role: "applicant",
       role_name: "Applicant",
+      school_id: SCHOOL_A_ID,
     },
   },
   "advisor@university.edu.gh": {
+    password: "Admin@123456",
     spec: {
       id: "a0000000-0000-0000-0000-000000000005",
       email: "advisor@university.edu.gh",
       full_name: "Prof. Abena Owusu",
       role: "academic_advisor",
       role_name: "Academic Advisor",
+      school_id: SCHOOL_A_ID,
+    },
+  },
+  // Tenant School B: Kumasi Technical & Vocational Institute (Vocational School)
+  "admin@ktvi.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "b0000000-0000-0000-0000-000000000001",
+      email: "admin@ktvi.edu.gh",
+      full_name: "Engr. Samuel Ofori (KTVI Admin)",
+      role: "system_admin",
+      role_name: "System Administrator",
+      school_id: SCHOOL_B_ID,
+    },
+  },
+  "student@ktvi.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "b0000000-0000-0000-0000-000000000002",
+      email: "student@ktvi.edu.gh",
+      full_name: "Yaw Asante (KTVI Trainee)",
+      role: "student",
+      role_name: "Student",
+      school_id: SCHOOL_B_ID,
+    },
+  },
+  // Tenant School C: Achimota Senior High School (High School)
+  "admin@achimota.edu.gh": {
+    password: "Admin@123456",
+    spec: {
+      id: "c0000000-0000-0000-0000-000000000001",
+      email: "admin@achimota.edu.gh",
+      full_name: "Mrs. Grace Mensah (Achimota Admin)",
+      role: "system_admin",
+      role_name: "System Administrator",
+      school_id: SCHOOL_C_ID,
     },
   },
 };
+
+function computeFallbackSignature(input: string): string {
+  const secret =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "ums-fallback-secret-key";
+  const data = `${secret}:${input}:${secret}`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < data.length; i++) {
+    const ch = data.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= ch;
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${FALLBACK_SIG_PREFIX}${hex1}${hex2}`;
+}
 
 export function toBase64Url(str: string): string {
   const bytes = new TextEncoder().encode(str);
@@ -135,10 +206,11 @@ export function fromBase64Url(b64url: string): string {
 
 export function resolveFallbackUserByEmail(email: string, password?: string): FallbackUserSpec | null {
   const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
   const known = DEMO_USERS[normalized];
 
   if (known) {
-    if (password !== undefined && known.password && known.password !== password) {
+    if (password !== undefined && (!known.password || known.password !== password)) {
       return null;
     }
     return known.spec;
@@ -150,13 +222,26 @@ export function resolveFallbackUserByEmail(email: string, password?: string): Fa
       (p: any) => String(p.email || "").trim().toLowerCase() === normalized
     );
     if (prof) {
+      if (password !== undefined) {
+        const expectedPass = prof.metadata?.temp_password || "Admin@123456";
+        if (password !== expectedPass) {
+          return null;
+        }
+      }
       const role = prof.metadata?.role || prof.metadata?.default_role || "student";
+      const schoolId =
+        prof.school_id ||
+        prof.university_id ||
+        prof.metadata?.school_id ||
+        prof.metadata?.university_id ||
+        SCHOOL_A_ID;
       return {
         id: prof.id,
         email: prof.email,
         full_name: prof.full_name || prof.email,
         role,
         role_name: role,
+        school_id: role === "superadmin" ? null : schoolId,
       };
     }
   }
@@ -164,21 +249,38 @@ export function resolveFallbackUserByEmail(email: string, password?: string): Fa
   return null;
 }
 
-export function resolveFallbackUserFromRefreshToken(refreshToken: string): FallbackUserSpec {
-  if (refreshToken.startsWith(FALLBACK_REFRESH_PREFIX)) {
+export function registerDynamicUser(email: string, password: string, spec: FallbackUserSpec) {
+  const norm = email.trim().toLowerCase();
+  DEMO_USERS[norm] = { password, spec };
+}
+
+export function resolveFallbackUserFromRefreshToken(refreshToken: string): FallbackUserSpec | null {
+  if (refreshToken && refreshToken.startsWith(FALLBACK_REFRESH_PREFIX)) {
     try {
-      const email = fromBase64Url(refreshToken.slice(FALLBACK_REFRESH_PREFIX.length));
+      const encodedPart = refreshToken.slice(FALLBACK_REFRESH_PREFIX.length);
+      const [emailB64, sig] = encodedPart.split(".");
+      const email = fromBase64Url(emailB64);
+      if (sig && sig !== toBase64Url(computeFallbackSignature(email))) {
+        return null;
+      }
       const matched = resolveFallbackUserByEmail(email);
       if (matched) return matched;
     } catch {
-      // ignore
+      return null;
     }
   }
-  return DEMO_USERS["admin@university.edu.gh"].spec;
+  return null;
 }
 
 export function buildSupabaseUserObject(spec: FallbackUserSpec) {
   const nowIso = new Date().toISOString();
+  const schoolId =
+    spec.role === "superadmin"
+      ? null
+      : spec.school_id !== undefined
+      ? spec.school_id
+      : SCHOOL_A_ID;
+
   return {
     id: spec.id,
     aud: "authenticated",
@@ -191,11 +293,16 @@ export function buildSupabaseUserObject(spec: FallbackUserSpec) {
     app_metadata: {
       provider: "email",
       providers: ["email"],
+      role: spec.role,
+      school_id: schoolId,
+      university_id: schoolId,
     },
     user_metadata: {
       default_role: spec.role,
       role: spec.role,
       full_name: spec.full_name,
+      school_id: schoolId,
+      university_id: schoolId,
     },
     identities: [
       {
@@ -224,6 +331,12 @@ export function buildFallbackSession(spec: FallbackUserSpec) {
   const expiresIn = 3600 * 24;
   const expiresAt = nowSec + expiresIn;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wcpwzyikenlzqlrrwcvu.supabase.co";
+  const schoolId =
+    spec.role === "superadmin"
+      ? null
+      : spec.school_id !== undefined
+      ? spec.school_id
+      : SCHOOL_A_ID;
 
   const header = toBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = toBase64Url(
@@ -238,11 +351,16 @@ export function buildFallbackSession(spec: FallbackUserSpec) {
       app_metadata: {
         provider: "email",
         providers: ["email"],
+        role: spec.role,
+        school_id: schoolId,
+        university_id: schoolId,
       },
       user_metadata: {
         default_role: spec.role,
         role: spec.role,
         full_name: spec.full_name,
+        school_id: schoolId,
+        university_id: schoolId,
       },
       role: "authenticated",
       aal: "aal1",
@@ -251,8 +369,9 @@ export function buildFallbackSession(spec: FallbackUserSpec) {
       is_anonymous: false,
     })
   );
-  const signature = toBase64Url(`${FALLBACK_SIG_PREFIX}${spec.id}`);
+  const signature = toBase64Url(computeFallbackSignature(`${header}.${payload}`));
   const accessToken = `${header}.${payload}.${signature}`;
+  const refreshSig = toBase64Url(computeFallbackSignature(spec.email));
   const user = buildSupabaseUserObject(spec);
 
   return {
@@ -260,7 +379,7 @@ export function buildFallbackSession(spec: FallbackUserSpec) {
     token_type: "bearer",
     expires_in: expiresIn,
     expires_at: expiresAt,
-    refresh_token: `${FALLBACK_REFRESH_PREFIX}${toBase64Url(spec.email)}`,
+    refresh_token: `${FALLBACK_REFRESH_PREFIX}${toBase64Url(spec.email)}.${refreshSig}`,
     user,
   };
 }
@@ -272,7 +391,9 @@ export function isFallbackJwt(token: string): boolean {
     const parts = clean.split(".");
     if (parts.length !== 3) return false;
     const sigDecoded = fromBase64Url(parts[2]);
-    return sigDecoded.startsWith(FALLBACK_SIG_PREFIX);
+    if (!sigDecoded.startsWith(FALLBACK_SIG_PREFIX)) return false;
+    const expectedSig = computeFallbackSignature(`${parts[0]}.${parts[1]}`);
+    return sigDecoded === expectedSig;
   } catch {
     return false;
   }
@@ -290,10 +411,33 @@ export function decodeJwtPayload(token: string): Record<string, any> | null {
 }
 
 export function decodeUserFromJwt(token: string) {
-  const payload = decodeJwtPayload(token);
+  const clean = token.replace(/^Bearer\s+/i, "").trim();
+  if (!clean) return null;
+  const parts = clean.split(".");
+  if (parts.length === 3) {
+    try {
+      const sigDecoded = fromBase64Url(parts[2]);
+      if (sigDecoded.startsWith(FALLBACK_SIG_PREFIX)) {
+        const expectedSig = computeFallbackSignature(`${parts[0]}.${parts[1]}`);
+        if (sigDecoded !== expectedSig) {
+          return null;
+        }
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  const payload = decodeJwtPayload(clean);
   if (!payload || !payload.sub || !payload.email) return null;
 
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp === "number" && payload.exp < nowSec) {
+    return null;
+  }
+
   const role =
+    payload.app_metadata?.role ||
     payload.user_metadata?.role ||
     payload.user_metadata?.default_role ||
     (payload.email === "admin@university.edu.gh" ? "system_admin" : "student");
@@ -302,12 +446,26 @@ export function decodeUserFromJwt(token: string) {
     payload.user_metadata?.full_name ||
     (payload.email === "admin@university.edu.gh" ? "System Administrator" : payload.email);
 
+  const schoolId =
+    role === "superadmin"
+      ? null
+      : payload.app_metadata?.school_id ||
+        payload.app_metadata?.university_id ||
+        payload.user_metadata?.school_id ||
+        payload.user_metadata?.university_id ||
+        (String(payload.email).includes("ktvi")
+          ? SCHOOL_B_ID
+          : String(payload.email).includes("achimota")
+          ? SCHOOL_C_ID
+          : SCHOOL_A_ID);
+
   return buildSupabaseUserObject({
     id: payload.sub,
     email: payload.email,
     full_name: fullName,
     role,
     role_name: role,
+    school_id: schoolId,
   });
 }
 

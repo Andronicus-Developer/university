@@ -5,33 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   Search,
   X,
-  CornerDownLeft,
   ArrowRight,
-  Layers,
-  Building2,
-  GraduationCap,
-  Users,
-  UserCheck,
-  BookOpen,
-  CreditCard,
-  Sliders,
-  ShieldCheck,
-  FileText,
-  Activity,
-  Database,
-  Clock,
   Sparkles,
-  LayoutGrid,
-  CalendarDays,
-  FileCheck2,
-  CheckSquare,
-  CalendarRange,
-  Megaphone,
-  BookMarked,
-  BusFront,
-  Wrench,
-  Boxes,
-  Filter,
 } from "lucide-react";
 
 export interface SearchResultItem {
@@ -129,11 +104,12 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
     },
     {
       id: "sa-communications",
-      title: "Email & SMS Settings",
-      subtitle: "SMTP relays, SMS gateways, and notification dispatchers",
+      title: "Communications & Email Dispatch",
+      subtitle: "Compose emails to schools/admins and search previous communications log",
       href: "/superadmin/communications",
-      category: "Platform Configuration",
-      keywords: "email sms notifications communications smtp",
+      category: "Core Administration",
+      badge: "Mail",
+      keywords: "communications email compose gmail messages inbox sent broadcasts",
     },
     {
       id: "sa-templates",
@@ -736,7 +712,7 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
                       <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
                         {item.href.split("?")[0]}
                       </span>
-                      <CornerDownLeft
+                      <ArrowRight
                         className={`h-3.5 w-3.5 ${
                           isSelected ? "text-blue-600" : "text-slate-300"
                         }`}

@@ -33,6 +33,12 @@ function getTargetDashboardForRoles(roles: string[], email?: string): string {
   if (roles.some((r) => ADMIN_STAFF_ROLES.includes(r))) {
     return "/admin/dashboard";
   }
+  if (roles.includes("teacher")) {
+    return "/teacher/dashboard";
+  }
+  if (roles.includes("parent") || roles.includes("parent_sponsor") || roles.includes("guardian")) {
+    return "/parent/dashboard";
+  }
   if (roles.includes("lecturer")) {
     return "/lecturer/dashboard";
   }
@@ -122,15 +128,20 @@ function createRedirectWithCookies(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Instantly allow static files, images, favicon, and auth/supabase proxy callbacks
+  // 1. Instantly allow static files, images, favicon, and auth/supabase/webhook callbacks
+  const isStaticAsset =
+    !pathname.startsWith("/api/") &&
+    /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|eot|map|txt|xml)$/i.test(pathname);
+
   const isStaticOrAuthApi =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/supabase") ||
-    pathname.startsWith("/api/settings/institution") ||
+    pathname.startsWith("/api/webhooks/resend-inbound") ||
+    (pathname.startsWith("/api/settings/institution") && request.method === "GET") ||
     pathname === "/favicon.ico" ||
-    pathname.includes(".");
+    isStaticAsset;
 
   if (isStaticOrAuthApi) {
     return NextResponse.next();
@@ -172,20 +183,33 @@ export async function middleware(request: NextRequest) {
   let roles: string[] = [];
 
   const normalizedEmail = user.email?.trim().toLowerCase();
-  const metaRole =
-    user.user_metadata?.role ||
-    user.user_metadata?.default_role ||
+  const isRootSuperAdminIdentity =
+    normalizedEmail === "superadmin@university.edu.gh" ||
+    user.app_metadata?.role === "superadmin" ||
+    user.app_metadata?.default_role === "superadmin";
+
+  const rawMetaRole =
     user.app_metadata?.role ||
     user.app_metadata?.default_role ||
+    user.user_metadata?.role ||
+    user.user_metadata?.default_role ||
     (normalizedEmail === "admin@university.edu.gh" ? "system_admin" : undefined);
+
+  // Prevent client-writable user_metadata from self-assigning 'superadmin'
+  const metaRole =
+    rawMetaRole === "superadmin" && !isRootSuperAdminIdentity ? undefined : rawMetaRole;
 
   if (metaRole) {
     roles.push(metaRole);
+  }
+  if (isRootSuperAdminIdentity && !roles.includes("superadmin")) {
+    roles.push("superadmin");
   }
   if (normalizedEmail === "admin@university.edu.gh" && !roles.includes("system_admin")) {
     roles.push("system_admin");
   }
 
+  let dbVerifiedSuperAdmin = false;
   if (supabase) {
     try {
       const { data: userRoles } = await supabase.rpc("get_user_roles", {
@@ -194,6 +218,9 @@ export async function middleware(request: NextRequest) {
 
       if (userRoles && Array.isArray(userRoles)) {
         const rpcRoles = userRoles.map((r: { role_code: string }) => r.role_code);
+        if (rpcRoles.includes("superadmin")) {
+          dbVerifiedSuperAdmin = true;
+        }
         roles = Array.from(new Set([...roles, ...rpcRoles]));
       }
     } catch (rpcErr) {
@@ -202,7 +229,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const isSuperAdmin =
-    roles.includes("superadmin") ||
+    isRootSuperAdminIdentity ||
+    dbVerifiedSuperAdmin ||
     normalizedEmail === "superadmin@university.edu.gh";
 
   const isSystemAdmin =
@@ -211,16 +239,6 @@ export async function middleware(request: NextRequest) {
     roles.includes("admin") ||
     roles.includes("administrator") ||
     normalizedEmail === "admin@university.edu.gh";
-
-  // If already authenticated and visiting the login page, redirect to dashboard
-  if (isLoginPage) {
-    const dashboardPath = isSuperAdmin
-      ? "/superadmin/dashboard"
-      : isSystemAdmin
-      ? "/admin/dashboard"
-      : getTargetDashboardForRoles(roles, normalizedEmail);
-    return NextResponse.redirect(new URL(dashboardPath, request.url));
-  }
 
   // Allow unauthorized notice page (auto-recover privileged admins back to dashboard UNLESS university is deleted)
   if (pathname === "/unauthorized") {
@@ -237,95 +255,27 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // 4.2. University Deletion & Deactivation Barrier
+  // 4.2. University Deletion & User Blacklist Barrier (Must run BEFORE login page redirect)
   // If user is NOT superadmin, verify their university and account have not been deleted
-  if (!isSuperAdmin && supabase) {
+  if (!isSuperAdmin) {
     try {
-      // 1. Check deleted_users blacklist in system_settings
-      const { data: delUsersRow } = await (supabase
-        .from("system_settings" as any)
-        .select("setting_value")
-        .eq("setting_key", "deleted_users")
-        .maybeSingle() as any);
-
-      const deletedUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
-      const isUserBlacklisted = deletedUsersList.some(
-        (u: any) => u?.id === user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
-      );
-
-      if (isUserBlacklisted) {
-        if (pathname.startsWith("/api/")) {
-          return NextResponse.json(
-            { error: "Access Denied: Your account has been permanently deleted from the database." },
-            { status: 403 }
-          );
-        }
-        const url = new URL("/unauthorized", request.url);
-        url.searchParams.set("reason", "university_deleted");
-        return NextResponse.redirect(url);
-      }
-
-      // 2. Query profile from database
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("account_status, metadata")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      // If user profile no longer exists in DB (was deleted with university):
-      if (!profile) {
-        if (pathname.startsWith("/api/")) {
-          return NextResponse.json(
-            { error: "Access Denied: Account not found or has been deleted." },
-            { status: 403 }
-          );
-        }
-        const url = new URL("/unauthorized", request.url);
-        url.searchParams.set("reason", "university_deleted");
-        return NextResponse.redirect(url);
-      }
-
-      const metadata = (profile.metadata || {}) as Record<string, any>;
-      const accountStatus = (profile.account_status as string) || "";
-      const isBlocked =
-        accountStatus === "suspended" ||
-        accountStatus === "deleted" ||
-        metadata.university_status === "deleted";
-
-      if (isBlocked) {
-        if (pathname.startsWith("/api/")) {
-          return NextResponse.json(
-            { error: "Access Denied: Your institution and account have been deleted or deactivated." },
-            { status: 403 }
-          );
-        }
-        const url = new URL("/unauthorized", request.url);
-        url.searchParams.set("reason", "university_deleted");
-        return NextResponse.redirect(url);
-      }
-
-      // 3. Check if user's university is in deleted_universities registry
-      const userUnivId = metadata.university_id || (user.user_metadata as any)?.university_id;
-      const userUnivCode = metadata.university_code || (user.user_metadata as any)?.university_code;
-
-      if (userUnivId || userUnivCode) {
-        const { data: settingRow } = await (supabase
+      if (supabase) {
+        // 1. Check deleted_users blacklist in system_settings
+        const { data: delUsersRow } = await (supabase
           .from("system_settings" as any)
           .select("setting_value")
-          .eq("setting_key", "deleted_universities")
+          .eq("setting_key", "deleted_users")
           .maybeSingle() as any);
 
-        const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
-        if (
-          deletedList.some(
-            (d: any) =>
-              (userUnivId && d?.id === userUnivId) ||
-              (userUnivCode && d?.code === userUnivCode)
-          )
-        ) {
+        const deletedUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
+        const isUserBlacklisted = deletedUsersList.some(
+          (u: any) => u?.id === user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
+        );
+
+        if (isUserBlacklisted) {
           if (pathname.startsWith("/api/")) {
             return NextResponse.json(
-              { error: "Access Denied: Your institution has been deleted." },
+              { error: "Access Denied: Your account has been permanently deleted from the database." },
               { status: 403 }
             );
           }
@@ -333,10 +283,131 @@ export async function middleware(request: NextRequest) {
           url.searchParams.set("reason", "university_deleted");
           return NextResponse.redirect(url);
         }
+
+        // 2. Query profile from database (first by ID, then fallback by email)
+        let { data: profile } = await (supabase as any)
+          .from("profiles")
+          .select("account_status, metadata, school_id, university_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!profile && normalizedEmail) {
+          try {
+            const { data: profByEmail } = await (supabase as any)
+              .from("profiles")
+              .select("account_status, metadata, school_id, university_id")
+              .ilike("email", normalizedEmail)
+              .maybeSingle();
+            if (profByEmail) {
+              profile = profByEmail;
+            }
+          } catch {}
+        }
+
+        const metadata = (profile?.metadata || {}) as Record<string, any>;
+        const accountStatus = (profile?.account_status as string) || "";
+        const isBlocked =
+          accountStatus === "suspended" ||
+          accountStatus === "deleted" ||
+          metadata.university_status === "deleted";
+
+        if (isBlocked) {
+          if (pathname.startsWith("/api/")) {
+            return NextResponse.json(
+              { error: "Access Denied: Your institution and account have been deleted or deactivated." },
+              { status: 403 }
+            );
+          }
+          const url = new URL("/unauthorized", request.url);
+          url.searchParams.set("reason", "university_deleted");
+          return NextResponse.redirect(url);
+        }
+
+        // 3. Check if user's university is in deleted_universities registry
+        const userUnivId =
+          (profile as any)?.school_id ||
+          (profile as any)?.university_id ||
+          metadata.school_id ||
+          metadata.university_id ||
+          (user.user_metadata as any)?.school_id ||
+          (user.user_metadata as any)?.university_id ||
+          (user.app_metadata as any)?.school_id ||
+          (user.app_metadata as any)?.university_id;
+
+        const userUnivCode =
+          metadata.university_code ||
+          (user.user_metadata as any)?.university_code ||
+          (user.app_metadata as any)?.university_code;
+
+        if (userUnivId || userUnivCode) {
+          const { data: settingRow } = await (supabase
+            .from("system_settings" as any)
+            .select("setting_value")
+            .eq("setting_key", "deleted_universities")
+            .maybeSingle() as any);
+
+          const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
+          const isSchoolDeleted = deletedList.some(
+            (d: any) =>
+              (userUnivId && (d?.id === userUnivId || d?.code === userUnivId)) ||
+              (userUnivCode && d?.code === userUnivCode)
+          );
+
+          if (isSchoolDeleted) {
+            if (pathname.startsWith("/api/")) {
+              return NextResponse.json(
+                { error: "Access Denied: Your institution has been deleted." },
+                { status: 403 }
+              );
+            }
+            const url = new URL("/unauthorized", request.url);
+            url.searchParams.set("reason", "university_deleted");
+            return NextResponse.redirect(url);
+          }
+        }
+
+        // 4. Auto-provision profile if missing so future queries find it immediately
+        if (!profile && user.id && normalizedEmail) {
+          try {
+            const role =
+              (user.user_metadata as any)?.role ||
+              (user.app_metadata as any)?.role ||
+              "system_admin";
+            const schoolId = userUnivId || null;
+            await (supabase as any).from("profiles").upsert(
+              {
+                id: user.id,
+                email: normalizedEmail,
+                full_name: (user.user_metadata as any)?.full_name || normalizedEmail,
+                account_status: "active",
+                school_id: schoolId,
+                university_id: schoolId,
+                metadata: {
+                  role,
+                  default_role: role,
+                  school_id: schoolId,
+                  university_id: schoolId,
+                  university_name: (user.user_metadata as any)?.university_name || "",
+                },
+              },
+              { onConflict: "id" }
+            );
+          } catch {}
+        }
       }
     } catch (univCheckErr) {
       console.warn("Could not perform university deletion check in middleware:", univCheckErr);
     }
+  }
+
+  // If already authenticated and visiting the login page, redirect to dashboard
+  if (isLoginPage) {
+    const dashboardPath = isSuperAdmin
+      ? "/superadmin/dashboard"
+      : isSystemAdmin
+      ? "/admin/dashboard"
+      : getTargetDashboardForRoles(roles, normalizedEmail);
+    return NextResponse.redirect(new URL(dashboardPath, request.url));
   }
 
   // Enforce zero cache on all protected views so browser cannot serve from bfcache after logout
@@ -476,6 +547,33 @@ export async function middleware(request: NextRequest) {
     const hasFinanceAccess =
       roles.some((r) => ["bursar", "finance_officer", "accountant", "auditor"].includes(r));
     if (!hasFinanceAccess) {
+      return respondNotFound(request, supabaseResponse);
+    }
+    return supabaseResponse;
+  }
+
+  if (pathname.startsWith("/teacher") || pathname.startsWith("/api/teacher")) {
+    const hasTeacherAccess =
+      roles.includes("teacher") ||
+      roles.includes("lecturer") ||
+      roles.includes("system_admin") ||
+      roles.includes("admin") ||
+      roles.includes("superadmin");
+    if (!hasTeacherAccess) {
+      return respondNotFound(request, supabaseResponse);
+    }
+    return supabaseResponse;
+  }
+
+  if (pathname.startsWith("/parent") || pathname.startsWith("/api/parent")) {
+    const hasParentAccess =
+      roles.includes("parent") ||
+      roles.includes("parent_sponsor") ||
+      roles.includes("guardian") ||
+      roles.includes("system_admin") ||
+      roles.includes("admin") ||
+      roles.includes("superadmin");
+    if (!hasParentAccess) {
       return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;

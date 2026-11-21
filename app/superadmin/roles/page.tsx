@@ -24,6 +24,8 @@ import {
   Eye,
   RefreshCw,
   Sparkles,
+  Table,
+  LayoutGrid,
 } from "lucide-react";
 import type { RoleItem, PermissionItem } from "@/lib/superadmin/service";
 
@@ -34,6 +36,7 @@ export default function SuperAdminRolesPage() {
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [searchRole, setSearchRole] = useState("");
   const [roleTypeFilter, setRoleTypeFilter] = useState<"all" | "system" | "custom">("all");
+  const [roleViewMode, setRoleViewMode] = useState<"table" | "grid">("table");
   const [searchPerm, setSearchPerm] = useState("");
   const [selectedModule, setSelectedModule] = useState<string>("all");
 
@@ -598,9 +601,9 @@ export default function SuperAdminRolesPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <span className="text-xs text-slate-500">Filter:</span>
-              <div className="inline-flex rounded-xl bg-slate-100 p-0.5 text-xs font-semibold">
+              <div className="inline-flex rounded-xl bg-slate-100 p-0.5 text-xs font-semibold shadow-2xs">
                 <button
                   onClick={() => setRoleTypeFilter("all")}
                   className={`px-3 py-1 rounded-lg transition-all ${
@@ -626,10 +629,40 @@ export default function SuperAdminRolesPage() {
                   Custom ({roles.filter((r) => !r.is_system_role).length})
                 </button>
               </div>
+
+              {/* View Mode Switcher: Table vs Grid */}
+              <div className="inline-flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setRoleViewMode("table")}
+                  className={`p-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    roleViewMode === "table"
+                      ? "bg-white text-blue-700 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                  title="Arranged in a tabular format"
+                >
+                <Table className="h-3.5 w-3.5" />
+                  <span>Table</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleViewMode("grid")}
+                  className={`p-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    roleViewMode === "grid"
+                      ? "bg-white text-blue-700 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                  title="Arranged in card grid format"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span>Grid</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Roles Grid */}
+          {/* Roles Display: Tabular Format (Default) or Grid */}
           {loading ? (
             <div className="p-12 text-center bg-white rounded-2xl border border-slate-200">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
@@ -641,7 +674,161 @@ export default function SuperAdminRolesPage() {
               <h3 className="text-sm font-bold text-slate-800">No roles match your search</h3>
               <p className="text-xs text-slate-500 mt-1">Try adjusting your query or role type filter.</p>
             </div>
+          ) : roleViewMode === "table" ? (
+            /* ========================================================= */
+            /* TABULAR FORMAT: ROLES ARRANGED IN A TABLE                */
+            /* ========================================================= */
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-500 font-bold text-[11px] select-none">
+                      <th className="py-3.5 px-4">Role Name & Code</th>
+                      <th className="py-3.5 px-3">Role Type</th>
+                      <th className="py-3.5 px-4">Mandate & Description</th>
+                      <th className="py-3.5 px-3">Separation of Duties / Restrictions</th>
+                      <th className="py-3.5 px-3 text-center">Permissions</th>
+                      <th className="py-3.5 px-3 text-center">Assigned Users</th>
+                      <th className="py-3.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredRoles.map((r) => {
+                      const isRootRole = r.code === "superadmin" || r.code === "system_admin";
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-50/80 transition-colors group">
+                          {/* Role Name & Code */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${
+                                  r.code === "superadmin"
+                                    ? "bg-purple-100 text-purple-700 border border-purple-200"
+                                    : r.is_system_role
+                                    ? "bg-blue-100 text-blue-700 border border-blue-200"
+                                    : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                }`}
+                              >
+                                <ShieldCheck className="h-4.5 w-4.5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-slate-900 hover:text-blue-600 transition-colors text-[13px]">
+                                    {r.name}
+                                  </span>
+                                  <span className="font-mono text-[10px] font-extrabold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">
+                                    {r.code}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Role Type */}
+                          <td className="py-3.5 px-3">
+                            {r.is_system_role ? (
+                              <span className="inline-flex items-center gap-1 text-[10.5px] font-extrabold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                <Lock className="h-2.5 w-2.5" />
+                                System
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-[10.5px] font-extrabold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Custom
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Description */}
+                          <td className="py-3.5 px-4 max-w-[280px]">
+                            <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                              {r.description || "Platform access role."}
+                            </p>
+                          </td>
+
+                          {/* Separation of Duties / Restrictions */}
+                          <td className="py-3.5 px-3 max-w-[220px]">
+                            <div
+                              className="p-1.5 px-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 truncate"
+                              title={r.typical_restrictions || "Enforces Section 4 separation of duties baseline."}
+                            >
+                              {r.typical_restrictions || "Separation of duties baseline."}
+                            </div>
+                          </td>
+
+                          {/* Permissions Count */}
+                          <td className="py-3.5 px-3 text-center">
+                            <span className="inline-flex items-center font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-lg text-xs">
+                              {r.permissions_count} Perms
+                            </span>
+                          </td>
+
+                          {/* Assigned Users */}
+                          <td className="py-3.5 px-3 text-center">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-lg">
+                              <Users className="h-3 w-3 text-slate-400" />
+                              {r.assigned_users_count || 0}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => openEditRole(r)}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Edit Role Scope & Permissions"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </button>
+                              <button
+                                onClick={() => openDeleteRole(r)}
+                                disabled={isRootRole}
+                                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                  isRootRole
+                                    ? "text-slate-200 cursor-not-allowed bg-slate-50"
+                                    : "text-slate-500 hover:text-red-600 hover:bg-red-50 bg-slate-100"
+                                }`}
+                                title={
+                                  isRootRole
+                                    ? "Root governance role cannot be deleted"
+                                    : "Delete Role"
+                                }
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Table Footer Summary */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                <span>
+                  Arranged in tabular format • Showing{" "}
+                  <strong className="text-slate-800">{filteredRoles.length}</strong> of{" "}
+                  {roles.length} roles
+                </span>
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-[11px]">
+                    <span className="h-2 w-2 rounded-full bg-blue-500" />
+                    <span>{roles.filter((r) => r.is_system_role).length} System Roles</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[11px]">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span>{roles.filter((r) => !r.is_system_role).length} Custom Roles</span>
+                  </span>
+                </div>
+              </div>
+            </div>
           ) : (
+            /* ========================================================= */
+            /* CARDS GRID FORMAT                                         */
+            /* ========================================================= */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredRoles.map((r) => (
                 <div

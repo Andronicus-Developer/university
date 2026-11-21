@@ -1,13 +1,19 @@
 /**
- * Cloud-Synced Virtual PostgREST Engine for the University Management System (UMS).
+ * Cloud-Synced Multi-Tenant SaaS Virtual PostgREST Engine for the School Management System.
  *
- * Ensures 100% availability and schema fidelity across all 75+ UMS tables and RPCs,
- * even when the upstream Supabase PostgreSQL `public` schema has not yet been migrated
- * or has been overwritten by another project.
- *
- * State is cached in memory for <1ms reads and automatically persisted to Supabase
- * Cloud Storage (`institutional-reports/ums-virtual-db.json`).
+ * Enforces strict per-school data isolation (`school_id` / `university_id`) so users of
+ * School A can ONLY access School A's data, while Super Admins oversee all tenants.
  */
+
+import {
+  SCHOOL_A_ID,
+  SCHOOL_B_ID,
+  SCHOOL_C_ID,
+  resolveTenantContextFromHeaders,
+  rowBelongsToTenant,
+  stampRowWithTenant,
+  type TenantContext,
+} from "@/lib/saas/tenant-context";
 
 export type Row = Record<string, any>;
 export type TableStore = Record<string, Row[]>;
@@ -394,34 +400,18 @@ export function createInitialSeedData(): TableStore {
 
   const universities: Row[] = [
     {
-      id: "u0000001-0000-0000-0000-000000000001",
-      code: "LCU",
-      name: "Lofa County University",
-      short_name: "Premier Tech",
-      country: "Liberia",
-      city: "Monrovia",
-      address: "Plot 44 University Heights, North Legon Boulevard",
-      email: "registrar@university.edu.gh",
-      phone: "+233 30 212 8899",
-      website: "https://premier.university.edu.gh",
-      motto: "Empowering Minds, Shaping Tomorrow",
-      default_currency: "USD",
-      currency_symbol: "$",
-      established_year: 1998,
-      accreditation_code: "GTEC/NAB/UNI/2026-0482",
-      status: "active",
-      created_at: now,
-      updated_at: now,
-    },
-    {
-      id: "u0000001-0000-0000-0000-000000000002",
+      id: SCHOOL_A_ID,
       code: "AIT",
       name: "Accra Institute of Technology",
       short_name: "AIT Ghana",
+      school_type: "university",
+      institution_type: "university",
+      subscription_plan: "enterprise",
+      subscription_status: "active",
       country: "Ghana",
       city: "Accra",
       address: "Cantonments Science Park, Accra",
-      email: "info@ait.edu.gh",
+      email: "admin@university.edu.gh",
       phone: "+233 30 278 6050",
       website: "https://ait.edu.gh",
       motto: "Service, Leadership & Scholarship",
@@ -429,6 +419,54 @@ export function createInitialSeedData(): TableStore {
       currency_symbol: "GH₵",
       established_year: 2005,
       accreditation_code: "GTEC/UNI/2026-0119",
+      status: "active",
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: SCHOOL_B_ID,
+      code: "KTVI",
+      name: "Kumasi Technical & Vocational Institute",
+      short_name: "KTVI Kumasi",
+      school_type: "vocational_school",
+      institution_type: "vocational_school",
+      subscription_plan: "enterprise",
+      subscription_status: "active",
+      country: "Ghana",
+      city: "Kumasi",
+      address: "Suame Industrial & Technical Hub, Kumasi",
+      email: "admin@ktvi.edu.gh",
+      phone: "+233 32 202 4411",
+      website: "https://ktvi.edu.gh",
+      motto: "Skills, Craftsmanship & Innovation",
+      default_currency: "GHS",
+      currency_symbol: "GH₵",
+      established_year: 2010,
+      accreditation_code: "CTVET/VOC/2026-0304",
+      status: "active",
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: SCHOOL_C_ID,
+      code: "ASHS",
+      name: "Achimota Senior High School",
+      short_name: "Achimota School",
+      school_type: "high_school",
+      institution_type: "high_school",
+      subscription_plan: "professional",
+      subscription_status: "active",
+      country: "Ghana",
+      city: "Accra",
+      address: "Achimota Forest Road, Accra",
+      email: "admin@achimota.edu.gh",
+      phone: "+233 30 240 1221",
+      website: "https://achimota.edu.gh",
+      motto: "Ut Omnes Unum Sint",
+      default_currency: "GHS",
+      currency_symbol: "GH₵",
+      established_year: 1927,
+      accreditation_code: "GES/SHS/2026-0012",
       status: "active",
       created_at: now,
       updated_at: now,
@@ -1350,6 +1388,204 @@ export function createInitialSeedData(): TableStore {
     }
   });
 
+  // Stamp all School A seed profiles (except superadmin) with school_id: SCHOOL_A_ID
+  profiles.forEach((p) => {
+    if (p.id !== SUPERADMIN_ID && !p.school_id) {
+      p.school_id = SCHOOL_A_ID;
+      p.university_id = SCHOOL_A_ID;
+      p.metadata = {
+        ...(p.metadata || {}),
+        school_id: SCHOOL_A_ID,
+        university_id: SCHOOL_A_ID,
+      };
+    }
+  });
+
+  // Seed isolated Tenant School B (KTVI - Vocational) & Tenant School C (Achimota - High School) data
+  const KTVI_ADMIN_ID = "b0000000-0000-0000-0000-000000000001";
+  const KTVI_STU_PROFILE_ID = "b0000000-0000-0000-0000-000000000002";
+  const ASHS_ADMIN_ID = "c0000000-0000-0000-0000-000000000001";
+
+  profiles.push(
+    {
+      id: KTVI_ADMIN_ID,
+      email: "admin@ktvi.edu.gh",
+      full_name: "Engr. Samuel Ofori",
+      phone: "+233 32 202 4411",
+      avatar_url: "",
+      account_status: "active",
+      is_mfa_enabled: true,
+      last_sign_in_at: now,
+      school_id: SCHOOL_B_ID,
+      university_id: SCHOOL_B_ID,
+      metadata: {
+        role: "system_admin",
+        default_role: "system_admin",
+        full_name: "Engr. Samuel Ofori",
+        school_id: SCHOOL_B_ID,
+        university_id: SCHOOL_B_ID,
+        university_name: "Kumasi Technical & Vocational Institute",
+      },
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: KTVI_STU_PROFILE_ID,
+      email: "student@ktvi.edu.gh",
+      full_name: "Yaw Asante",
+      phone: "+233 24 888 9900",
+      avatar_url: "",
+      account_status: "active",
+      is_mfa_enabled: false,
+      last_sign_in_at: now,
+      school_id: SCHOOL_B_ID,
+      university_id: SCHOOL_B_ID,
+      metadata: {
+        role: "student",
+        default_role: "student",
+        full_name: "Yaw Asante",
+        school_id: SCHOOL_B_ID,
+        university_id: SCHOOL_B_ID,
+        university_name: "Kumasi Technical & Vocational Institute",
+      },
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: ASHS_ADMIN_ID,
+      email: "admin@achimota.edu.gh",
+      full_name: "Mrs. Grace Mensah",
+      phone: "+233 30 240 1221",
+      avatar_url: "",
+      account_status: "active",
+      is_mfa_enabled: true,
+      last_sign_in_at: now,
+      school_id: SCHOOL_C_ID,
+      university_id: SCHOOL_C_ID,
+      metadata: {
+        role: "system_admin",
+        default_role: "system_admin",
+        full_name: "Mrs. Grace Mensah",
+        school_id: SCHOOL_C_ID,
+        university_id: SCHOOL_C_ID,
+        university_name: "Achimota Senior High School",
+      },
+      created_at: now,
+      updated_at: now,
+    }
+  );
+
+  user_role_assignments.push(
+    {
+      id: "ura-ktvi-admin",
+      user_id: KTVI_ADMIN_ID,
+      role_id: "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      school_id: SCHOOL_B_ID,
+      is_active: true,
+      created_at: now,
+    },
+    {
+      id: "ura-ktvi-stu",
+      user_id: KTVI_STU_PROFILE_ID,
+      role_id: "a213be9f-e76a-4281-bd89-28beacc7642c",
+      school_id: SCHOOL_B_ID,
+      is_active: true,
+      created_at: now,
+    },
+    {
+      id: "ura-ashs-admin",
+      user_id: ASHS_ADMIN_ID,
+      role_id: "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      school_id: SCHOOL_C_ID,
+      is_active: true,
+      created_at: now,
+    }
+  );
+
+  // Add isolated School B (KTVI) programme, department, course, and student
+  const KTVI_DEPT_ID = "d0000002-0000-0000-0000-000000000001";
+  const KTVI_PROG_ID = "b0000002-0000-0000-0000-000000000001";
+  const KTVI_TERM_ID = "te000002-0000-0000-0000-000000000001";
+
+  departments.push({
+    id: KTVI_DEPT_ID,
+    faculty_id: FACULTY_ENG_ID,
+    code: "MECH-VOC",
+    name: " Department of Mechatronics & Welding Technology",
+    head_user_id: KTVI_ADMIN_ID,
+    is_active: true,
+    school_id: SCHOOL_B_ID,
+    university_id: SCHOOL_B_ID,
+    created_at: now,
+  });
+
+  programmes.push({
+    id: KTVI_PROG_ID,
+    department_id: KTVI_DEPT_ID,
+    code: "NVTI-MECH",
+    name: "National Vocational Diploma in Automotive & Mechatronics",
+    degree_level: "diploma",
+    duration_years: 3,
+    total_credits_required: 90,
+    is_active: true,
+    school_id: SCHOOL_B_ID,
+    university_id: SCHOOL_B_ID,
+    created_at: now,
+  });
+
+  terms.push({
+    id: KTVI_TERM_ID,
+    academic_year_id: AY_CURRENT_ID,
+    code: "KTVI-2026-T1",
+    name: "2026/2027 Practical Term 1",
+    term_number: 1,
+    start_date: "2026-09-01",
+    end_date: "2026-12-18",
+    registration_start: "2026-08-15",
+    registration_end: "2026-09-15",
+    is_current: true,
+    is_active: true,
+    school_id: SCHOOL_B_ID,
+    university_id: SCHOOL_B_ID,
+    created_at: now,
+  });
+
+  courses.push({
+    id: "c0000002-0000-0000-0000-000000000001",
+    department_id: KTVI_DEPT_ID,
+    code: "VOC101",
+    title: "Industrial Welding & Workshop Safety Practice",
+    description: "Hands-on vocational training in arc welding, fabrication, and machine safety.",
+    credit_hours: 4,
+    level: 100,
+    semester_offered: 1,
+    is_elective: false,
+    is_active: true,
+    school_id: SCHOOL_B_ID,
+    university_id: SCHOOL_B_ID,
+    created_at: now,
+  });
+
+  students.push({
+    id: "50000002-0000-0000-0000-000000000001",
+    profile_id: KTVI_STU_PROFILE_ID,
+    student_number: "KTVI/2026/0001",
+    programme_id: KTVI_PROG_ID,
+    entry_term_id: KTVI_TERM_ID,
+    current_term_id: KTVI_TERM_ID,
+    cohort_year: 2026,
+    admission_date: "2026-09-01",
+    status: "active",
+    current_level: 100,
+    gpa: 3.75,
+    cgpa: 3.75,
+    total_credits_earned: 18,
+    school_id: SCHOOL_B_ID,
+    university_id: SCHOOL_B_ID,
+    created_at: now,
+    updated_at: now,
+  });
+
   return {
     roles,
     permissions,
@@ -1358,7 +1594,9 @@ export function createInitialSeedData(): TableStore {
     user_role_assignments,
     universities,
     university_system_admins: [
-      { id: "usa-1", university_id: "u0000001-0000-0000-0000-000000000001", user_id: ADMIN_ID, is_primary: true, created_at: now },
+      { id: "usa-1", university_id: SCHOOL_A_ID, user_id: ADMIN_ID, is_primary: true, created_at: now },
+      { id: "usa-2", university_id: SCHOOL_B_ID, user_id: KTVI_ADMIN_ID, is_primary: true, created_at: now },
+      { id: "usa-3", university_id: SCHOOL_C_ID, user_id: ASHS_ADMIN_ID, is_primary: true, created_at: now },
     ],
     superadmin_modules,
     campuses,
@@ -1431,6 +1669,88 @@ export function createInitialSeedData(): TableStore {
     student_programme_history: [],
     student_status_history: [],
     institutional_reports: [],
+    communications: [
+      {
+        id: "c9a00001-0000-0000-0000-000000000004",
+        direction: "inbound",
+        is_read: false,
+        parent_id: "c9a00001-0000-0000-0000-000000000001",
+        sender_email: "admin@university.edu.gh",
+        sender_name: "Andronicus Johnson (AIT System Admin)",
+        recipient_to: "superadmin@university.edu.gh",
+        recipient_cc: null,
+        recipient_bcc: null,
+        target_school: "Accra Institute of Technology",
+        subject: "Re: 2026/2027 Academic Year Governance & Quota Compliance Directive",
+        body: "Dear Master Super Administrator,\n\nThank you for the directive. We have verified our institutional role quotas, confirmed MFA enrollment across all active system administrators, and reviewed our school portal sidebar modules.\n\nEverything is compliant and operational on our campus.\n\nWarm regards,\nAndronicus Johnson\nSystem Administrator • Accra Institute of Technology",
+        category: "Compliance",
+        priority: "high",
+        status: "received",
+        attachments: [],
+        sent_at: "2026-11-19T11:20:00.000Z",
+        created_at: "2026-11-19T11:20:00.000Z",
+      },
+      {
+        id: "c9a00001-0000-0000-0000-000000000001",
+        direction: "outbound",
+        is_read: true,
+        parent_id: null,
+        sender_email: "superadmin@university.edu.gh",
+        sender_name: "Master Super Administrator",
+        recipient_to: "admin@university.edu.gh, registrar@university.edu.gh",
+        recipient_cc: "bursar@university.edu.gh",
+        recipient_bcc: null,
+        target_school: "Accra Institute of Technology",
+        subject: "2026/2027 Academic Year Governance & Quota Compliance Directive",
+        body: "Dear Institutional Administrators,\n\nPlease be advised that the 2026/2027 multi-tenant governance quotas and sidebar module configurations have been finalized on the central platform.\n\nKey Action Items:\n1. Verify your institution's assigned role tiers and department limits.\n2. Confirm that all active system administrators have Multi-Factor Authentication (MFA) enabled.\n3. Review your portal sidebar navigation items under Settings.\n\nWarm regards,\nMaster Super Administrator\nUMS Global Platform Governance",
+        category: "Compliance",
+        priority: "high",
+        status: "delivered",
+        attachments: [],
+        sent_at: "2026-11-18T09:30:00.000Z",
+        created_at: "2026-11-18T09:30:00.000Z",
+      },
+      {
+        id: "c9a00001-0000-0000-0000-000000000002",
+        direction: "outbound",
+        is_read: true,
+        parent_id: null,
+        sender_email: "superadmin@university.edu.gh",
+        sender_name: "Master Super Administrator",
+        recipient_to: "all-school-admins@university.edu.gh",
+        recipient_cc: null,
+        recipient_bcc: null,
+        target_school: "All Registered Schools",
+        subject: "Scheduled Cloud Storage Engine Maintenance & Zero-Downtime Sync",
+        body: "Hello System Administrators,\n\nOur engineering team will perform a routine optimization on the multi-tenant database cluster this Saturday at 02:00 UTC. All institutional portals (Universities, High Schools, and Vocational Schools) will remain online with zero cold-start impact.\n\nNo action is required on your part.\n\nBest regards,\nPlatform Operations Team",
+        category: "Maintenance",
+        priority: "normal",
+        status: "delivered",
+        attachments: [],
+        sent_at: "2026-11-16T14:15:00.000Z",
+        created_at: "2026-11-16T14:15:00.000Z",
+      },
+      {
+        id: "c9a00001-0000-0000-0000-000000000003",
+        direction: "outbound",
+        is_read: true,
+        parent_id: null,
+        sender_email: "superadmin@university.edu.gh",
+        sender_name: "Master Super Administrator",
+        recipient_to: "eugenedoeteh@university.edu.gh",
+        recipient_cc: "admin@university.edu.gh",
+        recipient_bcc: null,
+        target_school: "Accra Institute of Technology",
+        subject: "End-of-Semester Bursary Reconciliation & Settlement Verification",
+        body: "Dear Chief Financial Officer,\n\nKindly ensure all pending fee waiver dual-control approvals and Paystack settlement batches for the First Semester are reconciled before the financial close deadline.\n\nThank you,\nMaster Super Administrator",
+        category: "Billing",
+        priority: "high",
+        status: "delivered",
+        attachments: [],
+        sent_at: "2026-11-14T11:00:00.000Z",
+        created_at: "2026-11-14T11:00:00.000Z",
+      },
+    ],
   };
 }
 
@@ -1494,6 +1814,22 @@ const globalStore = globalThis as unknown as {
 };
 
 async function loadDbFromCloudStorage(seed: TableStore): Promise<TableStore> {
+  // 1. Try local disk cache in data/ums-virtual-db.json first
+  try {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const filePath = path.join(process.cwd(), "data", "ums-virtual-db.json");
+    const content = await fs.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.profiles)) {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (Array.isArray(v)) {
+          seed[k] = v;
+        }
+      }
+    }
+  } catch {}
+
   const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
@@ -1549,6 +1885,14 @@ export async function getVirtualDb(): Promise<TableStore> {
 export async function persistVirtualDb(db: TableStore): Promise<void> {
   globalStore.__UMS_VIRTUAL_DB__ = db;
   globalStore.__UMS_VIRTUAL_DB_LOADED__ = true;
+
+  // Persist to local disk cache in data/ums-virtual-db.json
+  try {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const filePath = path.join(process.cwd(), "data", "ums-virtual-db.json");
+    await fs.writeFile(filePath, JSON.stringify(db, null, 2), "utf-8");
+  } catch {}
 
   const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -1740,10 +2084,18 @@ function evaluateCondition(row: Row, col: string, opExpr: string): boolean {
   }
 
   if (opExpr.startsWith("ilike.") || opExpr.startsWith("like.")) {
-    const isCaseInsensitive = opExpr.startsWith("ilike.");
-    const pattern = opExpr.slice(isCaseInsensitive ? 6 : 5).replace(/%/g, ".*").replace(/\*/g, ".*");
-    const regex = new RegExp(`^${pattern}$`, isCaseInsensitive ? "i" : "");
-    return regex.test(String(val ?? ""));
+    try {
+      const isCaseInsensitive = opExpr.startsWith("ilike.");
+      const rawPattern = opExpr.slice(isCaseInsensitive ? 6 : 5).slice(0, 200);
+      // Escape regex metacharacters first, then translate SQL % and * wildcards
+      const safePattern = rawPattern
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/[%*]+/g, ".*");
+      const regex = new RegExp(`^${safePattern}$`, isCaseInsensitive ? "i" : "");
+      return regex.test(String(val ?? ""));
+    } catch {
+      return false;
+    }
   }
 
   return true;
@@ -1967,11 +2319,36 @@ export async function handleVirtualPostgrestRequest(
     db[tableName] = [];
   }
 
+  // Resolve active SaaS Tenant Context (from reqHeaders or active Next.js request cookies/headers)
+  let tenantCtx: TenantContext = resolveTenantContextFromHeaders(reqHeaders);
+  if (!tenantCtx.isAuthenticated) {
+    try {
+      const nextHeadersMod = await import("next/headers");
+      const activeHeaders = await nextHeadersMod.headers();
+      const activeCookies = await nextHeadersMod.cookies();
+      const cookieList = activeCookies.getAll().map((c) => ({ name: c.name, value: c.value }));
+      tenantCtx = resolveTenantContextFromHeaders(activeHeaders, cookieList);
+    } catch {
+      // Outside Next.js request context (e.g. background script)
+    }
+  }
+
+  const activeTenantSchoolId =
+    tenantCtx.isAuthenticated && !tenantCtx.isSuperAdmin
+      ? tenantCtx.schoolId
+      : reqHeaders.get("x-tenant-school-id") || null;
+
   const selectParam = url.searchParams.get("select");
 
-  // 2. GET or HEAD
+  // 2. GET or HEAD (Enforce Tenant Isolation: School A users ONLY see School A rows)
   if (method === "GET" || method === "HEAD") {
-    const filtered = filterRows(db[tableName], url.searchParams);
+    const tenantScopedRows = activeTenantSchoolId
+      ? db[tableName].filter((row) =>
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+        )
+      : db[tableName];
+
+    const filtered = filterRows(tenantScopedRows, url.searchParams);
     const totalCount = filtered.length;
     const sorted = sortRows(filtered, url.searchParams);
 
@@ -2020,7 +2397,7 @@ export async function handleVirtualPostgrestRequest(
     });
   }
 
-  // 3. POST (Insert or Upsert)
+  // 3. POST (Insert or Upsert — Automatically stamps new rows with caller's `school_id`)
   if (method === "POST") {
     let payload: any = {};
     if (bodyText) {
@@ -2038,30 +2415,42 @@ export async function handleVirtualPostgrestRequest(
 
     const insertedOrUpdated: Row[] = [];
 
-    for (const item of items) {
+    for (const rawItem of items) {
+      const item = stampRowWithTenant(tableName, rawItem, activeTenantSchoolId);
+
       if (isUpsert && conflictCols.length > 0) {
-        const existingIdx = db[tableName].findIndex((r) =>
-          conflictCols.every((col) => item[col] !== undefined && String(r[col]) === String(item[col]))
+        const existingIdx = db[tableName].findIndex(
+          (r) =>
+            rowBelongsToTenant(tableName, r, activeTenantSchoolId, tenantCtx.userId) &&
+            conflictCols.every((col) => item[col] !== undefined && String(r[col]) === String(item[col]))
         );
 
         if (existingIdx !== -1) {
-          const updatedRow = {
-            ...db[tableName][existingIdx],
-            ...item,
-            updated_at: nowIso,
-          };
+          const updatedRow = stampRowWithTenant(
+            tableName,
+            {
+              ...db[tableName][existingIdx],
+              ...item,
+              updated_at: nowIso,
+            },
+            activeTenantSchoolId
+          );
           db[tableName][existingIdx] = updatedRow;
           insertedOrUpdated.push(updatedRow);
           continue;
         }
       }
 
-      const newRow: Row = {
-        id: item.id || crypto.randomUUID(),
-        created_at: item.created_at || nowIso,
-        updated_at: item.updated_at || nowIso,
-        ...item,
-      };
+      const newRow: Row = stampRowWithTenant(
+        tableName,
+        {
+          id: item.id || crypto.randomUUID(),
+          created_at: item.created_at || nowIso,
+          updated_at: item.updated_at || nowIso,
+          ...item,
+        },
+        activeTenantSchoolId
+      );
 
       db[tableName].unshift(newRow);
       insertedOrUpdated.push(newRow);
@@ -2090,7 +2479,7 @@ export async function handleVirtualPostgrestRequest(
     });
   }
 
-  // 4. PATCH / PUT (Update)
+  // 4. PATCH / PUT (Update — Strictly isolated to caller's tenant school)
   if (method === "PATCH" || method === "PUT") {
     let patchData: Row = {};
     if (bodyText) {
@@ -2101,18 +2490,28 @@ export async function handleVirtualPostgrestRequest(
       }
     }
 
-    const matching = filterRows(db[tableName], url.searchParams);
+    const tenantScopedRows = activeTenantSchoolId
+      ? db[tableName].filter((row) =>
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+        )
+      : db[tableName];
+
+    const matching = filterRows(tenantScopedRows, url.searchParams);
     const matchingSet = new Set(matching);
     const nowIso = new Date().toISOString();
     const updatedRows: Row[] = [];
 
     db[tableName] = db[tableName].map((row) => {
       if (matchingSet.has(row)) {
-        const updated = {
-          ...row,
-          ...patchData,
-          updated_at: nowIso,
-        };
+        const updated = stampRowWithTenant(
+          tableName,
+          {
+            ...row,
+            ...patchData,
+            updated_at: nowIso,
+          },
+          activeTenantSchoolId
+        );
         updatedRows.push(updated);
         return updated;
       }
@@ -2142,9 +2541,15 @@ export async function handleVirtualPostgrestRequest(
     });
   }
 
-  // 5. DELETE
+  // 5. DELETE (Strictly isolated to caller's tenant school)
   if (method === "DELETE") {
-    const matching = filterRows(db[tableName], url.searchParams);
+    const tenantScopedRows = activeTenantSchoolId
+      ? db[tableName].filter((row) =>
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+        )
+      : db[tableName];
+
+    const matching = filterRows(tenantScopedRows, url.searchParams);
     const matchingSet = new Set(matching);
     const deletedRows = [...matching];
 
