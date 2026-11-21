@@ -331,16 +331,10 @@ export default function Home() {
           <div className="relative z-10 w-full lg:w-[43%] h-full flex flex-col justify-center px-6 lg:pl-3 lg:pr-8 py-3 overflow-hidden">
             <div className="w-full max-w-[320px] lg:max-w-[305px] xl:max-w-[325px] mx-auto lg:mx-0">
               {/* SaaS Platform Badge */}
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Multi-Tenant SaaS Cloud • Strict School Isolation</span>
-              </div>
 
               {/* Heading */}
               <h1 className="text-[26px] sm:text-[30px] lg:text-[32px] font-extrabold leading-[1.15] tracking-tight text-slate-900">
-                School Cloud
-                <br />
-                SaaS Sign In
+                Erudian School Management
               </h1>
 
               {/* Quick Fill Pills for Super Admin & Isolated Tenant Schools */}
@@ -357,48 +351,6 @@ export default function Home() {
                   >
                     Fill Super Admin
                   </button>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  <button
-                    type="button"
-                    onClick={fillAdminCredentials}
-                    className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[10px] font-bold text-blue-800 text-center cursor-pointer transition-colors"
-                    title="School A: Accra Institute of Technology (University Tenant)"
-                  >
-                    School A (Uni)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={fillSchoolBCredentials}
-                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-[10px] font-bold text-amber-800 text-center cursor-pointer transition-colors"
-                    title="School B: Kumasi Technical & Vocational Institute (Vocational Tenant)"
-                  >
-                    School B (Voc)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={fillSchoolCCredentials}
-                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold text-emerald-800 text-center cursor-pointer transition-colors"
-                    title="School C: Achimota Senior High School (High School Tenant)"
-                  >
-                    School C (SHS)
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-1 mt-0.5">
-                  <Link
-                    href="/teacher/dashboard"
-                    className="px-2 py-1 rounded-lg bg-emerald-100/70 hover:bg-emerald-200/80 border border-emerald-300 text-[10px] font-extrabold text-emerald-900 text-center transition-colors flex items-center justify-center gap-1"
-                    title="Teacher & Instructor Dashboard (High School & Vocational)"
-                  >
-                    <span>Teacher Portal</span>
-                  </Link>
-                  <Link
-                    href="/parent/dashboard"
-                    className="px-2 py-1 rounded-lg bg-indigo-100/70 hover:bg-indigo-200/80 border border-indigo-300 text-[10px] font-extrabold text-indigo-900 text-center transition-colors flex items-center justify-center gap-1"
-                    title="Parent & Guardian Dashboard (High School & Vocational)"
-                  >
-                    <span>Parent Portal</span>
-                  </Link>
                 </div>
               </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
@@ -98,7 +98,6 @@ interface NavCategory {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
@@ -144,118 +143,154 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   // Load user data and academic year from Supabase
   useEffect(() => {
+    let isMounted = true;
     async function loadAdminData() {
-      const supabase = createClient();
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
-        return;
-      }
-
-      setUserEmail(user.email || "admin@university.edu.gh");
-      const metaName = user.user_metadata?.full_name || "System Administrator";
-      setUserName(metaName);
-      setUserRole(user.user_metadata?.role || "Super Administrator");
-
       try {
-        const { count } = await (supabase as any)
-          .from("notifications")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("is_read", false);
-        if (count !== null) setUnreadNotifications(count);
-      } catch {
-        // ignore
-      }
+        const supabase = createClient();
 
-      try {
-        const { data: years } = await (supabase as any)
-          .from("academic_years")
-          .select("code, name, is_current")
-          .order("is_current", { ascending: false })
-          .limit(1);
-
-        if (years && years.length > 0 && (years[0] as any)?.code) {
-          setAcademicYear((years[0] as any).code);
-        }
-      } catch {
-        // Fallback default
-      }
-
-      // Fetch Tenant School / Institution Info from SaaS tenant endpoint
-      let currentSchoolType = "university";
-      let loadedFromTenantApi = false;
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.name) {
-            loadedFromTenantApi = true;
-            setSchoolName(data.name);
-            if (data.abbreviation) setSchoolAbbr(data.abbreviation);
-            if (data.logo_url) setSchoolLogo(data.logo_url);
-            if (data.school_type) {
-              currentSchoolType = data.school_type;
-              setSchoolType(data.school_type);
-            }
-          }
-        }
-      } catch {
-        // Fallback directly to supabase table
-      }
-
-      // Fetch dynamic configurable school sidebar menu items for this school's type
-      try {
-        const resMenu = await fetch(`/api/admin/sidebar-menu?school_type=${currentSchoolType}`);
-        if (resMenu.ok) {
-          const menuItems = await resMenu.json();
-          if (Array.isArray(menuItems) && menuItems.length > 0) {
-            const grouped: Record<string, NavCategory> = {};
-            for (const m of menuItems) {
-              const catTitle = m.category || "Core Administration";
-              if (!grouped[catTitle]) {
-                grouped[catTitle] = { title: catTitle, items: [] };
-              }
-              const IconC = ICON_MAP[m.icon] || Boxes;
-              grouped[catTitle].items.push({
-                id: m.id,
-                label: m.label,
-                href: m.href,
-                icon: IconC,
-                badge: m.badge || undefined,
-              });
-            }
-            setDynamicCategories(Object.values(grouped));
-          }
-        }
-      } catch (menuErr) {
-        console.warn("Could not load dynamic school sidebar menu:", menuErr);
-      }
-
-      if (!loadedFromTenantApi) {
+        let currentUser: any = null;
         try {
-          const { data: settingRow } = await (supabase as any)
-            .from("system_settings")
-            .select("setting_value")
-            .eq("setting_key", "institution_info")
-            .maybeSingle();
+          const { data: { user } } = await supabase.auth.getUser();
+          currentUser = user;
+        } catch (err) {
+          console.warn("Client getUser check error:", err);
+        }
 
-          if (settingRow?.setting_value?.name) {
-            setSchoolName(settingRow.setting_value.name);
-            if (settingRow.setting_value.abbreviation) {
-              setSchoolAbbr(settingRow.setting_value.abbreviation);
+        // If client-side session is absent, try server session fallback before redirecting
+        if (!currentUser) {
+          try {
+            const res = await fetch("/api/auth/me");
+            if (res.ok) {
+              const body = await res.json();
+              if (body?.user) {
+                currentUser = body.user;
+              }
             }
-            if (settingRow.setting_value.logo_url) {
-              setSchoolLogo(settingRow.setting_value.logo_url);
+          } catch {}
+        }
+
+        if (!currentUser) {
+          if (isMounted) {
+            window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+          }
+          return;
+        }
+
+        if (!isMounted) return;
+
+        setUserEmail(currentUser.email || "admin@university.edu.gh");
+        const metaName = currentUser.user_metadata?.full_name || "System Administrator";
+        setUserName(metaName);
+
+        const rawRole = currentUser.user_metadata?.role || "system_admin";
+        const formattedRole =
+          rawRole === "system_admin"
+            ? "System Administrator"
+            : rawRole === "super_admin"
+            ? "Super Administrator"
+            : rawRole
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c: string) => c.toUpperCase());
+        setUserRole(formattedRole);
+
+        try {
+          const { count } = await (supabase as any)
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", currentUser.id)
+            .eq("is_read", false);
+          if (count !== null && isMounted) setUnreadNotifications(count);
+        } catch {
+          // ignore
+        }
+
+        try {
+          const { data: years } = await (supabase as any)
+            .from("academic_years")
+            .select("code, name, is_current")
+            .order("is_current", { ascending: false })
+            .limit(1);
+
+          if (years && years.length > 0 && (years[0] as any)?.code && isMounted) {
+            setAcademicYear((years[0] as any).code);
+          }
+        } catch {
+          // Fallback default
+        }
+
+        // Fetch Tenant School / Institution Info from SaaS tenant endpoint
+        let currentSchoolType = "university";
+        let loadedFromTenantApi = false;
+        try {
+          const res = await fetch("/api/settings/institution");
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.name && isMounted) {
+              loadedFromTenantApi = true;
+              setSchoolName(data.name);
+              if (data.abbreviation) setSchoolAbbr(data.abbreviation);
+              if (data.logo_url) setSchoolLogo(data.logo_url);
+              if (data.school_type) {
+                currentSchoolType = data.school_type;
+                setSchoolType(data.school_type);
+              }
             }
           }
-        } catch (err) {
-          console.warn("Could not load institution info from DB:", err);
+        } catch {
+          // Fallback directly to supabase table
         }
+
+        // Fetch dynamic configurable school sidebar menu items for this school's type
+        try {
+          const resMenu = await fetch(`/api/admin/sidebar-menu?school_type=${currentSchoolType}`);
+          if (resMenu.ok) {
+            const menuItems = await resMenu.json();
+            if (Array.isArray(menuItems) && menuItems.length > 0 && isMounted) {
+              const grouped: Record<string, NavCategory> = {};
+              for (const m of menuItems) {
+                const catTitle = m.category || "Core Administration";
+                if (!grouped[catTitle]) {
+                  grouped[catTitle] = { title: catTitle, items: [] };
+                }
+                const IconC = ICON_MAP[m.icon] || Boxes;
+                grouped[catTitle].items.push({
+                  id: m.id,
+                  label: m.label,
+                  href: m.href,
+                  icon: IconC,
+                  badge: m.badge || undefined,
+                });
+              }
+              setDynamicCategories(Object.values(grouped));
+            }
+          }
+        } catch (menuErr) {
+          console.warn("Could not load dynamic school sidebar menu:", menuErr);
+        }
+
+        if (!loadedFromTenantApi && isMounted) {
+          try {
+            const { data: settingRow } = await (supabase as any)
+              .from("system_settings")
+              .select("setting_value")
+              .eq("setting_key", "institution_info")
+              .maybeSingle();
+
+            if (settingRow?.setting_value?.name && isMounted) {
+              setSchoolName(settingRow.setting_value.name);
+              if (settingRow.setting_value.abbreviation) {
+                setSchoolAbbr(settingRow.setting_value.abbreviation);
+              }
+              if (settingRow.setting_value.logo_url) {
+                setSchoolLogo(settingRow.setting_value.logo_url);
+              }
+            }
+          } catch (err) {
+            console.warn("Could not load institution info from DB:", err);
+          }
+        }
+      } catch (err) {
+        console.error("Error initializing admin layout:", err);
       }
     }
 
@@ -276,6 +311,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     window.addEventListener("institution_updated", handleInstitutionUpdate);
     window.addEventListener("school_menu_updated", handleSchoolMenuUpdate);
     return () => {
+      isMounted = false;
       window.removeEventListener("institution_updated", handleInstitutionUpdate);
       window.removeEventListener("school_menu_updated", handleSchoolMenuUpdate);
     };
@@ -345,7 +381,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <Link href="/admin/dashboard" className="flex items-center gap-3 min-w-0">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-blue-500/20 shrink-0 overflow-hidden">
             {schoolLogo ? (
-              <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
+              <img
+                src={schoolLogo}
+                alt={schoolName}
+                className="h-full w-full object-cover"
+                onError={() => setSchoolLogo("")}
+              />
             ) : (
               (schoolAbbr || "AIT").slice(0, 4)
             )}
@@ -387,8 +428,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               {group.title}
             </div>
 
-            {group.items.map((item) => {
-              const Icon = item.icon;
+            {(group.items || []).map((item) => {
+              const Icon = item.icon || Boxes;
               const isActive =
                 pathname === item.href || (item.id === "dashboard" && pathname === "/admin");
 
@@ -432,7 +473,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 mb-2.5 shadow-2xs">
           <div className="relative">
             <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-              {userName.slice(0, 2).toUpperCase()}
+              {(userName || "SA").slice(0, 2).toUpperCase()}
             </div>
             <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
           </div>
@@ -564,10 +605,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               {/* Fullscreen Toggle */}
               <button
                 onClick={() => {
-                  if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch(() => {});
-                  } else {
-                    document.exitFullscreen().catch(() => {});
+                  if (typeof document !== "undefined") {
+                    if (!document.fullscreenElement) {
+                      if (document.documentElement && typeof document.documentElement.requestFullscreen === "function") {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                      }
+                    } else {
+                      if (typeof document.exitFullscreen === "function") {
+                        document.exitFullscreen().catch(() => {});
+                      }
+                    }
                   }
                 }}
                 className="hidden md:flex h-8 w-8 rounded-lg hover:bg-slate-100 items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
@@ -583,7 +630,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
-                    {userName.slice(0, 2).toUpperCase()}
+                    {(userName || "SA").slice(0, 2).toUpperCase()}
                   </div>
                   <ChevronDown className="h-3.5 w-3.5 text-slate-500 hidden sm:block" />
                 </button>
