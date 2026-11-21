@@ -1,7 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getVirtualDb, persistVirtualDb } from "@/lib/supabase/virtual-db";
 import { SCHOOL_A_ID, SCHOOL_B_ID, SCHOOL_C_ID } from "@/lib/saas/tenant-context";
-import { registerDynamicUser } from "@/lib/supabase/fetch";
+import {
+  registerDynamicUser,
+  unregisterDynamicUser,
+  unregisterDynamicUsersForSchool,
+} from "@/lib/supabase/fetch";
 
 export type SchoolType = "university" | "high_school" | "vocational_school";
 
@@ -525,7 +529,7 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   const now = new Date().toISOString();
   const cleanId = decodeURIComponent(id).trim();
 
-  // 1. Locate the university
+  // 1. Locate the university from master directory and active settings
   const universities = await getUniversities();
   let univ = universities.find(
     (u) =>
@@ -549,14 +553,114 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
         (u: any) =>
           u.id === cleanId ||
           u.id?.toLowerCase() === cleanId.toLowerCase() ||
-          u.code?.toLowerCase() === cleanId.toLowerCase()
+          u.code?.toLowerCase() === cleanId.toLowerCase() ||
+          u.name?.toLowerCase() === cleanId.toLowerCase()
       );
+    } catch {}
+  }
+
+  // Also query 'schools' table if still not located
+  if (!univ) {
+    try {
+      const { data: schoolRow } = await (supabase as any)
+        .from("schools")
+        .select("*")
+        .or(`id.eq.${cleanId},slug.ilike.${cleanId},name.ilike.${cleanId}`)
+        .maybeSingle();
+
+      if (schoolRow) {
+        univ = {
+          id: schoolRow.id,
+          code: (schoolRow.slug || schoolRow.name?.substring(0, 4) || cleanId).toUpperCase(),
+          name: schoolRow.name,
+          school_type: schoolRow.school_type || "university",
+          institution_type: schoolRow.school_type || "university",
+          country: "Ghana",
+          city: "Accra",
+          default_currency: schoolRow.currency || "GHS",
+          currency_symbol: schoolRow.currency === "USD" ? "$" : "GH₵",
+          status: "active",
+          created_at: schoolRow.created_at || now,
+          updated_at: now,
+          full_access: true,
+        };
+      }
     } catch {}
   }
 
   if (!univ) {
     throw new Error(`University with ID or code '${cleanId}' not found.`);
   }
+
+  // 1b. Collect ALL known identifiers for this school across tables (IDs, codes, slugs, names)
+  const allSchoolIds = new Set<string>();
+  const allSchoolCodes = new Set<string>();
+  const allSchoolSlugs = new Set<string>();
+  const allSchoolNames = new Set<string>();
+
+  if (cleanId) allSchoolIds.add(cleanId);
+  if (univ.id) allSchoolIds.add(univ.id);
+  if (univ.code) {
+    allSchoolCodes.add(univ.code);
+    allSchoolCodes.add(univ.code.toUpperCase());
+    allSchoolCodes.add(univ.code.toLowerCase());
+    allSchoolSlugs.add(univ.code.toLowerCase());
+  }
+  if (univ.name) {
+    allSchoolNames.add(univ.name);
+    allSchoolNames.add(univ.name.toLowerCase());
+  }
+
+  // Correlate with public.schools table
+  try {
+    const { data: dbSchools } = await (supabase as any)
+      .from("schools")
+      .select("id, name, slug");
+    if (Array.isArray(dbSchools)) {
+      for (const s of dbSchools) {
+        const matchesId = allSchoolIds.has(s.id);
+        const matchesSlug = s.slug && allSchoolSlugs.has(s.slug.toLowerCase());
+        const matchesName = s.name && allSchoolNames.has(s.name.toLowerCase());
+        if (matchesId || matchesSlug || matchesName) {
+          if (s.id) allSchoolIds.add(s.id);
+          if (s.slug) {
+            allSchoolSlugs.add(s.slug.toLowerCase());
+            allSchoolCodes.add(s.slug.toUpperCase());
+          }
+          if (s.name) {
+            allSchoolNames.add(s.name);
+            allSchoolNames.add(s.name.toLowerCase());
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Correlate with public.universities table
+  try {
+    const { data: dbUnivs } = await (supabase as any)
+      .from("universities")
+      .select("id, name, code");
+    if (Array.isArray(dbUnivs)) {
+      for (const u of dbUnivs) {
+        const matchesId = allSchoolIds.has(u.id);
+        const matchesCode = u.code && allSchoolCodes.has(u.code.toUpperCase());
+        const matchesName = u.name && allSchoolNames.has(u.name.toLowerCase());
+        if (matchesId || matchesCode || matchesName) {
+          if (u.id) allSchoolIds.add(u.id);
+          if (u.code) {
+            allSchoolCodes.add(u.code.toUpperCase());
+            allSchoolCodes.add(u.code.toLowerCase());
+            allSchoolSlugs.add(u.code.toLowerCase());
+          }
+          if (u.name) {
+            allSchoolNames.add(u.name);
+            allSchoolNames.add(u.name.toLowerCase());
+          }
+        }
+      }
+    }
+  } catch {}
 
   // 2. Identify ALL users belonging to this university (system admin, teachers, staff, students, parents)
   const targetUserIds = new Set<string>();
@@ -583,12 +687,16 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   try {
     const { data: sysAdmins } = await (supabase as any)
       .from("university_system_admins")
-      .select("user_id")
-      .or(`university_id.eq.${univ.id},university_id.eq.${univ.code}`);
+      .select("user_id, university_id");
 
     if (Array.isArray(sysAdmins)) {
       sysAdmins.forEach((sa: any) => {
-        if (sa.user_id) registerUser(sa.user_id, undefined, "system_admin");
+        if (
+          sa.user_id &&
+          (allSchoolIds.has(sa.university_id) || allSchoolCodes.has(sa.university_id))
+        ) {
+          registerUser(sa.user_id, undefined, "system_admin");
+        }
       });
     }
   } catch {}
@@ -604,21 +712,21 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
         const m = p.metadata || {};
         const pEmail = (p.email || "").toLowerCase();
         const isAssociated =
-          p.school_id === univ.id ||
-          p.university_id === univ.id ||
-          p.university_id === univ.code ||
-          m.school_id === univ.id ||
-          m.university_id === univ.id ||
-          m.university_code === univ.code ||
-          m.university_name === univ.name ||
+          allSchoolIds.has(p.school_id) ||
+          allSchoolIds.has(p.university_id) ||
+          allSchoolCodes.has(p.university_id) ||
+          allSchoolIds.has(m.school_id) ||
+          allSchoolIds.has(m.university_id) ||
+          allSchoolCodes.has(m.university_code) ||
+          allSchoolNames.has(m.university_name?.toLowerCase()) ||
           // School A / LCU demo accounts
-          ((univ.id === SCHOOL_A_ID || univ.code === "AIT" || univ.code === "LCU" || univ.name?.toLowerCase().includes("lofa")) &&
+          ((allSchoolIds.has(SCHOOL_A_ID) || allSchoolCodes.has("AIT") || allSchoolCodes.has("LCU") || univ.name?.toLowerCase().includes("lofa")) &&
             (pEmail === "admin@university.edu.gh" || pEmail.includes("ait.edu.gh") || pEmail.includes("lofa"))) ||
           // School B / KTVI demo accounts
-          ((univ.id === SCHOOL_B_ID || univ.code === "KTVI" || univ.name?.toLowerCase().includes("kumasi")) &&
+          ((allSchoolIds.has(SCHOOL_B_ID) || allSchoolCodes.has("KTVI") || univ.name?.toLowerCase().includes("kumasi")) &&
             (pEmail === "admin@ktvi.edu.gh" || pEmail === "student@ktvi.edu.gh" || pEmail.includes("instructor.voc") || pEmail.includes("parent.voc") || pEmail.includes("ktvi.edu.gh"))) ||
           // School C / Achimota demo accounts
-          ((univ.id === SCHOOL_C_ID || univ.code === "ASHS" || univ.code === "ACH" || univ.name?.toLowerCase().includes("achimota")) &&
+          ((allSchoolIds.has(SCHOOL_C_ID) || allSchoolCodes.has("ASHS") || allSchoolCodes.has("ACH") || univ.name?.toLowerCase().includes("achimota")) &&
             (pEmail === "admin@achimota.edu.gh" || pEmail.includes("teacher.hs") || pEmail.includes("parent.hs") || pEmail.includes("achimota.edu.gh")));
 
         if (isAssociated) {
@@ -632,13 +740,14 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   try {
     const { data: stuRows } = await (supabase as any)
       .from("students")
-      .select("id, profile_id, school_id, university_id")
-      .or(`school_id.eq.${univ.id},university_id.eq.${univ.id}`);
+      .select("id, profile_id, school_id, university_id");
 
     if (Array.isArray(stuRows)) {
       stuRows.forEach((s: any) => {
-        if (s.profile_id) registerUser(s.profile_id, undefined, "student");
-        if (s.id) registerUser(s.id, undefined, "student");
+        if (allSchoolIds.has(s.school_id) || allSchoolIds.has(s.university_id)) {
+          if (s.profile_id) registerUser(s.profile_id, undefined, "student");
+          if (s.id) registerUser(s.id, undefined, "student");
+        }
       });
     }
   } catch {}
@@ -646,13 +755,14 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   try {
     const { data: staffRows } = await (supabase as any)
       .from("staff")
-      .select("id, profile_id, school_id, university_id")
-      .or(`school_id.eq.${univ.id},university_id.eq.${univ.id}`);
+      .select("id, profile_id, school_id, university_id");
 
     if (Array.isArray(staffRows)) {
       staffRows.forEach((s: any) => {
-        if (s.profile_id) registerUser(s.profile_id, undefined, "staff");
-        if (s.id) registerUser(s.id, undefined, "staff");
+        if (allSchoolIds.has(s.school_id) || allSchoolIds.has(s.university_id)) {
+          if (s.profile_id) registerUser(s.profile_id, undefined, "staff");
+          if (s.id) registerUser(s.id, undefined, "staff");
+        }
       });
     }
   } catch {}
@@ -661,12 +771,13 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   try {
     const { data: roleRows } = await (supabase as any)
       .from("user_role_assignments")
-      .select("user_id, school_id, university_id")
-      .or(`school_id.eq.${univ.id},university_id.eq.${univ.id}`);
+      .select("user_id, school_id, university_id");
 
     if (Array.isArray(roleRows)) {
       roleRows.forEach((r: any) => {
-        if (r.user_id) registerUser(r.user_id);
+        if (allSchoolIds.has(r.school_id) || allSchoolIds.has(r.university_id)) {
+          if (r.user_id) registerUser(r.user_id);
+        }
       });
     }
   } catch {}
@@ -686,12 +797,12 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
         const uEmail = (u.email || "").toLowerCase();
 
         const isAssociated =
-          uUnivId === univ.id ||
-          uUnivId === univ.code ||
-          uUnivCode === univ.code ||
-          ((univ.id === SCHOOL_B_ID || univ.code === "KTVI") && (uEmail.includes("ktvi") || uEmail.includes(".voc@"))) ||
-          ((univ.id === SCHOOL_C_ID || univ.code === "ASHS" || univ.code === "ACH") && (uEmail.includes("achimota") || uEmail.includes(".hs@"))) ||
-          ((univ.id === SCHOOL_A_ID || univ.code === "AIT" || univ.code === "LCU") && uEmail === "admin@university.edu.gh");
+          allSchoolIds.has(uUnivId) ||
+          allSchoolCodes.has(uUnivId) ||
+          allSchoolCodes.has(uUnivCode) ||
+          ((allSchoolIds.has(SCHOOL_B_ID) || allSchoolCodes.has("KTVI")) && (uEmail.includes("ktvi") || uEmail.includes(".voc@"))) ||
+          ((allSchoolIds.has(SCHOOL_C_ID) || allSchoolCodes.has("ASHS") || allSchoolCodes.has("ACH")) && (uEmail.includes("achimota") || uEmail.includes(".hs@"))) ||
+          ((allSchoolIds.has(SCHOOL_A_ID) || allSchoolCodes.has("AIT") || allSchoolCodes.has("LCU")) && uEmail === "admin@university.edu.gh");
 
         if (isAssociated) {
           registerUser(u.id, u.email, uRole);
@@ -708,14 +819,15 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
         const m = p.metadata || {};
         const pEmail = (p.email || "").toLowerCase();
         const isAssociated =
-          p.school_id === univ.id ||
-          p.university_id === univ.id ||
-          m.school_id === univ.id ||
-          m.university_id === univ.id ||
-          m.university_code === univ.code ||
-          ((univ.id === SCHOOL_B_ID || univ.code === "KTVI") && (pEmail.includes("ktvi") || pEmail.includes(".voc@"))) ||
-          ((univ.id === SCHOOL_C_ID || univ.code === "ASHS" || univ.code === "ACH") && (pEmail.includes("achimota") || pEmail.includes(".hs@"))) ||
-          ((univ.id === SCHOOL_A_ID || univ.code === "AIT" || univ.code === "LCU") && pEmail === "admin@university.edu.gh");
+          allSchoolIds.has(p.school_id) ||
+          allSchoolIds.has(p.university_id) ||
+          allSchoolCodes.has(p.university_id) ||
+          allSchoolIds.has(m.school_id) ||
+          allSchoolIds.has(m.university_id) ||
+          allSchoolCodes.has(m.university_code) ||
+          ((allSchoolIds.has(SCHOOL_B_ID) || allSchoolCodes.has("KTVI")) && (pEmail.includes("ktvi") || pEmail.includes(".voc@"))) ||
+          ((allSchoolIds.has(SCHOOL_C_ID) || allSchoolCodes.has("ASHS") || allSchoolCodes.has("ACH")) && (pEmail.includes("achimota") || pEmail.includes(".hs@"))) ||
+          ((allSchoolIds.has(SCHOOL_A_ID) || allSchoolCodes.has("AIT") || allSchoolCodes.has("LCU")) && pEmail === "admin@university.edu.gh");
 
         if (isAssociated) {
           registerUser(p.id, p.email, p.role || m.role);
@@ -724,47 +836,79 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     }
   } catch {}
 
+  // G. Unregister in-memory demo & fallback users for this school
+  for (const sId of Array.from(allSchoolIds)) {
+    unregisterDynamicUsersForSchool(sId, univ.code);
+  }
+
   // 3. PERMANENTLY PURGE ALL USERS of this university from the database
   let affectedUsersCount = 0;
   for (const uid of Array.from(targetUserIds)) {
     affectedUsersCount++;
+    const userMeta = targetUserMeta.find((u) => u.id === uid);
+    const normEmail = userMeta?.email?.toLowerCase();
+
     try {
       // 1. Delete dependent transactional records
       try {
         await (supabase as any).from("course_enrolments").delete().or(`student_id.eq.${uid},profile_id.eq.${uid}`);
         await (supabase as any).from("assessment_marks").delete().or(`student_id.eq.${uid},grader_id.eq.${uid}`);
         await (supabase as any).from("attendance_records").delete().or(`student_id.eq.${uid},marked_by.eq.${uid}`);
+        await (supabase as any).from("attendance_amendments").delete().eq("amended_by", uid);
         await (supabase as any).from("student_invoices").delete().eq("student_id", uid);
+        await (supabase as any).from("invoice_lines").delete().eq("student_id", uid);
         await (supabase as any).from("payments").delete().or(`student_id.eq.${uid},recorded_by.eq.${uid}`);
         await (supabase as any).from("receipts").delete().eq("student_id", uid);
         await (supabase as any).from("notifications").delete().eq("user_id", uid);
+        await (supabase as any).from("leave_requests").delete().or(`user_id.eq.${uid},approved_by.eq.${uid}`);
+        await (supabase as any).from("support_cases").delete().eq("user_id", uid);
+        await (supabase as any).from("service_requests").delete().or(`student_id.eq.${uid},user_id.eq.${uid}`);
+        await (supabase as any).from("loans").delete().eq("user_id", uid);
+        await (supabase as any).from("applications").delete().eq("profile_id", uid);
       } catch {}
 
       // 2. Delete user role assignments and scopes
-      await (supabase as any).from("user_role_assignments").delete().eq("user_id", uid);
-      await (supabase as any).from("user_scopes").delete().eq("user_id", uid);
-      await (supabase as any).from("university_system_admins").delete().eq("user_id", uid);
+      try {
+        await (supabase as any).from("user_role_assignments").delete().eq("user_id", uid);
+        await (supabase as any).from("user_scopes").delete().eq("user_id", uid);
+        await (supabase as any).from("university_system_admins").delete().eq("user_id", uid);
+      } catch {}
 
       // 3. Delete student and staff records
-      await (supabase as any).from("students").delete().or(`profile_id.eq.${uid},id.eq.${uid}`);
-      await (supabase as any).from("staff").delete().or(`profile_id.eq.${uid},id.eq.${uid}`);
-      await (supabase as any).from("employment_records").delete().or(`profile_id.eq.${uid},staff_id.eq.${uid}`);
-      await (supabase as any).from("teaching_assignments").delete().eq("lecturer_id", uid);
+      try {
+        await (supabase as any).from("students").delete().or(`profile_id.eq.${uid},id.eq.${uid}`);
+        await (supabase as any).from("staff").delete().or(`profile_id.eq.${uid},id.eq.${uid}`);
+        await (supabase as any).from("employment_records").delete().or(`profile_id.eq.${uid},staff_id.eq.${uid}`);
+        await (supabase as any).from("teaching_assignments").delete().eq("lecturer_id", uid);
+      } catch {}
 
-      // 4. Delete profile record
-      await (supabase as any).from("profiles").delete().eq("id", uid);
+      // 4. Delete profile record (by ID and by email)
+      try {
+        await (supabase as any).from("profiles").delete().eq("id", uid);
+        if (normEmail) {
+          await (supabase as any).from("profiles").delete().ilike("email", normEmail);
+        }
+      } catch {}
 
       // 5. Delete from Supabase Auth so they can NEVER log in
       try {
         await supabase.auth.admin.deleteUser(uid);
       } catch {
         // Fallback: If foreign keys prevent instant hard deletion in auth, ban permanently and revoke credentials
-        await supabase.auth.admin.updateUserById(uid, {
-          ban_duration: "876000h",
-          user_metadata: { account_status: "deleted", university_status: "deleted" },
-          app_metadata: { account_status: "deleted", university_status: "deleted" },
-        });
+        try {
+          await supabase.auth.admin.updateUserById(uid, {
+            ban_duration: "876000h",
+            user_metadata: { account_status: "deleted", university_status: "deleted" },
+            app_metadata: { account_status: "deleted", university_status: "deleted" },
+          });
+        } catch {}
       }
+
+      // 6. Delete from fallback users in memory
+      if (normEmail) {
+        unregisterDynamicUser(normEmail);
+      }
+      unregisterDynamicUser(uid);
     } catch (delErr) {
       console.warn(`Error deleting university user ${uid}:`, delErr);
     }
@@ -775,50 +919,80 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     const vDb = await getVirtualDb();
     if (vDb) {
       const uids = new Set(Array.from(targetUserIds));
+      const sIds = new Set(Array.from(allSchoolIds));
+      const sCodes = new Set(Array.from(allSchoolCodes));
+
       if (Array.isArray(vDb.profiles)) {
         vDb.profiles = vDb.profiles.filter(
-          (p: any) => !uids.has(p.id) && p.school_id !== univ.id && p.university_id !== univ.id
+          (p: any) =>
+            !uids.has(p.id) &&
+            !sIds.has(p.school_id) &&
+            !sIds.has(p.university_id) &&
+            !sCodes.has(p.university_id)
         );
       }
       if (Array.isArray(vDb.students)) {
         vDb.students = vDb.students.filter(
-          (s: any) => !uids.has(s.id) && !uids.has(s.profile_id) && s.school_id !== univ.id
+          (s: any) =>
+            !uids.has(s.id) &&
+            !uids.has(s.profile_id) &&
+            !sIds.has(s.school_id) &&
+            !sIds.has(s.university_id)
         );
       }
       if (Array.isArray(vDb.staff)) {
         vDb.staff = vDb.staff.filter(
-          (s: any) => !uids.has(s.id) && !uids.has(s.profile_id) && s.school_id !== univ.id
+          (s: any) =>
+            !uids.has(s.id) &&
+            !uids.has(s.profile_id) &&
+            !sIds.has(s.school_id) &&
+            !sIds.has(s.university_id)
         );
       }
       if (Array.isArray(vDb.user_role_assignments)) {
         vDb.user_role_assignments = vDb.user_role_assignments.filter(
-          (r: any) => !uids.has(r.user_id) && r.school_id !== univ.id
+          (r: any) =>
+            !uids.has(r.user_id) &&
+            !sIds.has(r.school_id) &&
+            !sIds.has(r.university_id)
         );
       }
       if (Array.isArray(vDb.university_system_admins)) {
         vDb.university_system_admins = vDb.university_system_admins.filter(
-          (sa: any) => !uids.has(sa.user_id) && sa.university_id !== univ.id && sa.university_id !== univ.code
+          (sa: any) =>
+            !uids.has(sa.user_id) &&
+            !sIds.has(sa.university_id) &&
+            !sCodes.has(sa.university_id)
         );
       }
       if (Array.isArray(vDb.schools)) {
-        vDb.schools = vDb.schools.filter((s: any) => s.id !== univ.id && s.code !== univ.code);
+        vDb.schools = vDb.schools.filter(
+          (s: any) => !sIds.has(s.id) && !sCodes.has(s.code) && !sCodes.has(s.slug)
+        );
       }
       if (Array.isArray(vDb.universities)) {
-        vDb.universities = vDb.universities.filter((u: any) => u.id !== univ.id && u.code !== univ.code);
+        vDb.universities = vDb.universities.filter(
+          (u: any) => !sIds.has(u.id) && !sCodes.has(u.code)
+        );
+      }
+      if (Array.isArray(vDb.campuses)) {
+        vDb.campuses = vDb.campuses.filter(
+          (c: any) => !sIds.has(c.school_id) && !sIds.has(c.university_id)
+        );
       }
       if (Array.isArray(vDb.departments)) {
         vDb.departments = vDb.departments.filter(
-          (d: any) => d.school_id !== univ.id && d.university_id !== univ.id
+          (d: any) => !sIds.has(d.school_id) && !sIds.has(d.university_id)
         );
       }
       if (Array.isArray(vDb.courses)) {
         vDb.courses = vDb.courses.filter(
-          (c: any) => c.school_id !== univ.id && c.university_id !== univ.id
+          (c: any) => !sIds.has(c.school_id) && !sIds.has(c.university_id)
         );
       }
       if (Array.isArray(vDb.classes)) {
         vDb.classes = vDb.classes.filter(
-          (cl: any) => cl.school_id !== univ.id && cl.university_id !== univ.id
+          (cl: any) => !sIds.has(cl.school_id) && !sIds.has(cl.university_id)
         );
       }
       await persistVirtualDb(vDb);
@@ -864,50 +1038,50 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
   }
 
   // 6. Delete university data tables: university_system_admins, campuses, departments, courses, terms
-  try {
-    await (supabase as any).from("university_system_admins").delete().or(`university_id.eq.${univ.id},university_id.eq.${univ.code}`);
-  } catch {}
-  try {
-    await (supabase as any).from("campuses").delete().or(`school_id.eq.${univ.id},code.ilike.${univ.code}%`);
-  } catch {}
-  try {
-    await (supabase as any).from("departments").delete().or(`school_id.eq.${univ.id},code.ilike.${univ.code}%`);
-  } catch {}
-  try {
-    await (supabase as any).from("courses").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("course_offerings").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("classes").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("timetables").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("academic_terms").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("academic_years").delete().eq("school_id", univ.id);
-  } catch {}
-  try {
-    await (supabase as any).from("grading_scales").delete().eq("school_id", univ.id);
-  } catch {}
+  for (const sId of Array.from(allSchoolIds)) {
+    try { await (supabase as any).from("university_system_admins").delete().eq("university_id", sId); } catch {}
+    try { await (supabase as any).from("campuses").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("faculties").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("departments").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("programmes").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("courses").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("course_offerings").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("classes").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("timetables").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("academic_terms").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("academic_years").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("grading_scales").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("grade_scales").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("fee_items").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("fee_schedules").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("residences").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("transport_routes").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("transport_vehicles").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("library_items").delete().eq("school_id", sId); } catch {}
+    try { await (supabase as any).from("admission_cycles").delete().eq("school_id", sId); } catch {}
+  }
 
-  // 7. Delete university row from 'schools' and 'universities' tables
-  try {
-    await (supabase as any).from("schools").delete().or(`id.eq.${univ.id},code.eq.${univ.code}`);
-  } catch {}
-  try {
-    await (supabase as any).from("universities").delete().eq("id", univ.id);
-    await (supabase as any).from("universities").delete().eq("code", univ.code);
-    await (supabase as any)
-      .from("universities")
-      .update({ status: "deleted", updated_at: now })
-      .or(`id.eq.${univ.id},code.eq.${univ.code}`);
-  } catch (uDelErr) {
-    console.warn("Could not delete from universities table:", uDelErr);
+  for (const sCode of Array.from(allSchoolCodes)) {
+    try { await (supabase as any).from("university_system_admins").delete().eq("university_id", sCode); } catch {}
+    try { await (supabase as any).from("campuses").delete().ilike("code", `${sCode}%`); } catch {}
+    try { await (supabase as any).from("departments").delete().ilike("code", `${sCode}%`); } catch {}
+  }
+
+  // 7. Delete university row from 'universities' and 'schools' tables in database
+  for (const sId of Array.from(allSchoolIds)) {
+    try { await (supabase as any).from("universities").delete().eq("id", sId); } catch {}
+    try { await (supabase as any).from("schools").delete().eq("id", sId); } catch {}
+  }
+  for (const sCode of Array.from(allSchoolCodes)) {
+    try { await (supabase as any).from("universities").delete().eq("code", sCode); } catch {}
+    try { await (supabase as any).from("schools").delete().ilike("slug", sCode.toLowerCase()); } catch {}
+  }
+  for (const sSlug of Array.from(allSchoolSlugs)) {
+    try { await (supabase as any).from("schools").delete().ilike("slug", sSlug); } catch {}
+  }
+  for (const sName of Array.from(allSchoolNames)) {
+    try { await (supabase as any).from("universities").delete().ilike("name", sName); } catch {}
+    try { await (supabase as any).from("schools").delete().ilike("name", sName); } catch {}
   }
 
   // 8. Remove from active superadmin_universities in system_settings
@@ -920,7 +1094,10 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
 
     const currentList = Array.isArray(rawUnivs?.setting_value) ? rawUnivs.setting_value : universities;
     const remainingUnivs = currentList.filter(
-      (u: any) => u.id !== univ.id && u.code !== univ.code
+      (u: any) =>
+        !allSchoolIds.has(u.id) &&
+        !allSchoolCodes.has(u.code) &&
+        !allSchoolNames.has(u.name?.toLowerCase())
     );
 
     await (supabase as any).from("system_settings").upsert(
@@ -948,7 +1125,12 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
 
     const currentDeleted = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
     const updatedDeleted = [
-      ...currentDeleted.filter((d: any) => d.id !== univ.id && d.code !== univ.code),
+      ...currentDeleted.filter(
+        (d: any) =>
+          !allSchoolIds.has(d.id) &&
+          !allSchoolCodes.has(d.code) &&
+          !allSchoolNames.has(d.name?.toLowerCase())
+      ),
       {
         id: univ.id,
         code: univ.code,
@@ -1469,7 +1651,7 @@ export async function createUniversity(
   payload: Omit<UniversityItem, "id" | "created_at">
 ): Promise<UniversityItem> {
   const supabase = createAdminClient();
-  const newId = `u-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const newId = crypto.randomUUID();
   const now = new Date().toISOString();
 
   const createdSchoolType = payload.school_type || payload.institution_type || "university";
@@ -1514,6 +1696,7 @@ export async function createUniversity(
     await (supabase as any)
       .from("schools")
       .insert({
+        id: newUniv.id,
         name: newUniv.name,
         slug: newUniv.code.toLowerCase(),
         school_type: createdSchoolType,
@@ -1529,6 +1712,7 @@ export async function createUniversity(
       await (supabase as any)
         .from("schools")
         .insert({
+          id: newUniv.id,
           name: newUniv.name,
           slug: newUniv.code.toLowerCase(),
           status: newUniv.status,

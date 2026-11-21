@@ -254,6 +254,34 @@ export function registerDynamicUser(email: string, password: string, spec: Fallb
   DEMO_USERS[norm] = { password, spec };
 }
 
+export function unregisterDynamicUser(emailOrId: string) {
+  const target = emailOrId.trim().toLowerCase();
+  for (const [key, val] of Object.entries(DEMO_USERS)) {
+    if (key === target || val.spec.id === emailOrId || val.spec.email?.toLowerCase() === target) {
+      if (val.spec.role !== "superadmin") {
+        delete DEMO_USERS[key];
+      }
+    }
+  }
+}
+
+export function unregisterDynamicUsersForSchool(schoolId: string, schoolCode?: string) {
+  const cleanId = (schoolId || "").toLowerCase();
+  const cleanCode = (schoolCode || "").toLowerCase();
+  for (const [key, val] of Object.entries(DEMO_USERS)) {
+    const sId = (val.spec.school_id || "").toLowerCase();
+    if (
+      (cleanId && sId === cleanId) ||
+      (cleanCode && sId === cleanCode) ||
+      (cleanCode && key.includes(cleanCode))
+    ) {
+      if (val.spec.role !== "superadmin") {
+        delete DEMO_USERS[key];
+      }
+    }
+  }
+}
+
 export function resolveFallbackUserFromRefreshToken(refreshToken: string): FallbackUserSpec | null {
   if (refreshToken && refreshToken.startsWith(FALLBACK_REFRESH_PREFIX)) {
     try {
