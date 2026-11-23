@@ -664,32 +664,6 @@ export default function SuperAdminCommunicationsPage() {
             <span>Receive Test Reply</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("gateway")}
-            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-              hasResendKey
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                : "bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
-            }`}
-            title="Configure Resend API Key & Inbound Webhook"
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                hasResendKey ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
-              }`}
-            />
-            <span>{hasResendKey ? "Resend Active" : "Set Resend API Key"}</span>
-          </button>
-
-          <button
-            onClick={() => fetchCommunications()}
-            className="p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors shadow-2xs cursor-pointer"
-            title="Refresh inbox & communications"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
-          </button>
-
           {/* Gmail-Style Compose Button */}
           <button
             onClick={() => handleOpenCompose()}
