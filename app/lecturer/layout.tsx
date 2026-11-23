@@ -57,7 +57,7 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
   const [userTitle, setUserTitle] = useState<string>("Senior Lecturer");
   const [departmentName, setDepartmentName] = useState<string>("Department of Computer Science");
   const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
+  const [schoolName, setSchoolName] = useState<string>("University Portal");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);

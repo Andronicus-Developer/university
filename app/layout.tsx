@@ -10,7 +10,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "University Management System",
+  title: "Erudian360",
   description: "Enterprise Academic & Administrative Management Platform",
 };
 

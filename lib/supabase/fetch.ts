@@ -22,10 +22,6 @@ export interface FallbackUserSpec {
 const FALLBACK_SIG_PREFIX = "local-fallback-sig-";
 export const FALLBACK_REFRESH_PREFIX = "fallback-refresh-";
 
-const SCHOOL_A_ID = "u0000001-0000-0000-0000-000000000001"; // Accra Institute of Technology (University)
-const SCHOOL_B_ID = "u0000002-0000-0000-0000-000000000002"; // Kumasi Technical & Vocational Institute (Vocational)
-const SCHOOL_C_ID = "u0000003-0000-0000-0000-000000000003"; // Achimota Senior High School (High School)
-
 export const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserSpec }> = {
   "superadmin@university.edu.gh": {
     password: "SuperAdmin@123456",
@@ -36,129 +32,6 @@ export const DEMO_USERS: Record<string, { password?: string; spec: FallbackUserS
       role: "superadmin",
       role_name: "Super Administrator",
       school_id: null,
-    },
-  },
-  "admin@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "a0000000-0000-0000-0000-000000000001",
-      email: "admin@university.edu.gh",
-      full_name: "Andronicus Johnson",
-      role: "system_admin",
-      role_name: "System Administrator",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "eugenedoeteh@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
-      email: "eugenedoeteh@university.edu.gh",
-      full_name: "Eugene Doeteh",
-      role: "finance_officer",
-      role_name: "Finance Officer / Bursar",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "lecturer@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "a0000000-0000-0000-0000-000000000002",
-      email: "lecturer@university.edu.gh",
-      full_name: "Dr. Kwame Mensah",
-      role: "lecturer",
-      role_name: "Lecturer / Instructor",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "adaahessel@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "6d8f80fb-c341-4622-b23b-0efa4702bb66",
-      email: "adaahessel@university.edu.gh",
-      full_name: "Keziah Adaah Essel",
-      role: "lecturer",
-      role_name: "Lecturer / Instructor",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "student@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "a0000000-0000-0000-0000-000000000003",
-      email: "student@university.edu.gh",
-      full_name: "Ama Osei",
-      role: "student",
-      role_name: "Student",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "ama.johnson@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "6015cdd8-1c8e-4995-bde4-2bb90435e6ee",
-      email: "ama.johnson@university.edu.gh",
-      full_name: "Ama Johnson",
-      role: "student",
-      role_name: "Student",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "applicant@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "a0000000-0000-0000-0000-000000000004",
-      email: "applicant@university.edu.gh",
-      full_name: "Kofi Boateng",
-      role: "applicant",
-      role_name: "Applicant",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  "advisor@university.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "a0000000-0000-0000-0000-000000000005",
-      email: "advisor@university.edu.gh",
-      full_name: "Prof. Abena Owusu",
-      role: "academic_advisor",
-      role_name: "Academic Advisor",
-      school_id: SCHOOL_A_ID,
-    },
-  },
-  // Tenant School B: Kumasi Technical & Vocational Institute (Vocational School)
-  "admin@ktvi.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "b0000000-0000-0000-0000-000000000001",
-      email: "admin@ktvi.edu.gh",
-      full_name: "Engr. Samuel Ofori (KTVI Admin)",
-      role: "system_admin",
-      role_name: "System Administrator",
-      school_id: SCHOOL_B_ID,
-    },
-  },
-  "student@ktvi.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "b0000000-0000-0000-0000-000000000002",
-      email: "student@ktvi.edu.gh",
-      full_name: "Yaw Asante (KTVI Trainee)",
-      role: "student",
-      role_name: "Student",
-      school_id: SCHOOL_B_ID,
-    },
-  },
-  // Tenant School C: Achimota Senior High School (High School)
-  "admin@achimota.edu.gh": {
-    password: "Admin@123456",
-    spec: {
-      id: "c0000000-0000-0000-0000-000000000001",
-      email: "admin@achimota.edu.gh",
-      full_name: "Mrs. Grace Mensah (Achimota Admin)",
-      role: "system_admin",
-      role_name: "System Administrator",
-      school_id: SCHOOL_C_ID,
     },
   },
 };
@@ -234,7 +107,7 @@ export function resolveFallbackUserByEmail(email: string, password?: string): Fa
         prof.university_id ||
         prof.metadata?.school_id ||
         prof.metadata?.university_id ||
-        SCHOOL_A_ID;
+        null;
       return {
         id: prof.id,
         email: prof.email,
@@ -307,7 +180,7 @@ export function buildSupabaseUserObject(spec: FallbackUserSpec) {
       ? null
       : spec.school_id !== undefined
       ? spec.school_id
-      : SCHOOL_A_ID;
+      : null;
 
   return {
     id: spec.id,
@@ -364,7 +237,7 @@ export function buildFallbackSession(spec: FallbackUserSpec) {
       ? null
       : spec.school_id !== undefined
       ? spec.school_id
-      : SCHOOL_A_ID;
+      : null;
 
   const header = toBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = toBase64Url(
@@ -481,11 +354,7 @@ export function decodeUserFromJwt(token: string) {
         payload.app_metadata?.university_id ||
         payload.user_metadata?.school_id ||
         payload.user_metadata?.university_id ||
-        (String(payload.email).includes("ktvi")
-          ? SCHOOL_B_ID
-          : String(payload.email).includes("achimota")
-          ? SCHOOL_C_ID
-          : SCHOOL_A_ID);
+        null;
 
   return buildSupabaseUserObject({
     id: payload.sub,

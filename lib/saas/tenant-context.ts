@@ -3,9 +3,9 @@ import {
   extractUserFromCookies,
 } from "@/lib/supabase/fetch";
 
-export const SCHOOL_A_ID = "u0000001-0000-0000-0000-000000000001"; // Accra Institute of Technology (University)
-export const SCHOOL_B_ID = "u0000002-0000-0000-0000-000000000002"; // Kumasi Technical & Vocational Institute (Vocational)
-export const SCHOOL_C_ID = "u0000003-0000-0000-0000-000000000003"; // Achimota Senior High School (High School)
+export const SCHOOL_A_ID = "u0000001-0000-0000-0000-000000000001";
+export const SCHOOL_B_ID = "u0000002-0000-0000-0000-000000000002";
+export const SCHOOL_C_ID = "u0000003-0000-0000-0000-000000000003";
 
 export interface TenantContext {
   isAuthenticated: boolean;
@@ -174,16 +174,8 @@ export function resolveSchoolIdForUser(
     }
   }
 
-  // 3. Domain / email prefix heuristics for seeded multi-tenant demo accounts
-  if (email.includes("ktvi") || email.endsWith("@ktvi.edu.gh")) {
-    return { isSuperAdmin: false, schoolId: SCHOOL_B_ID, role };
-  }
-  if (email.includes("achimota") || email.endsWith("@achimota.edu.gh")) {
-    return { isSuperAdmin: false, schoolId: SCHOOL_C_ID, role };
-  }
-
-  // Default seeded tenant A (Accra Institute of Technology)
-  return { isSuperAdmin: false, schoolId: SCHOOL_A_ID, role };
+  // Default unassigned tenant
+  return { isSuperAdmin: false, schoolId: null, role };
 }
 
 /**
@@ -243,8 +235,8 @@ export function resolveTenantContextFromHeaders(
     ? explicitTenantHeader || null
     : schoolId;
 
-  let schoolCode = "AIT";
-  let schoolName = "Accra Institute of Technology";
+  let schoolCode = "";
+  let schoolName = "";
   let schoolType: "university" | "high_school" | "vocational_school" =
     "university";
   let subscriptionPlan: "starter" | "professional" | "enterprise" =
@@ -312,7 +304,7 @@ export function rowBelongsToTenant(
     row.university_id ||
     row.metadata?.school_id ||
     row.metadata?.university_id ||
-    SCHOOL_A_ID; // Legacy seed rows without an explicit school_id belong exclusively to School A
+    null;
 
   return String(rowSchoolId) === String(tenantSchoolId);
 }

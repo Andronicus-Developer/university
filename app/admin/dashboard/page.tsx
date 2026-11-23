@@ -107,7 +107,7 @@ interface StudentActivityItem {
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState<string>("Administrator");
-  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
+  const [schoolName, setSchoolName] = useState<string>("");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [showAlert, setShowAlert] = useState(true);
   const [alertMessage, setAlertMessage] = useState<string>(

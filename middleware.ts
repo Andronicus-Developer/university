@@ -340,29 +340,57 @@ export async function middleware(request: NextRequest) {
           (user.app_metadata as any)?.university_code;
 
         if (userUnivId || userUnivCode) {
-          const { data: settingRow } = await (supabase
-            .from("system_settings" as any)
-            .select("setting_value")
-            .eq("setting_key", "deleted_universities")
-            .maybeSingle() as any);
+          // Check if the school is currently registered and active in superadmin_universities
+          let isActuallyActive = false;
+          try {
+            const { data: activeUnivsRow } = await (supabase
+              .from("system_settings" as any)
+              .select("setting_value")
+              .eq("setting_key", "superadmin_universities")
+              .maybeSingle() as any);
+            const activeList = Array.isArray(activeUnivsRow?.setting_value) ? activeUnivsRow.setting_value : [];
+            isActuallyActive = activeList.some((u: any) => {
+              if (u.status !== "active") return false;
+              const uId = String(u.id || "").toLowerCase();
+              const uCode = String(u.code || "").toLowerCase();
+              const targetId = String(userUnivId || "").toLowerCase();
+              const targetCode = String(userUnivCode || "").toLowerCase();
+              return (targetId && (uId === targetId || uCode === targetId)) ||
+                     (targetCode && (uCode === targetCode || uId === targetCode));
+            });
+          } catch {}
 
-          const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
-          const isSchoolDeleted = deletedList.some(
-            (d: any) =>
-              (userUnivId && (d?.id === userUnivId || d?.code === userUnivId)) ||
-              (userUnivCode && d?.code === userUnivCode)
-          );
+          if (!isActuallyActive) {
+            const { data: settingRow } = await (supabase
+              .from("system_settings" as any)
+              .select("setting_value")
+              .eq("setting_key", "deleted_universities")
+              .maybeSingle() as any);
 
-          if (isSchoolDeleted) {
-            if (pathname.startsWith("/api/")) {
-              return NextResponse.json(
-                { error: "Access Denied: Your institution has been deleted." },
-                { status: 403 }
-              );
+            const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
+            const isSchoolDeleted = deletedList.some((d: any) => {
+              const delId = String(d?.id || "").trim().toLowerCase();
+              const delCode = String(d?.code || "").trim().toLowerCase();
+              const targetId = String(userUnivId || "").trim().toLowerCase();
+              const targetCode = String(userUnivCode || "").trim().toLowerCase();
+
+              if (targetId && delId && targetId === delId) return true;
+              if (targetId && delCode && targetId === delCode) return true;
+              if (targetCode && delCode && targetCode === delCode) return true;
+              return false;
+            });
+
+            if (isSchoolDeleted) {
+              if (pathname.startsWith("/api/")) {
+                return NextResponse.json(
+                  { error: "Access Denied: Your institution has been deleted." },
+                  { status: 403 }
+                );
+              }
+              const url = new URL("/unauthorized", request.url);
+              url.searchParams.set("reason", "university_deleted");
+              return NextResponse.redirect(url);
             }
-            const url = new URL("/unauthorized", request.url);
-            url.searchParams.set("reason", "university_deleted");
-            return NextResponse.redirect(url);
           }
         }
 

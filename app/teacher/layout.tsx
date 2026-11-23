@@ -48,7 +48,7 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
   // Institution & User Info
   const [userName, setUserName] = useState<string>("Teacher / Instructor");
   const [userEmail, setUserEmail] = useState<string>("teacher@schoolcloud.edu.gh");
-  const [schoolName, setSchoolName] = useState<string>("Achimota Senior High School");
+  const [schoolName, setSchoolName] = useState<string>("School Portal");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("ASHS");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [schoolType, setSchoolType] = useState<"high_school" | "vocational_school">("high_school");

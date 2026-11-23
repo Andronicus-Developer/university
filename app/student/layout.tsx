@@ -67,7 +67,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const [studentLevel, setStudentLevel] = useState<string>("Level 100");
   const [userEmail, setUserEmail] = useState<string>("ama.johnson@university.edu.gh");
   const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
+  const [schoolName, setSchoolName] = useState<string>("University Portal");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);

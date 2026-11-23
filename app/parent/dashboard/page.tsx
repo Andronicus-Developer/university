@@ -101,8 +101,8 @@ export default function ParentDashboardPage() {
             </h1>
             <p className="text-xs sm:text-sm text-slate-300">
               {wardType === "high_school"
-                ? "Form 2 Science A • Achimota Senior High School • Term 2 (2026/2027)"
-                : "NVTI Level II Electrical & Solar Engineering • Kumasi Technical Institute"}
+                ? "Form 2 Science A • Senior High School • Term 2 (2026/2027)"
+                : "NVTI Level II Electrical & Solar Engineering • Vocational Institute"}
             </p>
           </div>
 

@@ -46,6 +46,7 @@ import {
   Sparkles,
   Folder,
   Check,
+  Award,
 } from "lucide-react";
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -68,6 +69,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   FileText,
   BarChart3,
   UserPlus,
+  Award,
   Wrench,
   Layers,
   Briefcase,
@@ -105,8 +107,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [userEmail, setUserEmail] = useState<string>("admin@university.edu.gh");
   const [userRole, setUserRole] = useState<string>("System Administrator");
   const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("Accra Institute of Technology");
-  const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [schoolType, setSchoolType] = useState<string>("university");
   const [dynamicCategories, setDynamicCategories] = useState<NavCategory[]>([]);
@@ -341,6 +343,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     {
       title: "Academics & Schedule",
       items: [
+        { id: "programs", label: "Programs", href: "/admin/programs", icon: Award },
         { id: "courses", label: "Courses & Subjects", href: "/admin/courses", icon: BookOpen },
         { id: "routine", label: "Class Routine", href: "/admin/routine", icon: CalendarDays },
         { id: "exams", label: "Examinations", href: "/admin/exams", icon: FileCheck2 },

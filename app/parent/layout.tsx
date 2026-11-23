@@ -38,7 +38,7 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
   const [parentName, setParentName] = useState<string>("Mr. Kwame Mensah");
   const [parentEmail, setUserEmail] = useState<string>("parent@schoolcloud.edu.gh");
   const [activeWardType, setActiveWardType] = useState<"high_school" | "vocational_school">("high_school");
-  const [schoolName, setSchoolName] = useState<string>("Achimota Senior High School");
+  const [schoolName, setSchoolName] = useState<string>("Institution Portal");
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -72,9 +72,9 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
       if (e.detail?.wardType) {
         setActiveWardType(e.detail.wardType);
         if (e.detail.wardType === "vocational_school") {
-          setSchoolName("Kumasi Technical & Vocational Institute");
+          setSchoolName("Vocational Institute");
         } else {
-          setSchoolName("Achimota Senior High School");
+          setSchoolName("Senior High School");
         }
       }
     };
@@ -84,11 +84,7 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
 
   const handleToggleWard = (type: "high_school" | "vocational_school") => {
     setActiveWardType(type);
-    if (type === "vocational_school") {
-      setSchoolName("Kumasi Technical & Vocational Institute");
-    } else {
-      setSchoolName("Achimota Senior High School");
-    }
+    setSchoolName(type === "vocational_school" ? "Vocational Institute" : "Senior High School");
     window.dispatchEvent(new CustomEvent("switch_parent_ward_view", { detail: { wardType: type } }));
   };
 
@@ -204,7 +200,7 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
                   Vocational
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">NVTI Electrical • Kumasi Tech</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">NVTI Electrical • Vocational Department</div>
             </button>
           </div>
         </div>

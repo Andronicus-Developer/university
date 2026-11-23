@@ -37,9 +37,9 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
     },
     {
       id: "sa-schools",
-      title: "Schools & Campuses",
+      title: "Schools",
       subtitle: "Register, edit, restrict, or delete universities, high schools, and vocational schools",
-      href: "/superadmin/universities",
+      href: "/superadmin/schools",
       category: "Core Administration",
       badge: "Tenants",
       keywords: "universities schools high school vocational school campus register tenant institution",
@@ -87,14 +87,6 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
       keywords: "scopes departments faculties campus boundaries",
     },
     {
-      id: "sa-academics",
-      title: "Academic Configuration",
-      subtitle: "Grading scales, academic years, and credit frameworks",
-      href: "/superadmin/academics",
-      category: "Platform Configuration",
-      keywords: "academics grading gpa semester term configuration",
-    },
-    {
       id: "sa-payments",
       title: "Payment Provider Settings",
       subtitle: "Paystack, Flutterwave, bank integrations, and settlement accounts",
@@ -110,14 +102,6 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
       category: "Core Administration",
       badge: "Mail",
       keywords: "communications email compose gmail messages inbox sent broadcasts",
-    },
-    {
-      id: "sa-templates",
-      title: "Document Templates",
-      subtitle: "Admission letters, transcripts, receipts, and certificate templates",
-      href: "/superadmin/templates",
-      category: "Platform Configuration",
-      keywords: "templates documents letters transcripts certificates pdf",
     },
     {
       id: "sa-storage",
@@ -142,14 +126,6 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
       href: "/superadmin/audit",
       category: "Security & Operations",
       keywords: "audit logs history events tracking compliance",
-    },
-    {
-      id: "sa-security",
-      title: "Security Events",
-      subtitle: "Failed logins, brute-force blocks, and anomaly alerts",
-      href: "/superadmin/security-events",
-      category: "Security & Operations",
-      keywords: "security events alerts logins firewall threats",
     },
     {
       id: "sa-jobs",
@@ -456,7 +432,7 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
         }
 
         if (portal === "superadmin") {
-          const schoolsRes = await fetch("/api/superadmin/universities");
+          const schoolsRes = await fetch("/api/superadmin/schools");
           if (schoolsRes.ok) {
             const schoolsData = await schoolsRes.json();
             const list = Array.isArray(schoolsData) ? schoolsData : schoolsData?.universities || [];
@@ -471,7 +447,7 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
                 id: `school-${s.id}`,
                 title: s.name,
                 subtitle: `${s.code || ""} • ${s.city || "Ghana"} (${typeBadge})`,
-                href: `/superadmin/universities?search=${encodeURIComponent(s.name)}`,
+                href: `/superadmin/schools?search=${encodeURIComponent(s.name)}`,
                 category: "Registered Schools",
                 badge: typeBadge,
                 keywords: `${s.name} ${s.code} ${s.short_name || ""} ${s.city || ""} ${typeBadge}`,

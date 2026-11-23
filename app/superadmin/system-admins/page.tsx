@@ -55,7 +55,7 @@ export default function SystemAdminsPage() {
     try {
       const [adminRes, univRes] = await Promise.all([
         fetch("/api/superadmin/system-admins"),
-        fetch("/api/superadmin/universities"),
+        fetch("/api/superadmin/schools"),
       ]);
 
       if (adminRes.ok) setAdmins(await adminRes.json());
@@ -75,6 +75,14 @@ export default function SystemAdminsPage() {
 
   useEffect(() => {
     loadData();
+
+    const handleSchoolDeleted = () => {
+      loadData();
+    };
+    window.addEventListener("school_deleted", handleSchoolDeleted);
+    return () => {
+      window.removeEventListener("school_deleted", handleSchoolDeleted);
+    };
   }, []);
 
   const openAddModal = () => {

@@ -13,14 +13,11 @@ import {
   Users,
   UserCheck,
   Layers,
-  GraduationCap,
   CreditCard,
   Megaphone,
-  FileText,
   HardDrive,
   Boxes,
   FileCheck2,
-  ShieldAlert,
   Clock,
   Activity,
   Database,
@@ -178,7 +175,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       title: "Core Administration",
       items: [
         { id: "dashboard", label: "System Overview", href: "/superadmin/dashboard", icon: LayoutGrid, badge: "Live" },
-        { id: "universities", label: "Schools & Campuses", href: "/superadmin/universities", icon: Building2, badge: "Tenants" },
+        { id: "schools", label: "Schools", href: "/superadmin/schools", icon: Building2, badge: "Tenants" },
         { id: "system-admins", label: "System Administrators", href: "/superadmin/system-admins", icon: ShieldCheck, badge: "Admins" },
         {
           id: "communications",
@@ -195,9 +192,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     {
       title: "Platform Configuration",
       items: [
-        { id: "academics", label: "Academic Configuration", href: "/superadmin/academics", icon: GraduationCap },
         { id: "payments", label: "Payment Provider Settings", href: "/superadmin/payments", icon: CreditCard },
-        { id: "templates", label: "Document Templates", href: "/superadmin/templates", icon: FileText },
         { id: "storage", label: "Storage & File Policies", href: "/superadmin/storage", icon: HardDrive },
         { id: "integrations", label: "Integrations & APIs", href: "/superadmin/integrations", icon: Boxes },
       ],
@@ -206,7 +201,6 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       title: "Security & Operations",
       items: [
         { id: "audit", label: "Audit Logs", href: "/superadmin/audit", icon: FileCheck2 },
-        { id: "security-events", label: "Security Events", href: "/superadmin/security-events", icon: ShieldAlert },
         { id: "jobs", label: "Background Jobs", href: "/superadmin/jobs", icon: Clock, badge: "Queue" },
         { id: "health", label: "Monitoring & Health", href: "/superadmin/health", icon: Activity, badge: "99.9%" },
         { id: "backups", label: "Backup & Recovery Status", href: "/superadmin/backups", icon: Database },

@@ -105,24 +105,51 @@ export default function Home() {
               (data.user.user_metadata as any)?.university_code;
 
             if (userSchoolId || userSchoolCode) {
-              const { data: delUnivsRow } = await (supabase as any)
-                .from("system_settings")
-                .select("setting_value")
-                .eq("setting_key", "deleted_universities")
-                .maybeSingle();
+              let isActuallyActive = false;
+              try {
+                const { data: activeUnivsRow } = await (supabase as any)
+                  .from("system_settings")
+                  .select("setting_value")
+                  .eq("setting_key", "superadmin_universities")
+                  .maybeSingle();
+                const activeList = Array.isArray(activeUnivsRow?.setting_value) ? activeUnivsRow.setting_value : [];
+                isActuallyActive = activeList.some((u: any) => {
+                  if (u.status !== "active") return false;
+                  const uId = String(u.id || "").toLowerCase();
+                  const uCode = String(u.code || "").toLowerCase();
+                  const targetId = String(userSchoolId || "").toLowerCase();
+                  const targetCode = String(userSchoolCode || "").toLowerCase();
+                  return (targetId && (uId === targetId || uCode === targetId)) ||
+                         (targetCode && (uCode === targetCode || uId === targetCode));
+                });
+              } catch {}
 
-              const delUnivsList = Array.isArray(delUnivsRow?.setting_value) ? delUnivsRow.setting_value : [];
-              const isSchoolDeleted = delUnivsList.some(
-                (d: any) =>
-                  (userSchoolId && (d?.id === userSchoolId || d?.code === userSchoolId)) ||
-                  (userSchoolCode && d?.code === userSchoolCode)
-              );
+              if (!isActuallyActive) {
+                const { data: delUnivsRow } = await (supabase as any)
+                  .from("system_settings")
+                  .select("setting_value")
+                  .eq("setting_key", "deleted_universities")
+                  .maybeSingle();
 
-              if (isSchoolDeleted) {
-                await supabase.auth.signOut();
-                setErrorMessage("Access Denied: Your school has been decommissioned by the Super Administrator. Access is revoked.");
-                setIsLoading(false);
-                return;
+                const delUnivsList = Array.isArray(delUnivsRow?.setting_value) ? delUnivsRow.setting_value : [];
+                const isSchoolDeleted = delUnivsList.some((d: any) => {
+                  const delId = String(d?.id || "").trim().toLowerCase();
+                  const delCode = String(d?.code || "").trim().toLowerCase();
+                  const targetId = String(userSchoolId || "").trim().toLowerCase();
+                  const targetCode = String(userSchoolCode || "").trim().toLowerCase();
+
+                  if (targetId && delId && targetId === delId) return true;
+                  if (targetId && delCode && targetId === delCode) return true;
+                  if (targetCode && delCode && targetCode === delCode) return true;
+                  return false;
+                });
+
+                if (isSchoolDeleted) {
+                  await supabase.auth.signOut();
+                  setErrorMessage("Access Denied: Your school has been decommissioned by the Super Administrator. Access is revoked.");
+                  setIsLoading(false);
+                  return;
+                }
               }
             }
           } catch (guardErr) {
@@ -334,7 +361,7 @@ export default function Home() {
 
               {/* Heading */}
               <h1 className="text-[26px] sm:text-[30px] lg:text-[32px] font-extrabold leading-[1.15] tracking-tight text-slate-900">
-                Erudian School Management
+                Erudian360
               </h1>
 
               {/* Quick Fill Pills for Super Admin & Isolated Tenant Schools */}

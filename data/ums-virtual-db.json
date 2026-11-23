@@ -1,0 +1,3447 @@
+{
+  "roles": [
+    {
+      "id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "code": "superadmin",
+      "name": "Super Administrator",
+      "description": "Master platform overseer across all universities, campuses, and system settings.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "code": "system_admin",
+      "name": "System Administrator",
+      "description": "Technical configuration, integrations, user management, and operational maintenance.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "39525f22-9abb-467b-a7d2-183c33d77fb0",
+      "code": "vice_chancellor",
+      "name": "Vice-Chancellor / Executive",
+      "description": "Executive institutional oversight, strategic performance dashboards, and read-only reporting.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "code": "registrar",
+      "name": "Registrar",
+      "description": "Authoritative student records, academic calendar, graduation, transcripts, and official certifications.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "937558d4-d969-454e-b3c2-5f613548d99c",
+      "code": "academic_affairs_officer",
+      "name": "Academic Affairs Officer",
+      "description": "Curriculum setup, programme requirements, semester calendar, and results administration.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "code": "dean",
+      "name": "Faculty Dean",
+      "description": "Faculty oversight, academic workload, teaching allocations, and faculty-level result moderation.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "e405beef-5237-4d58-99a7-ba1db321fe83",
+      "code": "head_of_department",
+      "name": "Head of Department",
+      "description": "Departmental courses, course offerings, teaching assignments, and departmental result reviews.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "08841f8b-1e6c-4e79-80e0-842e9eccd769",
+      "code": "admissions_officer",
+      "name": "Admissions Officer",
+      "description": "Application processing, document verification, applicant scoring, and admissions recommendation.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "code": "finance_officer",
+      "name": "Finance Officer / Bursar",
+      "description": "Fee schedules, student invoicing, payment verification, receipts, reconciliation, and refunds.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "1e47b447-85e2-4a75-8bb5-41062c8f5cd9",
+      "code": "lecturer",
+      "name": "Lecturer / Instructor",
+      "description": "Assigned course offerings, class lists, attendance recording, assessment setup, and mark sheets.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c39df56e-83dd-4dc0-8ef6-142ac25bc2e6",
+      "code": "academic_advisor",
+      "name": "Academic Advisor",
+      "description": "Assigned advisees, academic progression monitoring, advising notes, and registration guidance.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "a213be9f-e76a-4281-bd89-28beacc7642c",
+      "code": "student",
+      "name": "Student",
+      "description": "Personal profile, course registration, timetable, attendance, results, and fee payments.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "e3ad0255-07dd-43c7-9242-44e948005b9b",
+      "code": "applicant",
+      "name": "Applicant",
+      "description": "Admission application submission, document upload, status tracking, and offer acceptance.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "79e992cb-2b80-4db5-aa34-050e6a0e4cde",
+      "code": "librarian",
+      "name": "Librarian",
+      "description": "Catalogue management, circulation, loans, reservations, and library fine administration.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "05e83f44-c3cc-43f7-8295-cc28c575c0f7",
+      "code": "hostel_officer",
+      "name": "Hostel Officer",
+      "description": "Residence halls, room inventories, bed allocations, check-in/out, and maintenance.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "cd00857c-1e89-4be3-8380-656d8dd21b4e",
+      "code": "hr_officer",
+      "name": "Human Resources Officer",
+      "description": "Staff records, employment contracts, leave administration, and teaching load tracking.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c5d12003-331f-4f43-91fe-f2e43a1fd640",
+      "code": "auditor",
+      "name": "Internal / External Auditor",
+      "description": "Read-only compliance verification across audit trails and financial ledgers.",
+      "is_system_role": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "permissions": [
+    {
+      "id": "perm-adm-read",
+      "code": "admissions.application.read",
+      "module": "Admissions",
+      "description": "View applicant records, submitted forms, and document uploads",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-adm-rev",
+      "code": "admissions.application.review",
+      "module": "Admissions",
+      "description": "Review, score rubrics, and add reviewer remarks to applications",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-adm-appr",
+      "code": "admissions.decision.approve",
+      "module": "Admissions",
+      "description": "Approve admission offers, rejection decisions, and issue admission letters",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-adm-cycle",
+      "code": "admissions.cycle.manage",
+      "module": "Admissions",
+      "description": "Create and publish admission cycles, application periods, and fees",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-acad-curr",
+      "code": "academics.curriculum.manage",
+      "module": "Academics",
+      "description": "Manage academic curriculum, programme versions, and course credit structures",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-acad-course",
+      "code": "academics.course.manage",
+      "module": "Academics",
+      "description": "Create and edit courses, prerequisites, and syllabus content",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-acad-offer",
+      "code": "academics.offering.manage",
+      "module": "Academics",
+      "description": "Schedule semester course offerings, assign lecturers, and set class capacities",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-enrol",
+      "code": "registration.enrolment.manage",
+      "module": "Registration",
+      "description": "Register students for course offerings and enforce prerequisite checks",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-over",
+      "code": "registration.override.approve",
+      "module": "Registration",
+      "description": "Approve prerequisite overrides, late registrations, and credit overload",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-time-man",
+      "code": "timetable.manage",
+      "module": "Timetable",
+      "description": "Draft semester timetable schedules, room allocations, and clash detection",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-time-pub",
+      "code": "timetable.publish",
+      "module": "Timetable",
+      "description": "Officially publish finalized campus and class timetables to staff and students",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-att-rec",
+      "code": "attendance.record",
+      "module": "Attendance",
+      "description": "Log student class session attendance and calculate semester eligibility",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-att-amend",
+      "code": "attendance.amend",
+      "module": "Attendance",
+      "description": "Amend past attendance records with justification audit notes",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-res-sub",
+      "code": "results.marks.submit",
+      "module": "Examinations & Grading",
+      "description": "Enter and submit coursework assessments and semester exam marks",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-res-mod",
+      "code": "results.marks.moderate",
+      "module": "Examinations & Grading",
+      "description": "Perform departmental moderation, marks standardisation, and statistical reviews",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-res-appr",
+      "code": "results.approve",
+      "module": "Examinations & Grading",
+      "description": "Dean and Senate approval of moderated examination results",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-res-pub",
+      "code": "results.publish",
+      "module": "Examinations & Grading",
+      "description": "Publish final approved grades to student transcript portals",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-res-amend",
+      "code": "results.amend",
+      "module": "Examinations & Grading",
+      "description": "Execute post-publication grade corrections under Senate audit mandate",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-inv",
+      "code": "finance.invoice.create",
+      "module": "Finance",
+      "description": "Generate tuition invoices, laboratory fees, and billings",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-read",
+      "code": "finance.invoice.read",
+      "module": "Finance",
+      "description": "Inspect student billing ledgers, outstanding balances, and aging summaries",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-pay",
+      "code": "finance.payment.record",
+      "module": "Finance",
+      "description": "Post verified bank deposits, mobile money receipts, and manual payments",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-ref-req",
+      "code": "finance.refund.request",
+      "module": "Finance",
+      "description": "Initiate student refund vouchers and fee adjustments",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-ref-appr",
+      "code": "finance.refund.approve",
+      "module": "Finance",
+      "description": "Execute dual-control approval for student refunds and credit disbursements",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-waive",
+      "code": "finance.waiver.manage",
+      "module": "Finance",
+      "description": "Grant approved institutional scholarships, discounts, and fee waivers",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-holds",
+      "code": "finance.holds.manage",
+      "module": "Finance",
+      "description": "Place and lift financial registration holds based on fee balance thresholds",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-fin-recon",
+      "code": "finance.reconcile",
+      "module": "Finance",
+      "description": "Reconcile daily merchant settlements and bank feeds",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-stu-read",
+      "code": "registry.student.read",
+      "module": "Registry",
+      "description": "View official student files, matriculation details, and biodata",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-stu-stat",
+      "code": "registry.student.status_change",
+      "module": "Registry",
+      "description": "Authorize status changes: suspension, withdrawal, leave of absence, or completion",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-trans",
+      "code": "registry.transcript.issue",
+      "module": "Registry",
+      "description": "Issue certified digital and embossed academic transcripts",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-reg-let",
+      "code": "registry.letter.issue",
+      "module": "Registry",
+      "description": "Generate official letters of introduction, English proficiency, and completion",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-lib-cat",
+      "code": "library.catalog.manage",
+      "module": "Library",
+      "description": "Catalog new print books, journals, and digital repository items",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-lib-circ",
+      "code": "library.circulation.manage",
+      "module": "Library",
+      "description": "Manage loans, renewals, returns, reservations, and overdue library fines",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-host-inv",
+      "code": "hostel.inventory.manage",
+      "module": "Residences & Hostels",
+      "description": "Manage hostel blocks, rooms, bed inventory, and maintenance logs",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-host-alloc",
+      "code": "hostel.allocation.manage",
+      "module": "Residences & Hostels",
+      "description": "Allocate rooms to approved student applicants and process check-ins",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-hr-staff",
+      "code": "hr.staff.manage",
+      "module": "Human Resources",
+      "description": "Maintain employee directories, academic ranks, contracts, and job designations",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-hr-leave",
+      "code": "hr.leave.approve",
+      "module": "Human Resources",
+      "description": "Review and approve faculty and administrative staff leave requests",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-comm-ann",
+      "code": "communications.announce",
+      "module": "Communications",
+      "description": "Broadcast institutional announcements and campus SMS/email dispatches",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-sup-tick",
+      "code": "support.ticket.manage",
+      "module": "Support",
+      "description": "Triage and resolve student academic and ICT support tickets",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-rep-adm",
+      "code": "reports.view.admissions",
+      "module": "Reports & Analytics",
+      "description": "Access recruitment intake KPIs, conversion funnels, and demographics",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-rep-acad",
+      "code": "reports.view.academic",
+      "module": "Reports & Analytics",
+      "description": "Access graduation trends, retention rates, and grade distribution charts",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-rep-fin",
+      "code": "reports.view.finance",
+      "module": "Reports & Analytics",
+      "description": "Access fee collection analytics, revenue forecasts, and outstanding debt summaries",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-rep-aud",
+      "code": "reports.view.audit",
+      "module": "Reports & Analytics",
+      "description": "Access compliance audit logs, user login trails, and security events",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-usr-role",
+      "code": "users.roles.manage",
+      "module": "System & Security",
+      "description": "Assign, modify, and revoke RBAC roles and granular permission scopes",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-id-read",
+      "code": "identity.user.read",
+      "module": "System & Security",
+      "description": "Inspect authentication profiles, MFA enrollment, and session statuses",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-id-update",
+      "code": "identity.user.update",
+      "module": "System & Security",
+      "description": "Reset user credentials, lock/unlock accounts, and suspend login access",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-aud-read",
+      "code": "audit.events.read",
+      "module": "System & Security",
+      "description": "Search immutable system audit events, changes, and access attempts",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "perm-sys-cfg",
+      "code": "system.config.manage",
+      "module": "System & Security",
+      "description": "Configure system parameters, academic terms, and cloud integrations",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "role_permissions": [
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-adm-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-adm-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-adm-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-adm-rev",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-adm-rev",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-adm-rev",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-adm-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-adm-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-adm-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-adm-cycle",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-adm-cycle",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-adm-cycle",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-acad-curr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-acad-curr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-acad-curr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-acad-course",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-acad-course",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-acad-course",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-acad-offer",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-acad-offer",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-acad-offer",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "1e47b447-85e2-4a75-8bb5-41062c8f5cd9",
+      "permission_id": "perm-acad-offer",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-enrol",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-enrol",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-enrol",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-over",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-over",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-over",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-time-man",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-time-man",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-time-pub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-time-pub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-att-rec",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-att-rec",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "1e47b447-85e2-4a75-8bb5-41062c8f5cd9",
+      "permission_id": "perm-att-rec",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-att-amend",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-att-amend",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-res-sub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-res-sub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-res-sub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "1e47b447-85e2-4a75-8bb5-41062c8f5cd9",
+      "permission_id": "perm-res-sub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-res-mod",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-res-mod",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-res-mod",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-res-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-res-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-res-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-res-pub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-res-pub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-res-pub",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-res-amend",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-res-amend",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-res-amend",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-inv",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-inv",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-inv",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-pay",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-pay",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-pay",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-ref-req",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-ref-req",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-ref-req",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-ref-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-ref-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-ref-appr",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-waive",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-waive",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-waive",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-holds",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-holds",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-holds",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-fin-recon",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-fin-recon",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-fin-recon",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-stu-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-stu-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-stu-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-stu-stat",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-stu-stat",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-stu-stat",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-trans",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-trans",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-trans",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-reg-let",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-reg-let",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-reg-let",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-lib-cat",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-lib-cat",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-lib-circ",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-lib-circ",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-host-inv",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-host-inv",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-host-alloc",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-host-alloc",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-hr-staff",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-hr-staff",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-hr-leave",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-hr-leave",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-comm-ann",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-comm-ann",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-sup-tick",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-sup-tick",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-rep-adm",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-rep-adm",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-rep-adm",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-rep-adm",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-rep-acad",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-rep-acad",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-rep-acad",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-rep-acad",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-rep-fin",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-rep-fin",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-rep-fin",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
+      "permission_id": "perm-rep-fin",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-rep-fin",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-rep-aud",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-rep-aud",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "d66410d7-4065-4273-9e7b-3ae6c3bc4c12",
+      "permission_id": "perm-rep-aud",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f3c0a12c-59ae-417d-b2f5-bb761136d193",
+      "permission_id": "perm-rep-aud",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-usr-role",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-usr-role",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-id-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-id-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-id-update",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-id-update",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-aud-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-aud-read",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "permission_id": "perm-sys-cfg",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
+      "permission_id": "perm-sys-cfg",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "1440ed7e-cb23-4248-a372-f38b20d01554",
+      "email": "superadmin@university.edu.gh",
+      "full_name": "Master Super Administrator",
+      "phone": "+233 30 200 0001",
+      "avatar_url": "",
+      "account_status": "active",
+      "is_mfa_enabled": true,
+      "last_sign_in_at": "2026-11-05T08:00:00.000Z",
+      "metadata": {
+        "role": "superadmin",
+        "default_role": "superadmin",
+        "full_name": "Master Super Administrator"
+      },
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "user_role_assignments": [
+    {
+      "id": "ura-1",
+      "user_id": "1440ed7e-cb23-4248-a372-f38b20d01554",
+      "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "universities": [],
+  "university_system_admins": [],
+  "superadmin_modules": [
+    {
+      "id": "m-dash",
+      "module_key": "dashboard",
+      "label": "System Overview",
+      "category": "Core Administration",
+      "route_path": "/superadmin/dashboard",
+      "icon": "LayoutGrid",
+      "badge": "Live",
+      "description": "System vitals, cross-university KPIs, and infrastructure health",
+      "is_active": true,
+      "display_order": 1,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-univ",
+      "module_key": "universities",
+      "label": "Universities & Campuses",
+      "category": "Core Administration",
+      "route_path": "/superadmin/universities",
+      "icon": "Building2",
+      "badge": "Tenants",
+      "description": "Register institutions, configure multi-tenancy, and manage campuses",
+      "is_active": true,
+      "display_order": 2,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-sys",
+      "module_key": "system_admins",
+      "label": "System Administrators",
+      "category": "Core Administration",
+      "route_path": "/superadmin/system-admins",
+      "icon": "ShieldCheck",
+      "badge": "Admins",
+      "description": "Provision and govern system administrator credentials across all universities",
+      "is_active": true,
+      "display_order": 3,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-users",
+      "module_key": "users",
+      "label": "Users & Directory",
+      "category": "Core Administration",
+      "route_path": "/superadmin/users",
+      "icon": "Users",
+      "badge": null,
+      "description": "Global identity directory, person records, and credentials",
+      "is_active": true,
+      "display_order": 4,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-roles",
+      "module_key": "roles",
+      "label": "Roles & Permissions",
+      "category": "Core Administration",
+      "route_path": "/superadmin/roles",
+      "icon": "UserCheck",
+      "badge": null,
+      "description": "Centrally governed RBAC roles, permission sets, and dual-control rules",
+      "is_active": true,
+      "display_order": 5,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-scopes",
+      "module_key": "scopes",
+      "label": "Department & Campus Scopes",
+      "category": "Core Administration",
+      "route_path": "/superadmin/scopes",
+      "icon": "Layers",
+      "badge": null,
+      "description": "Multi-campus boundary assignments, faculties, and department scopes",
+      "is_active": true,
+      "display_order": 6,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-acad",
+      "module_key": "academics",
+      "label": "Academic Configuration",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/academics",
+      "icon": "GraduationCap",
+      "badge": null,
+      "description": "Global grading scales, credit rules, terms, and progression logic",
+      "is_active": true,
+      "display_order": 7,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-pay",
+      "module_key": "payments",
+      "label": "Payment Provider Settings",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/payments",
+      "icon": "CreditCard",
+      "badge": null,
+      "description": "Paystack, Hubtel, and bank webhook gateway configurations",
+      "is_active": true,
+      "display_order": 8,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-comm",
+      "module_key": "communications",
+      "label": "Email & SMS Settings",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/communications",
+      "icon": "Megaphone",
+      "badge": null,
+      "description": "Resend, SMTP, and SMS delivery routes and notification channels",
+      "is_active": true,
+      "display_order": 9,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-tmpl",
+      "module_key": "templates",
+      "label": "Document Templates",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/templates",
+      "icon": "FileText",
+      "badge": null,
+      "description": "Transcript, certificate, admission letter, and official document formats",
+      "is_active": true,
+      "display_order": 10,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-stor",
+      "module_key": "storage",
+      "label": "Storage & File Policies",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/storage",
+      "icon": "HardDrive",
+      "badge": null,
+      "description": "Private bucket policies, signed URL lifetimes, and file quotas",
+      "is_active": true,
+      "display_order": 11,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-integ",
+      "module_key": "integrations",
+      "label": "Integrations & APIs",
+      "category": "Platform Configuration",
+      "route_path": "/superadmin/integrations",
+      "icon": "Boxes",
+      "badge": null,
+      "description": "Moodle LMS, external accounting, and third-party API keys",
+      "is_active": true,
+      "display_order": 12,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-aud",
+      "module_key": "audit_logs",
+      "label": "Audit Logs",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/audit",
+      "icon": "FileCheck2",
+      "badge": null,
+      "description": "Immutable cross-tenant audit trail of all security and admin actions",
+      "is_active": true,
+      "display_order": 13,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-sec",
+      "module_key": "security_events",
+      "label": "Security Events",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/security-events",
+      "icon": "ShieldAlert",
+      "badge": null,
+      "description": "Real-time threat monitoring, failed logins, and privilege escalations",
+      "is_active": true,
+      "display_order": 14,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-jobs",
+      "module_key": "jobs",
+      "label": "Background Jobs",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/jobs",
+      "icon": "Clock",
+      "badge": "Queue",
+      "description": "Scheduled tasks, report generators, sync runners, and retry queues",
+      "is_active": true,
+      "display_order": 15,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-health",
+      "module_key": "health",
+      "label": "Monitoring & Health",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/health",
+      "icon": "Activity",
+      "badge": "99.9%",
+      "description": "System health, database latency, server metrics, and uptime",
+      "is_active": true,
+      "display_order": 16,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-back",
+      "module_key": "backups",
+      "label": "Backup & Recovery Status",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/backups",
+      "icon": "Database",
+      "badge": null,
+      "description": "Disaster recovery, point-in-time snapshots, and database failover",
+      "is_active": true,
+      "display_order": 17,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-flags",
+      "module_key": "modules",
+      "label": "Feature Flags",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/modules",
+      "icon": "Sliders",
+      "badge": null,
+      "description": "Institution-level module flags and beta capabilities",
+      "is_active": true,
+      "display_order": 18,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "m-set",
+      "module_key": "system_settings",
+      "label": "Maintenance Mode",
+      "category": "Security & Operations",
+      "route_path": "/superadmin/settings",
+      "icon": "Sliders",
+      "badge": null,
+      "description": "Emergency maintenance lockdown, global notices, and platform policies",
+      "is_active": true,
+      "display_order": 19,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "campuses": [
+    {
+      "id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "MAIN_ACCRA",
+      "name": "Accra Central Campus",
+      "location": "Legon, Accra, Greater Accra Region, Ghana",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "faculties": [
+    {
+      "id": "f0000001-0000-0000-0000-000000000001",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "FOCIS",
+      "name": "Faculty of Computing & Information Systems",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000002",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "FOBM",
+      "name": "Faculty of Business & Management Studies",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000003",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "FOE",
+      "name": "Faculty of Engineering & Built Environment",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "departments": [
+    {
+      "id": "d0000001-0000-0000-0000-000000000001",
+      "faculty_id": "f0000001-0000-0000-0000-000000000001",
+      "code": "CS",
+      "name": "Department of Computer Science",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d0000001-0000-0000-0000-000000000002",
+      "faculty_id": "f0000001-0000-0000-0000-000000000001",
+      "code": "IT",
+      "name": "Department of Information Technology",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d0000001-0000-0000-0000-000000000003",
+      "faculty_id": "f0000001-0000-0000-0000-000000000002",
+      "code": "BA",
+      "name": "Department of Business Administration",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d0000001-0000-0000-0000-000000000004",
+      "faculty_id": "f0000001-0000-0000-0000-000000000003",
+      "code": "CE",
+      "name": "Department of Computer Engineering",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d0000001-0000-0000-0000-000000000005",
+      "faculty_id": "f0000001-0000-0000-0000-000000000002",
+      "code": "REG",
+      "name": "Central Registry & Administration",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "programmes": [
+    {
+      "id": "b0000001-0000-0000-0000-000000000001",
+      "department_id": "d0000001-0000-0000-0000-000000000001",
+      "code": "BSC-CS",
+      "name": "B.Sc. Computer Science",
+      "degree_level": "bachelor",
+      "duration_years": 4,
+      "total_credits": 136,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "b0000001-0000-0000-0000-000000000002",
+      "department_id": "d0000001-0000-0000-0000-000000000002",
+      "code": "BSC-IT",
+      "name": "B.Sc. Information Technology",
+      "degree_level": "bachelor",
+      "duration_years": 4,
+      "total_credits": 132,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "b0000001-0000-0000-0000-000000000003",
+      "department_id": "d0000001-0000-0000-0000-000000000003",
+      "code": "BBA",
+      "name": "Bachelor of Business Administration",
+      "degree_level": "bachelor",
+      "duration_years": 4,
+      "total_credits": 128,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "b0000001-0000-0000-0000-000000000004",
+      "department_id": "d0000001-0000-0000-0000-000000000004",
+      "code": "BENG-CE",
+      "name": "B.Eng. Computer Engineering",
+      "degree_level": "bachelor",
+      "duration_years": 4,
+      "total_credits": 144,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "academic_years": [
+    {
+      "id": "ac000001-0000-0000-0000-000000000001",
+      "code": "2026/2027",
+      "name": "2026/2027 Academic Year",
+      "start_date": "2026-09-01",
+      "end_date": "2027-06-30",
+      "is_current": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "terms": [
+    {
+      "id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "code": "SEM1-2627",
+      "name": "First Semester 2026/2027",
+      "start_date": "2026-09-01",
+      "end_date": "2027-01-15",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "te000001-0000-0000-0000-000000000002",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "code": "SEM2-2627",
+      "name": "Second Semester 2026/2027",
+      "start_date": "2027-02-01",
+      "end_date": "2027-06-15",
+      "is_active": false,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "te000002-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "code": "KTVI-2026-T1",
+      "name": "2026/2027 Practical Term 1",
+      "term_number": 1,
+      "start_date": "2026-09-01",
+      "end_date": "2026-12-18",
+      "registration_start": "2026-08-15",
+      "registration_end": "2026-09-15",
+      "is_current": true,
+      "is_active": true,
+      "school_id": "u0000002-0000-0000-0000-000000000002",
+      "university_id": "u0000002-0000-0000-0000-000000000002",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "courses": [
+    {
+      "id": "c0000001-0000-0000-0000-000000000001",
+      "department_id": "d0000001-0000-0000-0000-000000000001",
+      "code": "CS101",
+      "name": "Introduction to Computer Science & Programming",
+      "description": "Foundational algorithms, data representation, and structured programming in Python & C.",
+      "credits": 3,
+      "contact_hours": 3,
+      "course_type": "core",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c0000001-0000-0000-0000-000000000002",
+      "department_id": "d0000001-0000-0000-0000-000000000001",
+      "code": "CS102",
+      "name": "Data Structures & Algorithms",
+      "description": "Trees, graphs, hash tables, sorting, searching, and asymptotic complexity analysis.",
+      "credits": 4,
+      "contact_hours": 4,
+      "course_type": "core",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c0000001-0000-0000-0000-000000000003",
+      "department_id": "d0000001-0000-0000-0000-000000000001",
+      "code": "CS201",
+      "name": "Database Management Systems",
+      "description": "Relational algebra, SQL, normalization, ACID transactions, and indexing architectures.",
+      "credits": 3,
+      "contact_hours": 3,
+      "course_type": "core",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c0000001-0000-0000-0000-000000000004",
+      "department_id": "d0000001-0000-0000-0000-000000000002",
+      "code": "IT202",
+      "name": "Cloud Computing & Distributed Systems",
+      "description": "Virtualization, microservices, container orchestration, and resilient cloud architectures.",
+      "credits": 3,
+      "contact_hours": 3,
+      "course_type": "elective",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c0000001-0000-0000-0000-000000000005",
+      "department_id": "d0000001-0000-0000-0000-000000000003",
+      "code": "BA101",
+      "name": "Principles of Corporate Finance & Management",
+      "description": "Financial statements, capital budgeting, organizational leadership, and strategic planning.",
+      "credits": 3,
+      "contact_hours": 3,
+      "course_type": "core",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "c0000001-0000-0000-0000-000000000006",
+      "department_id": "d0000001-0000-0000-0000-000000000004",
+      "code": "CE101",
+      "name": "Digital Logic & Microprocessor Systems",
+      "description": "Boolean algebra, combinational and sequential circuits, FPGA synthesis, and embedded systems.",
+      "credits": 4,
+      "contact_hours": 4,
+      "course_type": "core",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "course_offerings": [
+    {
+      "id": "cf000001-0000-0000-0000-000000000001",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "course_id": "c0000001-0000-0000-0000-000000000001",
+      "section": "A",
+      "delivery_mode": "in_person",
+      "capacity": 60,
+      "enrolled_count": 42,
+      "status": "published",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "cf000001-0000-0000-0000-000000000002",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "course_id": "c0000001-0000-0000-0000-000000000002",
+      "section": "A",
+      "delivery_mode": "in_person",
+      "capacity": 55,
+      "enrolled_count": 38,
+      "status": "published",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "cf000001-0000-0000-0000-000000000003",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "course_id": "c0000001-0000-0000-0000-000000000003",
+      "section": "A",
+      "delivery_mode": "hybrid",
+      "capacity": 50,
+      "enrolled_count": 35,
+      "status": "published",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "cf000001-0000-0000-0000-000000000004",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "course_id": "c0000001-0000-0000-0000-000000000004",
+      "section": "B",
+      "delivery_mode": "in_person",
+      "capacity": 45,
+      "enrolled_count": 29,
+      "status": "published",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "staff": [],
+  "employment_records": [
+    {
+      "id": "emp-1",
+      "staff_id": "5f000001-0000-0000-0000-000000000001",
+      "contract_type": "full_time",
+      "salary_grade": "GHS 12,500",
+      "start_date": "2021-09-01",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "emp-2",
+      "staff_id": "5f000001-0000-0000-0000-000000000002",
+      "contract_type": "full_time",
+      "salary_grade": "GHS 15,800",
+      "start_date": "2019-08-15",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "emp-3",
+      "staff_id": "5f000001-0000-0000-0000-000000000003",
+      "contract_type": "full_time",
+      "salary_grade": "GHS 17,200",
+      "start_date": "2018-01-10",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "emp-4",
+      "staff_id": "5f000001-0000-0000-0000-000000000004",
+      "contract_type": "full_time",
+      "salary_grade": "GHS 14,500",
+      "start_date": "2020-03-01",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "emp-5",
+      "staff_id": "5f000001-0000-0000-0000-000000000005",
+      "contract_type": "full_time",
+      "salary_grade": "GHS 16,000",
+      "start_date": "2017-06-01",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "teaching_assignments": [
+    {
+      "id": "ta-1",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "role": "lecturer",
+      "is_primary": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ta-2",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000002",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "role": "lecturer",
+      "is_primary": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ta-3",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000003",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "role": "lecturer",
+      "is_primary": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ta-4",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000004",
+      "staff_id": "a0000000-0000-0000-0000-000000000002",
+      "role": "lecturer",
+      "is_primary": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "students": [],
+  "course_enrolments": [
+    {
+      "id": "enr-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "enrolment_status": "enrolled",
+      "registered_at": "2026-11-05T08:00:00.000Z",
+      "final_grade": "A",
+      "grade_points": 4,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "enr-2",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000002",
+      "enrolment_status": "enrolled",
+      "registered_at": "2026-11-05T08:00:00.000Z",
+      "final_grade": "A-",
+      "grade_points": 3.7,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "enr-3",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000003",
+      "enrolment_status": "enrolled",
+      "registered_at": "2026-11-05T08:00:00.000Z",
+      "final_grade": "A",
+      "grade_points": 4,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "enr-4",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "enrolment_status": "enrolled",
+      "registered_at": "2026-11-05T08:00:00.000Z",
+      "final_grade": "B+",
+      "grade_points": 3.5,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "enr-5",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000004",
+      "enrolment_status": "enrolled",
+      "registered_at": "2026-11-05T08:00:00.000Z",
+      "final_grade": "A",
+      "grade_points": 4,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "assessment_components": [
+    {
+      "id": "ac-1",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "name": "Mid-Semester Examination",
+      "component_type": "midterm",
+      "weight_percentage": 30,
+      "max_marks": 30,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ac-2",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "name": "End-of-Semester Final Exam",
+      "component_type": "final_exam",
+      "weight_percentage": 50,
+      "max_marks": 100,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ac-3",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000002",
+      "name": "Practical Lab & Project",
+      "component_type": "project",
+      "weight_percentage": 20,
+      "max_marks": 20,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ac-4",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000003",
+      "name": "Database Design Final Exam",
+      "component_type": "final_exam",
+      "weight_percentage": 60,
+      "max_marks": 100,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "assessment_marks": [
+    {
+      "id": "am-1",
+      "enrolment_id": "enr-1",
+      "assessment_component_id": "ac-1",
+      "marks_obtained": 28,
+      "is_absent": false,
+      "remarks": "Excellent",
+      "entered_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "am-2",
+      "enrolment_id": "enr-1",
+      "assessment_component_id": "ac-2",
+      "marks_obtained": 89,
+      "is_absent": false,
+      "remarks": "Distinction",
+      "entered_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "am-3",
+      "enrolment_id": "enr-2",
+      "assessment_component_id": "ac-3",
+      "marks_obtained": 18,
+      "is_absent": false,
+      "remarks": "Very good",
+      "entered_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "published_results": [
+    {
+      "id": "pr-1",
+      "enrolment_id": "enr-1",
+      "total_marks": 88,
+      "letter_grade": "A",
+      "grade_points": 4,
+      "published_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "pr-2",
+      "enrolment_id": "enr-2",
+      "total_marks": 82,
+      "letter_grade": "A-",
+      "grade_points": 3.7,
+      "published_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "pr-3",
+      "enrolment_id": "enr-3",
+      "total_marks": 91,
+      "letter_grade": "A",
+      "grade_points": 4,
+      "published_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "grade_scales": [
+    {
+      "id": "gs-1",
+      "name": "Standard 4.0 GPA Grading Scale",
+      "description": "Official Senate Undergraduate Grading Scale",
+      "is_default": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "grade_scale_items": [
+    {
+      "id": "gsi-1",
+      "grade_scale_id": "gs-1",
+      "letter_grade": "A",
+      "min_percentage": 80,
+      "max_percentage": 100,
+      "grade_points": 4,
+      "pass_status": "pass",
+      "remarks": "First Class / Distinction"
+    },
+    {
+      "id": "gsi-2",
+      "grade_scale_id": "gs-1",
+      "letter_grade": "B+",
+      "min_percentage": 70,
+      "max_percentage": 79.99,
+      "grade_points": 3.5,
+      "pass_status": "pass",
+      "remarks": "Very Good"
+    },
+    {
+      "id": "gsi-3",
+      "grade_scale_id": "gs-1",
+      "letter_grade": "B",
+      "min_percentage": 60,
+      "max_percentage": 69.99,
+      "grade_points": 3,
+      "pass_status": "pass",
+      "remarks": "Good"
+    },
+    {
+      "id": "gsi-4",
+      "grade_scale_id": "gs-1",
+      "letter_grade": "C",
+      "min_percentage": 50,
+      "max_percentage": 59.99,
+      "grade_points": 2,
+      "pass_status": "pass",
+      "remarks": "Credit / Pass"
+    },
+    {
+      "id": "gsi-5",
+      "grade_scale_id": "gs-1",
+      "letter_grade": "F",
+      "min_percentage": 0,
+      "max_percentage": 49.99,
+      "grade_points": 0,
+      "pass_status": "fail",
+      "remarks": "Fail / Repeat"
+    }
+  ],
+  "fee_items": [
+    {
+      "id": "fi-1",
+      "code": "TUITION-UG",
+      "name": "Undergraduate Semester Tuition Fee",
+      "description": "Core academic instruction & laboratory access",
+      "default_amount": 4500,
+      "is_mandatory": true,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "fi-2",
+      "code": "ICT-LEVY",
+      "name": "Campus ICT & Digital Library Levy",
+      "description": "High-speed fiber internet, e-journals, and LMS access",
+      "default_amount": 450,
+      "is_mandatory": true,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "fi-3",
+      "code": "MED-INS",
+      "name": "Student Medical & Clinic Cover",
+      "description": "University hospital & emergency care coverage",
+      "default_amount": 250,
+      "is_mandatory": true,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "fee_schedules": [
+    {
+      "id": "fs-1",
+      "fee_item_id": "fi-1",
+      "programme_id": "b0000001-0000-0000-0000-000000000001",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "level": 200,
+      "amount": 4500,
+      "currency": "GHS",
+      "due_date": "2026-10-15",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "fs-2",
+      "fee_item_id": "fi-2",
+      "programme_id": "b0000001-0000-0000-0000-000000000001",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "academic_year_id": "ac000001-0000-0000-0000-000000000001",
+      "level": 200,
+      "amount": 450,
+      "currency": "GHS",
+      "due_date": "2026-10-15",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "student_invoices": [
+    {
+      "id": "inv-1",
+      "invoice_number": "INV-2026-0001",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "total_amount": 5200,
+      "paid_amount": 5200,
+      "balance_amount": 0,
+      "currency": "GHS",
+      "status": "paid",
+      "issue_date": "2026-09-01",
+      "due_date": "2026-10-15",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "inv-2",
+      "invoice_number": "INV-2026-0002",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "total_amount": 5200,
+      "paid_amount": 3400,
+      "balance_amount": 1800,
+      "currency": "GHS",
+      "status": "partially_paid",
+      "issue_date": "2026-09-01",
+      "due_date": "2026-10-15",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "inv-3",
+      "invoice_number": "INV-2026-0003",
+      "student_id": "50000001-0000-0000-0000-000000000003",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "total_amount": 4800,
+      "paid_amount": 4800,
+      "balance_amount": 0,
+      "currency": "GHS",
+      "status": "paid",
+      "issue_date": "2026-09-05",
+      "due_date": "2026-10-20",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "invoice_lines": [
+    {
+      "id": "il-1",
+      "invoice_id": "inv-1",
+      "fee_item_id": "fi-1",
+      "description": "Undergraduate Semester Tuition Fee",
+      "amount": 4500,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "il-2",
+      "invoice_id": "inv-1",
+      "fee_item_id": "fi-2",
+      "description": "Campus ICT & Digital Library Levy",
+      "amount": 450,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "il-3",
+      "invoice_id": "inv-1",
+      "fee_item_id": "fi-3",
+      "description": "Student Medical & Clinic Cover",
+      "amount": 250,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "payments": [
+    {
+      "id": "pay-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "invoice_id": "inv-1",
+      "amount": 5200,
+      "currency": "GHS",
+      "provider": "paystack",
+      "provider_reference": "PSK-2026-8849201",
+      "payment_method": "Paystack Card",
+      "status": "successful",
+      "verified_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "pay-2",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "invoice_id": "inv-2",
+      "amount": 3400,
+      "currency": "GHS",
+      "provider": "mtn_momo",
+      "provider_reference": "MOMO-2026-9931044",
+      "payment_method": "MTN Mobile Money",
+      "status": "successful",
+      "verified_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "pay-3",
+      "student_id": "50000001-0000-0000-0000-000000000003",
+      "invoice_id": "inv-3",
+      "amount": 4800,
+      "currency": "GHS",
+      "provider": "bank_transfer",
+      "provider_reference": "BNK-2026-7712900",
+      "payment_method": "Direct Bank Wire",
+      "status": "successful",
+      "verified_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "payment_allocations": [],
+  "receipts": [
+    {
+      "id": "rcp-1",
+      "receipt_number": "RCP-2026-0001",
+      "payment_id": "pay-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "amount": 5200,
+      "currency": "GHS",
+      "issued_at": "2026-11-05T08:00:00.000Z",
+      "receipt_data": {
+        "description": "Full Tuition & Fees Settlement"
+      }
+    },
+    {
+      "id": "rcp-2",
+      "receipt_number": "RCP-2026-0002",
+      "payment_id": "pay-2",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "amount": 3400,
+      "currency": "GHS",
+      "issued_at": "2026-11-05T08:00:00.000Z",
+      "receipt_data": {
+        "description": "Partial Tuition Settlement"
+      }
+    }
+  ],
+  "scholarships": [
+    {
+      "id": "sch-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "name": "Chancellor's Academic Excellence Scholarship",
+      "sponsor_name": "University Endowment Fund",
+      "coverage_type": "percentage",
+      "amount_percentage": 50,
+      "max_amount": 5000,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "waivers": [
+    {
+      "id": "wav-1",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "invoice_id": "inv-2",
+      "amount": 500,
+      "reason": "STEM Innovation Competition Winner Grant",
+      "waiver_type": "merit",
+      "approved_by": "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
+      "approved_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "refund_requests": [
+    {
+      "id": "ref-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "payment_id": "pay-1",
+      "amount": 250,
+      "reason": "Duplicate clinic cover payment adjustment",
+      "status": "pending",
+      "requested_by": "6015cdd8-1c8e-4995-bde4-2bb90435e6ee",
+      "approved_by": null,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "financial_approvals": [
+    {
+      "id": "fa-1",
+      "approval_type": "refund",
+      "reference_id": "ref-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "amount": 250,
+      "currency": "GHS",
+      "reason": "Duplicate clinic cover payment adjustment",
+      "requested_by": "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
+      "status": "pending",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "settlement_batches": [
+    {
+      "id": "sb-1",
+      "batch_reference": "STL-2026-11-01",
+      "provider": "paystack",
+      "total_amount": 13400,
+      "transaction_count": 3,
+      "status": "reconciled",
+      "settled_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "buildings": [
+    {
+      "id": "bld-1",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "ICT-BLK",
+      "name": "Kofi Annan ICT & Innovation Complex",
+      "floors": 4,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "bld-2",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "code": "SCI-BLK",
+      "name": "Engineering & Science Lecture Theatre",
+      "floors": 3,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "rooms": [
+    {
+      "id": "rm-1",
+      "building_id": "bld-1",
+      "code": "LAB-101",
+      "name": "Software Engineering Lab 101",
+      "room_type": "lab",
+      "capacity": 65,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "rm-2",
+      "building_id": "bld-2",
+      "code": "LT-201",
+      "name": "Main Lecture Theatre 201",
+      "room_type": "lecture_hall",
+      "capacity": 120,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "timetable_events": [
+    {
+      "id": "tt-1",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "room_id": "rm-1",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "day_of_week": 1,
+      "start_time": "08:30:00",
+      "end_time": "10:30:00",
+      "recurrence_pattern": "weekly",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "tt-2",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000002",
+      "room_id": "rm-2",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "day_of_week": 3,
+      "start_time": "11:00:00",
+      "end_time": "13:00:00",
+      "recurrence_pattern": "weekly",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "tt-3",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000003",
+      "room_id": "rm-1",
+      "staff_id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "day_of_week": 4,
+      "start_time": "14:00:00",
+      "end_time": "16:00:00",
+      "recurrence_pattern": "weekly",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "timetable_publications": [],
+  "class_sessions": [
+    {
+      "id": "cs-1",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000001",
+      "session_date": "2026-11-02",
+      "start_time": "08:30:00",
+      "end_time": "10:30:00",
+      "topic": "Pointers, Memory Allocation & Recursion",
+      "conducted_by": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "cs-2",
+      "course_offering_id": "cf000001-0000-0000-0000-000000000002",
+      "session_date": "2026-11-04",
+      "start_time": "11:00:00",
+      "end_time": "13:00:00",
+      "topic": "Balanced Binary Search Trees (AVL & Red-Black)",
+      "conducted_by": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "attendance_records": [
+    {
+      "id": "att-1",
+      "class_session_id": "cs-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "status": "present",
+      "recorded_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "att-2",
+      "class_session_id": "cs-1",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "status": "present",
+      "recorded_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "att-3",
+      "class_session_id": "cs-2",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "status": "present",
+      "recorded_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "attendance_amendments": [],
+  "leave_requests": [
+    {
+      "id": "lv-1",
+      "staff_id": "5f000001-0000-0000-0000-000000000001",
+      "leave_type": "study_conference",
+      "start_date": "2026-11-20",
+      "end_date": "2026-11-24",
+      "reason": "IEEE West Africa AI Research Symposium Keynote",
+      "status": "approved",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "lv-2",
+      "staff_id": "5f000001-0000-0000-0000-000000000002",
+      "leave_type": "annual",
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-22",
+      "reason": "End of semester family vacation",
+      "status": "pending",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "announcements": [
+    {
+      "id": "ann-1",
+      "title": "2026/2027 Mid-Semester Examinations Timetable Published",
+      "content": "All students and faculty are advised to review the published examination schedule on their portals.",
+      "target_audience": "all",
+      "published_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ann-2",
+      "title": "Course Registration Add/Drop Window Closing Notice",
+      "content": "Final course registration adjustments close this Friday at 17:00 GMT.",
+      "target_audience": "students",
+      "published_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "ann-3",
+      "title": "Research Grant Proposals Open for Faculty Members",
+      "content": "Submit departmental research proposals to the Directorate of Research & Innovation.",
+      "target_audience": "staff",
+      "published_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "notifications": [],
+  "generated_documents": [
+    {
+      "id": "gd-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "document_reference": "TRANS-2026-0091",
+      "document_type": "official_transcript",
+      "status": "issued",
+      "issued_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "gd-2",
+      "student_id": "50000001-0000-0000-0000-000000000002",
+      "document_reference": "ATTEST-2026-0104",
+      "document_type": "enrollment_attestation",
+      "status": "issued",
+      "issued_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "service_requests": [
+    {
+      "id": "sr-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "request_type": "official_transcript",
+      "status": "completed",
+      "notes": "Digital transcript issued",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "audit_events": [
+    {
+      "id": "015c084f-1345-47c5-9696-b73b96510b79",
+      "created_at": "2026-11-23T03:33:05.936Z",
+      "updated_at": "2026-11-23T03:33:05.936Z",
+      "action": "delete_university",
+      "entity_type": "university",
+      "entity_id": "u0000002-0000-0000-0000-000000000002",
+      "actor_role": "superadmin",
+      "outcome": "SUCCESS",
+      "details": "Decommissioned university Kumasi Technical & Vocational Institute (KTVI). Permanently deleted 0 associated accounts including system admin."
+    },
+    {
+      "id": "76580223-50d8-4215-b3d9-ad05b81eab0a",
+      "created_at": "2026-11-23T02:59:20.276Z",
+      "updated_at": "2026-11-23T02:59:20.276Z",
+      "action": "delete_university",
+      "entity_type": "university",
+      "entity_id": "u0000003-0000-0000-0000-000000000003",
+      "actor_role": "superadmin",
+      "outcome": "SUCCESS",
+      "details": "Decommissioned university Achimota Senior High School (ASHS). Permanently deleted 1 associated accounts including system admin."
+    },
+    {
+      "id": "4731ac3c-ddaa-4876-a754-40d4d4394141",
+      "created_at": "2026-11-23T02:59:14.072Z",
+      "updated_at": "2026-11-23T02:59:14.072Z",
+      "action": "delete_university",
+      "entity_type": "university",
+      "entity_id": "u0000001-0000-0000-0000-000000000001",
+      "actor_role": "superadmin",
+      "outcome": "SUCCESS",
+      "details": "Decommissioned university Accra Institute of Technology (AIT). Permanently deleted 11 associated accounts including system admin."
+    },
+    {
+      "id": "0f8098e5-f464-4704-ba67-774e29bd562a",
+      "created_at": "2026-11-23T02:58:40.800Z",
+      "updated_at": "2026-11-23T02:58:40.800Z",
+      "action": "delete_system_admin",
+      "entity_type": "user",
+      "entity_id": "a0000000-0000-0000-0000-000000000001",
+      "actor_role": "superadmin",
+      "outcome": "SUCCESS"
+    },
+    {
+      "id": "aud-1",
+      "event_time": "2026-11-05T08:00:00.000Z",
+      "actor_id": "1440ed7e-cb23-4248-a372-f38b20d01554",
+      "actor_role": "superadmin",
+      "action": "PLATFORM_INITIALIZED",
+      "entity_type": "system",
+      "entity_id": "ums-core",
+      "outcome": "SUCCESS",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "id": "aud-2",
+      "event_time": "2026-11-05T08:00:00.000Z",
+      "actor_id": "a0000000-0000-0000-0000-000000000001",
+      "actor_role": "system_admin",
+      "action": "TERM_CONFIGURED",
+      "entity_type": "term",
+      "entity_id": "te000001-0000-0000-0000-000000000001",
+      "outcome": "SUCCESS",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "id": "aud-3",
+      "event_time": "2026-11-05T08:00:00.000Z",
+      "actor_id": "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
+      "actor_role": "finance_officer",
+      "action": "PAYMENT_VERIFIED",
+      "entity_type": "payment",
+      "entity_id": "pay-1",
+      "outcome": "SUCCESS",
+      "ip_address": "127.0.0.1"
+    }
+  ],
+  "residences": [
+    {
+      "id": "res-1",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "name": "Kwame Nkrumah Hall",
+      "gender_allocation": "mixed",
+      "total_capacity": 400,
+      "address": "North Campus Avenue",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "res-2",
+      "campus_id": "2f92820b-2fcf-4ca4-9787-fc1ca2d936d6",
+      "name": "Yaa Asantewaa Executive Hostel",
+      "gender_allocation": "female",
+      "total_capacity": 250,
+      "address": "East Legon Annex",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "hostel_rooms": [
+    {
+      "id": "hr-1",
+      "residence_id": "res-1",
+      "room_number": "A-204",
+      "floor_number": 2,
+      "room_type": "2-in-1 Executive",
+      "max_occupancy": 2,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "beds": [
+    {
+      "id": "bed-1",
+      "hostel_room_id": "hr-1",
+      "bed_number": "A-204-B1",
+      "is_occupied": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "allocations": [
+    {
+      "id": "alc-1",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "bed_id": "bed-1",
+      "term_id": "te000001-0000-0000-0000-000000000001",
+      "status": "checked_in",
+      "allocated_at": "2026-11-05T08:00:00.000Z",
+      "check_in_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "maintenance_requests": [],
+  "library_items": [
+    {
+      "id": "lib-1",
+      "title": "Introduction to Algorithms (4th Edition)",
+      "author": "Thomas H. Cormen et al.",
+      "isbn": "978-0262046305",
+      "publisher": "MIT Press",
+      "publication_year": 2022,
+      "call_number": "QA76.6 .I5858",
+      "category": "Computer Science",
+      "total_copies": 12,
+      "available_copies": 9,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "lib-2",
+      "title": "Designing Data-Intensive Applications",
+      "author": "Martin Kleppmann",
+      "isbn": "978-1449373320",
+      "publisher": "O'Reilly Media",
+      "publication_year": 2021,
+      "call_number": "QA76.9.D3 K54",
+      "category": "Distributed Systems",
+      "total_copies": 8,
+      "available_copies": 6,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "item_copies": [
+    {
+      "id": "ic-1",
+      "library_item_id": "lib-1",
+      "barcode": "LIB-BC-00101",
+      "location": "Main Stack Floor 2",
+      "status": "checked_out",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "loans": [
+    {
+      "id": "ln-1",
+      "copy_id": "ic-1",
+      "borrower_id": "6015cdd8-1c8e-4995-bde4-2bb90435e6ee",
+      "student_id": "50000001-0000-0000-0000-000000000001",
+      "borrowed_at": "2026-11-05T08:00:00.000Z",
+      "due_date": "2026-12-01",
+      "status": "active",
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "transport_routes": [
+    {
+      "id": "tr-1",
+      "route_code": "RT-01",
+      "route_name": "Accra Central - Legon Main Campus Express",
+      "departure_location": "Kwame Nkrumah Circle",
+      "arrival_location": "Main Campus Gate",
+      "departure_time": "06:45:00",
+      "stops": [
+        "Circle",
+        "37 Military Hospital",
+        "Shiashie",
+        "Okponglo",
+        "Main Campus"
+      ],
+      "fare_amount": 10,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "tr-2",
+      "route_code": "RT-02",
+      "route_name": "Tema Community 1 - Campus Shuttle",
+      "departure_location": "Tema Meridian",
+      "arrival_location": "Main Campus Gate",
+      "departure_time": "06:30:00",
+      "stops": [
+        "Tema",
+        "Spintex",
+        "Tetteh Quarshie",
+        "Main Campus"
+      ],
+      "fare_amount": 15,
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "transport_vehicles": [
+    {
+      "id": "tv-1",
+      "bus_number": "GT-8821-26",
+      "model": "Marcopolo Paradiso 54-Seater Coach",
+      "capacity": 54,
+      "driver_name": "Emmanuel Mensah",
+      "driver_phone": "+233 24 888 1122",
+      "route_id": "tr-1",
+      "status": "active",
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "tv-2",
+      "bus_number": "GT-4490-26",
+      "model": "Toyota Coaster 32-Seater Shuttle",
+      "capacity": 32,
+      "driver_name": "Isaac Ofori",
+      "driver_phone": "+233 24 999 3344",
+      "route_id": "tr-2",
+      "status": "active",
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "admission_cycles": [
+    {
+      "id": "cyc-1",
+      "code": "ADM-2026-27",
+      "name": "2026/2027 Undergraduate & Postgraduate Admissions",
+      "start_date": "2026-04-01",
+      "end_date": "2026-11-30",
+      "is_active": true,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "applications": [
+    {
+      "id": "app-1",
+      "cycle_id": "cyc-1",
+      "applicant_id": "a0000000-0000-0000-0000-000000000004",
+      "application_number": "APP-2026-00101",
+      "status": "under_review",
+      "personal_info": {
+        "full_name": "Kofi Boateng",
+        "email": "applicant@university.edu.gh",
+        "phone": "+233 54 987 6543",
+        "nationality": "Ghanaian"
+      },
+      "academic_history": {
+        "qualification": "WASSCE",
+        "aggregate": 9
+      },
+      "notes": "Strong mathematics and computing background.",
+      "submitted_at": "2026-11-05T08:00:00.000Z",
+      "created_at": "2026-11-05T08:00:00.000Z",
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "application_programmes": [
+    {
+      "id": "ap-1",
+      "application_id": "app-1",
+      "programme_id": "b0000001-0000-0000-0000-000000000001",
+      "preference_order": 1,
+      "created_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "application_reviews": [],
+  "admission_decisions": [],
+  "offers": [],
+  "system_settings": [
+    {
+      "id": "766a5cea-e3b7-4e9f-8556-f84bf8263ee6",
+      "created_at": "2026-11-23T02:59:14.070Z",
+      "updated_at": "2026-11-23T03:33:05.919Z",
+      "setting_key": "deleted_universities",
+      "setting_value": [
+        {
+          "id": "u0000001-0000-0000-0000-000000000001",
+          "code": "AIT",
+          "name": "Accra Institute of Technology",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "u0000003-0000-0000-0000-000000000003",
+          "code": "ASHS",
+          "name": "Achimota Senior High School",
+          "deleted_at": "2026-11-23T02:59:19.657Z"
+        },
+        {
+          "id": "u0000002-0000-0000-0000-000000000002",
+          "code": "KTVI",
+          "name": "Kumasi Technical & Vocational Institute",
+          "deleted_at": "2026-11-23T03:33:04.375Z"
+        }
+      ],
+      "category": "superadmin",
+      "description": "List of decommissioned/deleted universities whose users must be blocked from system access",
+      "is_sensitive": false
+    },
+    {
+      "id": "27d0f721-19dc-43d9-9014-a6430ca5d2a5",
+      "created_at": "2026-11-23T02:59:13.934Z",
+      "updated_at": "2026-11-23T03:33:04.981Z",
+      "setting_key": "deleted_users",
+      "setting_value": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "email": "admin@university.edu.gh",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "ce155d80-2f26-4bfb-9ca1-72879fc60b62",
+          "email": "eugenedoeteh@university.edu.gh",
+          "role": "finance_officer",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "6d8f80fb-c341-4622-b23b-0efa4702bb66",
+          "email": "adaahessel@university.edu.gh",
+          "role": "lecturer",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "email": "lecturer@university.edu.gh",
+          "role": "lecturer",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000005",
+          "email": "advisor@university.edu.gh",
+          "role": "academic_advisor",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000007",
+          "email": "registrar@university.edu.gh",
+          "role": "registrar",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000008",
+          "email": "hr@university.edu.gh",
+          "role": "hr_officer",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "6015cdd8-1c8e-4995-bde4-2bb90435e6ee",
+          "email": "ama.johnson@university.edu.gh",
+          "role": "student",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "email": "student@university.edu.gh",
+          "role": "student",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000006",
+          "email": "daniel.tetteh@university.edu.gh",
+          "role": "student",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "email": "applicant@university.edu.gh",
+          "role": "applicant",
+          "university_id": "u0000001-0000-0000-0000-000000000001",
+          "university_code": "AIT",
+          "deleted_at": "2026-11-23T02:59:09.533Z"
+        },
+        {
+          "id": "c0000000-0000-0000-0000-000000000001",
+          "email": "",
+          "role": "system_admin",
+          "university_id": "u0000003-0000-0000-0000-000000000003",
+          "university_code": "ASHS",
+          "deleted_at": "2026-11-23T02:59:19.657Z"
+        },
+        {
+          "id": "b0000000-0000-0000-0000-000000000001",
+          "email": "",
+          "role": "system_admin",
+          "university_id": "u0000002-0000-0000-0000-000000000002",
+          "university_code": "KTVI",
+          "deleted_at": "2026-11-23T02:59:24.274Z"
+        },
+        {
+          "id": "b0000000-0000-0000-0000-000000000002",
+          "email": "student@ktvi.edu.gh",
+          "role": "student",
+          "university_id": "u0000002-0000-0000-0000-000000000002",
+          "university_code": "KTVI",
+          "deleted_at": "2026-11-23T02:59:24.274Z"
+        },
+        {
+          "id": "50000002-0000-0000-0000-000000000001",
+          "email": "",
+          "role": "student",
+          "university_id": "u0000002-0000-0000-0000-000000000002",
+          "university_code": "KTVI",
+          "deleted_at": "2026-11-23T02:59:24.274Z"
+        }
+      ],
+      "category": "superadmin",
+      "description": "Permanent blacklist of deleted users from decommissioned universities",
+      "is_sensitive": false
+    },
+    {
+      "id": "c49326f1-c137-4e7e-9db6-4548eca91f5e",
+      "created_at": "2026-11-23T02:57:03.797Z",
+      "updated_at": "2026-11-23T02:57:03.796Z",
+      "setting_key": "superadmin_communications",
+      "setting_value": [
+        {
+          "id": "c9a00001-0000-0000-0000-000000000004",
+          "direction": "inbound",
+          "is_read": true,
+          "parent_id": "c9a00001-0000-0000-0000-000000000001",
+          "sender_email": "admin@university.edu.gh",
+          "sender_name": "Andronicus Johnson (AIT System Admin)",
+          "recipient_to": "superadmin@university.edu.gh",
+          "recipient_cc": null,
+          "recipient_bcc": null,
+          "target_school": "Accra Institute of Technology",
+          "subject": "Re: 2026/2027 Academic Year Governance & Quota Compliance Directive",
+          "body": "Dear Master Super Administrator,\n\nThank you for the directive. We have verified our institutional role quotas, confirmed MFA enrollment across all active system administrators, and reviewed our school portal sidebar modules.\n\nEverything is compliant and operational on our campus.\n\nWarm regards,\nAndronicus Johnson\nSystem Administrator • Accra Institute of Technology",
+          "category": "Compliance",
+          "priority": "high",
+          "status": "received",
+          "attachments": [],
+          "sent_at": "2026-11-19T11:20:00.000Z",
+          "created_at": "2026-11-19T11:20:00.000Z"
+        },
+        {
+          "id": "c9a00001-0000-0000-0000-000000000001",
+          "direction": "outbound",
+          "is_read": true,
+          "parent_id": null,
+          "sender_email": "superadmin@university.edu.gh",
+          "sender_name": "Master Super Administrator",
+          "recipient_to": "admin@university.edu.gh, registrar@university.edu.gh",
+          "recipient_cc": "bursar@university.edu.gh",
+          "recipient_bcc": null,
+          "target_school": "Accra Institute of Technology",
+          "subject": "2026/2027 Academic Year Governance & Quota Compliance Directive",
+          "body": "Dear Institutional Administrators,\n\nPlease be advised that the 2026/2027 multi-tenant governance quotas and sidebar module configurations have been finalized on the central platform.\n\nKey Action Items:\n1. Verify your institution's assigned role tiers and department limits.\n2. Confirm that all active system administrators have Multi-Factor Authentication (MFA) enabled.\n3. Review your portal sidebar navigation items under Settings.\n\nWarm regards,\nMaster Super Administrator\nUMS Global Platform Governance",
+          "category": "Compliance",
+          "priority": "high",
+          "status": "delivered",
+          "attachments": [],
+          "sent_at": "2026-11-18T09:30:00.000Z",
+          "created_at": "2026-11-18T09:30:00.000Z"
+        },
+        {
+          "id": "c9a00001-0000-0000-0000-000000000002",
+          "direction": "outbound",
+          "is_read": true,
+          "parent_id": null,
+          "sender_email": "superadmin@university.edu.gh",
+          "sender_name": "Master Super Administrator",
+          "recipient_to": "all-school-admins@university.edu.gh",
+          "recipient_cc": null,
+          "recipient_bcc": null,
+          "target_school": "All Registered Schools",
+          "subject": "Scheduled Cloud Storage Engine Maintenance & Zero-Downtime Sync",
+          "body": "Hello System Administrators,\n\nOur engineering team will perform a routine optimization on the multi-tenant database cluster this Saturday at 02:00 UTC. All institutional portals (Universities, High Schools, and Vocational Schools) will remain online with zero cold-start impact.\n\nNo action is required on your part.\n\nBest regards,\nPlatform Operations Team",
+          "category": "Maintenance",
+          "priority": "normal",
+          "status": "delivered",
+          "attachments": [],
+          "sent_at": "2026-11-16T14:15:00.000Z",
+          "created_at": "2026-11-16T14:15:00.000Z"
+        },
+        {
+          "id": "c9a00001-0000-0000-0000-000000000003",
+          "direction": "outbound",
+          "is_read": true,
+          "parent_id": null,
+          "sender_email": "superadmin@university.edu.gh",
+          "sender_name": "Master Super Administrator",
+          "recipient_to": "eugenedoeteh@university.edu.gh",
+          "recipient_cc": "admin@university.edu.gh",
+          "recipient_bcc": null,
+          "target_school": "Accra Institute of Technology",
+          "subject": "End-of-Semester Bursary Reconciliation & Settlement Verification",
+          "body": "Dear Chief Financial Officer,\n\nKindly ensure all pending fee waiver dual-control approvals and Paystack settlement batches for the First Semester are reconciled before the financial close deadline.\n\nThank you,\nMaster Super Administrator",
+          "category": "Billing",
+          "priority": "high",
+          "status": "delivered",
+          "attachments": [],
+          "sent_at": "2026-11-14T11:00:00.000Z",
+          "created_at": "2026-11-14T11:00:00.000Z"
+        }
+      ],
+      "category": "communications"
+    },
+    {
+      "id": "267bb377-6b29-42fc-9fec-ccee63f7df8a",
+      "setting_key": "institution_info",
+      "setting_value": {
+        "name": "Lofa County University",
+        "short_name": "Premier Tech",
+        "abbreviation": "LCU",
+        "motto": "Empowering Minds, Shaping Tomorrow",
+        "email": "registrar@university.edu.gh",
+        "support_email": "support@university.edu.gh",
+        "phone": "+233 30 212 8899",
+        "alt_phone": "+233 30 212 8890",
+        "website": "https://premier.university.edu.gh",
+        "address": "Plot 44 University Heights, North Legon Boulevard",
+        "city": "Monrovia",
+        "region": "Greater Accra Region",
+        "country": "Liberia",
+        "postal_code": "GA-201-9483",
+        "currency": "USD",
+        "currency_symbol": "GH₵",
+        "established_year": 1998,
+        "accreditation_code": "GTEC/NAB/UNI/2026-0482",
+        "logo_url": "",
+        "seal_url": ""
+      },
+      "category": "general",
+      "description": "Complete institution identity, logos, contact, and operational parameters",
+      "is_sensitive": false,
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "d3c4d26d-84c0-4d52-841a-5e63070a9a00",
+      "setting_key": "finance_policy",
+      "setting_value": {
+        "currency": "GHS",
+        "currency_symbol": "GH₵",
+        "academic_year": "2026/2027",
+        "active_semester": "Semester 1",
+        "write_off_limit": 50,
+        "debt_transcript_hold": true,
+        "late_payment_penalty": 150,
+        "dual_control_enforced": true,
+        "auto_generate_invoices": true,
+        "debt_threshold_exam_block_pct": 30,
+        "refund_dual_control_threshold": 500
+      },
+      "category": "finance",
+      "description": "Bursary dual-control, write-offs, refund thresholds, and collection rules",
+      "is_sensitive": false,
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    },
+    {
+      "id": "set-univ-reg",
+      "setting_key": "superadmin_universities",
+      "setting_value": [],
+      "category": "superadmin",
+      "description": "Master directory of all registered institutions in the multi-tenant system",
+      "is_sensitive": false,
+      "updated_at": "2026-11-23T03:33:05.890Z"
+    },
+    {
+      "id": "set-mod-reg",
+      "setting_key": "superadmin_sidebar_modules",
+      "setting_value": [
+        {
+          "id": "m-dash",
+          "module_key": "dashboard",
+          "label": "System Overview",
+          "category": "Core Administration",
+          "route_path": "/superadmin/dashboard",
+          "icon": "LayoutGrid",
+          "badge": "Live",
+          "description": "System vitals, cross-university KPIs, and infrastructure health",
+          "is_active": true,
+          "display_order": 1,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-univ",
+          "module_key": "universities",
+          "label": "Universities & Campuses",
+          "category": "Core Administration",
+          "route_path": "/superadmin/universities",
+          "icon": "Building2",
+          "badge": "Tenants",
+          "description": "Register institutions, configure multi-tenancy, and manage campuses",
+          "is_active": true,
+          "display_order": 2,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-sys",
+          "module_key": "system_admins",
+          "label": "System Administrators",
+          "category": "Core Administration",
+          "route_path": "/superadmin/system-admins",
+          "icon": "ShieldCheck",
+          "badge": "Admins",
+          "description": "Provision and govern system administrator credentials across all universities",
+          "is_active": true,
+          "display_order": 3,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-users",
+          "module_key": "users",
+          "label": "Users & Directory",
+          "category": "Core Administration",
+          "route_path": "/superadmin/users",
+          "icon": "Users",
+          "badge": null,
+          "description": "Global identity directory, person records, and credentials",
+          "is_active": true,
+          "display_order": 4,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-roles",
+          "module_key": "roles",
+          "label": "Roles & Permissions",
+          "category": "Core Administration",
+          "route_path": "/superadmin/roles",
+          "icon": "UserCheck",
+          "badge": null,
+          "description": "Centrally governed RBAC roles, permission sets, and dual-control rules",
+          "is_active": true,
+          "display_order": 5,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-scopes",
+          "module_key": "scopes",
+          "label": "Department & Campus Scopes",
+          "category": "Core Administration",
+          "route_path": "/superadmin/scopes",
+          "icon": "Layers",
+          "badge": null,
+          "description": "Multi-campus boundary assignments, faculties, and department scopes",
+          "is_active": true,
+          "display_order": 6,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-acad",
+          "module_key": "academics",
+          "label": "Academic Configuration",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/academics",
+          "icon": "GraduationCap",
+          "badge": null,
+          "description": "Global grading scales, credit rules, terms, and progression logic",
+          "is_active": true,
+          "display_order": 7,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-pay",
+          "module_key": "payments",
+          "label": "Payment Provider Settings",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/payments",
+          "icon": "CreditCard",
+          "badge": null,
+          "description": "Paystack, Hubtel, and bank webhook gateway configurations",
+          "is_active": true,
+          "display_order": 8,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-comm",
+          "module_key": "communications",
+          "label": "Email & SMS Settings",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/communications",
+          "icon": "Megaphone",
+          "badge": null,
+          "description": "Resend, SMTP, and SMS delivery routes and notification channels",
+          "is_active": true,
+          "display_order": 9,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-tmpl",
+          "module_key": "templates",
+          "label": "Document Templates",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/templates",
+          "icon": "FileText",
+          "badge": null,
+          "description": "Transcript, certificate, admission letter, and official document formats",
+          "is_active": true,
+          "display_order": 10,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-stor",
+          "module_key": "storage",
+          "label": "Storage & File Policies",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/storage",
+          "icon": "HardDrive",
+          "badge": null,
+          "description": "Private bucket policies, signed URL lifetimes, and file quotas",
+          "is_active": true,
+          "display_order": 11,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-integ",
+          "module_key": "integrations",
+          "label": "Integrations & APIs",
+          "category": "Platform Configuration",
+          "route_path": "/superadmin/integrations",
+          "icon": "Boxes",
+          "badge": null,
+          "description": "Moodle LMS, external accounting, and third-party API keys",
+          "is_active": true,
+          "display_order": 12,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-aud",
+          "module_key": "audit_logs",
+          "label": "Audit Logs",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/audit",
+          "icon": "FileCheck2",
+          "badge": null,
+          "description": "Immutable cross-tenant audit trail of all security and admin actions",
+          "is_active": true,
+          "display_order": 13,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-sec",
+          "module_key": "security_events",
+          "label": "Security Events",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/security-events",
+          "icon": "ShieldAlert",
+          "badge": null,
+          "description": "Real-time threat monitoring, failed logins, and privilege escalations",
+          "is_active": true,
+          "display_order": 14,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-jobs",
+          "module_key": "jobs",
+          "label": "Background Jobs",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/jobs",
+          "icon": "Clock",
+          "badge": "Queue",
+          "description": "Scheduled tasks, report generators, sync runners, and retry queues",
+          "is_active": true,
+          "display_order": 15,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-health",
+          "module_key": "health",
+          "label": "Monitoring & Health",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/health",
+          "icon": "Activity",
+          "badge": "99.9%",
+          "description": "System health, database latency, server metrics, and uptime",
+          "is_active": true,
+          "display_order": 16,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-back",
+          "module_key": "backups",
+          "label": "Backup & Recovery Status",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/backups",
+          "icon": "Database",
+          "badge": null,
+          "description": "Disaster recovery, point-in-time snapshots, and database failover",
+          "is_active": true,
+          "display_order": 17,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-flags",
+          "module_key": "modules",
+          "label": "Feature Flags",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/modules",
+          "icon": "Sliders",
+          "badge": null,
+          "description": "Institution-level module flags and beta capabilities",
+          "is_active": true,
+          "display_order": 18,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        },
+        {
+          "id": "m-set",
+          "module_key": "system_settings",
+          "label": "Maintenance Mode",
+          "category": "Security & Operations",
+          "route_path": "/superadmin/settings",
+          "icon": "Sliders",
+          "badge": null,
+          "description": "Emergency maintenance lockdown, global notices, and platform policies",
+          "is_active": true,
+          "display_order": 19,
+          "created_at": "2026-11-05T08:00:00.000Z"
+        }
+      ],
+      "category": "superadmin",
+      "description": "Dynamic navigation modules for Super Admin console",
+      "is_sensitive": false,
+      "updated_at": "2026-11-05T08:00:00.000Z"
+    }
+  ],
+  "support_cases": [],
+  "result_submissions": [],
+  "result_approvals": [],
+  "result_amendments": [],
+  "curriculum_requirements": [],
+  "prerequisites": [],
+  "enrolment_overrides": [],
+  "student_programme_history": [],
+  "student_status_history": [],
+  "institutional_reports": [],
+  "communications": [
+    {
+      "id": "c9a00001-0000-0000-0000-000000000004",
+      "direction": "inbound",
+      "is_read": true,
+      "parent_id": "c9a00001-0000-0000-0000-000000000001",
+      "sender_email": "admin@university.edu.gh",
+      "sender_name": "Andronicus Johnson (AIT System Admin)",
+      "recipient_to": "superadmin@university.edu.gh",
+      "recipient_cc": null,
+      "recipient_bcc": null,
+      "target_school": "Accra Institute of Technology",
+      "subject": "Re: 2026/2027 Academic Year Governance & Quota Compliance Directive",
+      "body": "Dear Master Super Administrator,\n\nThank you for the directive. We have verified our institutional role quotas, confirmed MFA enrollment across all active system administrators, and reviewed our school portal sidebar modules.\n\nEverything is compliant and operational on our campus.\n\nWarm regards,\nAndronicus Johnson\nSystem Administrator • Accra Institute of Technology",
+      "category": "Compliance",
+      "priority": "high",
+      "status": "received",
+      "attachments": [],
+      "sent_at": "2026-11-19T11:20:00.000Z",
+      "created_at": "2026-11-19T11:20:00.000Z",
+      "updated_at": "2026-11-23T02:57:03.791Z"
+    },
+    {
+      "id": "c9a00001-0000-0000-0000-000000000001",
+      "direction": "outbound",
+      "is_read": true,
+      "parent_id": null,
+      "sender_email": "superadmin@university.edu.gh",
+      "sender_name": "Master Super Administrator",
+      "recipient_to": "admin@university.edu.gh, registrar@university.edu.gh",
+      "recipient_cc": "bursar@university.edu.gh",
+      "recipient_bcc": null,
+      "target_school": "Accra Institute of Technology",
+      "subject": "2026/2027 Academic Year Governance & Quota Compliance Directive",
+      "body": "Dear Institutional Administrators,\n\nPlease be advised that the 2026/2027 multi-tenant governance quotas and sidebar module configurations have been finalized on the central platform.\n\nKey Action Items:\n1. Verify your institution's assigned role tiers and department limits.\n2. Confirm that all active system administrators have Multi-Factor Authentication (MFA) enabled.\n3. Review your portal sidebar navigation items under Settings.\n\nWarm regards,\nMaster Super Administrator\nUMS Global Platform Governance",
+      "category": "Compliance",
+      "priority": "high",
+      "status": "delivered",
+      "attachments": [],
+      "sent_at": "2026-11-18T09:30:00.000Z",
+      "created_at": "2026-11-18T09:30:00.000Z"
+    },
+    {
+      "id": "c9a00001-0000-0000-0000-000000000002",
+      "direction": "outbound",
+      "is_read": true,
+      "parent_id": null,
+      "sender_email": "superadmin@university.edu.gh",
+      "sender_name": "Master Super Administrator",
+      "recipient_to": "all-school-admins@university.edu.gh",
+      "recipient_cc": null,
+      "recipient_bcc": null,
+      "target_school": "All Registered Schools",
+      "subject": "Scheduled Cloud Storage Engine Maintenance & Zero-Downtime Sync",
+      "body": "Hello System Administrators,\n\nOur engineering team will perform a routine optimization on the multi-tenant database cluster this Saturday at 02:00 UTC. All institutional portals (Universities, High Schools, and Vocational Schools) will remain online with zero cold-start impact.\n\nNo action is required on your part.\n\nBest regards,\nPlatform Operations Team",
+      "category": "Maintenance",
+      "priority": "normal",
+      "status": "delivered",
+      "attachments": [],
+      "sent_at": "2026-11-16T14:15:00.000Z",
+      "created_at": "2026-11-16T14:15:00.000Z"
+    },
+    {
+      "id": "c9a00001-0000-0000-0000-000000000003",
+      "direction": "outbound",
+      "is_read": true,
+      "parent_id": null,
+      "sender_email": "superadmin@university.edu.gh",
+      "sender_name": "Master Super Administrator",
+      "recipient_to": "eugenedoeteh@university.edu.gh",
+      "recipient_cc": "admin@university.edu.gh",
+      "recipient_bcc": null,
+      "target_school": "Accra Institute of Technology",
+      "subject": "End-of-Semester Bursary Reconciliation & Settlement Verification",
+      "body": "Dear Chief Financial Officer,\n\nKindly ensure all pending fee waiver dual-control approvals and Paystack settlement batches for the First Semester are reconciled before the financial close deadline.\n\nThank you,\nMaster Super Administrator",
+      "category": "Billing",
+      "priority": "high",
+      "status": "delivered",
+      "attachments": [],
+      "sent_at": "2026-11-14T11:00:00.000Z",
+      "created_at": "2026-11-14T11:00:00.000Z"
+    }
+  ],
+  "schools": [],
+  "admission_reviews": [],
+  "student_feedback": [],
+  "academic_advising_assignments": [],
+  "advising_sessions": [],
+  "lecturer_tasks": [],
+  "case_comments": [],
+  "case_assignments": [],
+  "case_events": [],
+  "library_fines": [],
+  "student_holds": [],
+  "student_accounts": [],
+  "accommodation_applications": [],
+  "reservations": [],
+  "room_allocations": [],
+  "staff_documents": [],
+  "teaching_loads": [],
+  "leave_balances": [],
+  "user_scopes": [],
+  "classes": [],
+  "timetables": [],
+  "academic_terms": [],
+  "grading_scales": [],
+  "scopes": []
+}ation_applications": [],
+  "reservations": [],
+  "room_allocations": [],
+  "staff_documents": [],
+  "teaching_loads": [],
+  "leave_balances": [],
+  "user_scopes": [],
+  "classes": [],
+  "timetables": [],
+  "academic_terms": [],
+  "grading_scales": [],
+  "scopes": []
+}

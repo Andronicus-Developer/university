@@ -120,7 +120,7 @@ export default function SuperAdminCommunicationsPage() {
   const [showSimulateReplyModal, setShowSimulateReplyModal] = useState(false);
   const [simReplyFromEmail, setSimReplyFromEmail] = useState("admin@university.edu.gh");
   const [simReplyFromName, setSimReplyFromName] = useState("Andronicus Johnson (System Admin)");
-  const [simReplySchool, setSimReplySchool] = useState("Accra Institute of Technology");
+  const [simReplySchool, setSimReplySchool] = useState("");
   const [simReplySubject, setSimReplySubject] = useState(
     "Re: 2026/2027 Academic Year Governance & Quota Compliance Directive"
   );
@@ -196,7 +196,7 @@ export default function SuperAdminCommunicationsPage() {
 
   const fetchSchools = async () => {
     try {
-      const res = await fetch("/api/superadmin/universities");
+      const res = await fetch("/api/superadmin/schools");
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -341,7 +341,10 @@ export default function SuperAdminCommunicationsPage() {
         categoryFilter === "all" || item.category.toLowerCase() === categoryFilter.toLowerCase();
 
       const matchesPriority =
-        priorityFilter === "all" || item.priority === priorityFilter;
+        priorityFilter === "all" ||
+        (priorityFilter === "high_urgent"
+          ? item.priority === "high" || item.priority === "urgent"
+          : item.priority === priorityFilter);
 
       return matchesFolder && matchesSearch && matchesCategory && matchesPriority;
     });
@@ -417,7 +420,7 @@ export default function SuperAdminCommunicationsPage() {
           ? fromComm.sender_name
           : `${fromComm.target_school || "School"} Administrator`
       );
-      setSimReplySchool(fromComm.target_school || "Accra Institute of Technology");
+      setSimReplySchool(fromComm.target_school || "");
       setSimReplySubject(
         fromComm.subject.startsWith("Re:") ? fromComm.subject : `Re: ${fromComm.subject}`
       );
@@ -736,7 +739,9 @@ export default function SuperAdminCommunicationsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div
               onClick={() => setMailboxFolder("inbox")}
-              className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-blue-300 transition-all cursor-pointer"
+              className={`p-4 rounded-2xl bg-white border shadow-2xs hover:border-blue-300 transition-all cursor-pointer ${
+                mailboxFolder === "inbox" ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200/80"
+              }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-slate-500">
@@ -758,7 +763,9 @@ export default function SuperAdminCommunicationsPage() {
 
             <div
               onClick={() => setMailboxFolder("sent")}
-              className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-blue-300 transition-all cursor-pointer"
+              className={`p-4 rounded-2xl bg-white border shadow-2xs hover:border-blue-300 transition-all cursor-pointer ${
+                mailboxFolder === "sent" ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200/80"
+              }`}
             >
               <div className="text-[11px] font-semibold text-slate-500">Sent Dispatches</div>
               <div className="text-2xl font-extrabold text-slate-900 mt-1">
@@ -769,21 +776,43 @@ export default function SuperAdminCommunicationsPage() {
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] font-semibold text-slate-500">High / Urgent Priority</div>
+            <div
+              onClick={() => {
+                setPriorityFilter((prev) => (prev === "high_urgent" ? "all" : "high_urgent"));
+              }}
+              className={`p-4 rounded-2xl bg-white border shadow-2xs hover:border-blue-300 transition-all cursor-pointer ${
+                priorityFilter === "high_urgent" ? "border-amber-400 ring-2 ring-amber-100" : "border-slate-200/80"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500">High / Urgent Priority</span>
+                {priorityFilter === "high_urgent" && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                    Filtered
+                  </span>
+                )}
+              </div>
               <div className="text-2xl font-extrabold text-amber-600 mt-1">
                 {communications.filter((c) => c.priority === "high" || c.priority === "urgent").length}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">Priority threads</div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] font-semibold text-slate-500">Connected Schools</div>
+            <Link
+              href="/superadmin/schools"
+              className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-blue-300 transition-all cursor-pointer block"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500">Connected Schools</span>
+                <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-0.5 hover:underline">
+                  Manage Schools →
+                </span>
+              </div>
               <div className="text-2xl font-extrabold text-emerald-600 mt-1">
-                {schools.length || 1}
+                {schools.length}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">Active recipient tenants</div>
-            </div>
+            </Link>
           </div>
 
           {/* Gmail Folder Switcher + Search & Filter Toolbar */}
@@ -893,6 +922,7 @@ export default function SuperAdminCommunicationsPage() {
                   className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
                 >
                   <option value="all">All Priorities</option>
+                  <option value="high_urgent">High / Urgent Priority</option>
                   <option value="normal">Normal Priority</option>
                   <option value="high">High Priority</option>
                   <option value="urgent">Urgent Priority</option>
@@ -1679,7 +1709,7 @@ export default function SuperAdminCommunicationsPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      handleAddQuickRecipient("admin@university.edu.gh", "Accra Institute of Technology")
+                      handleAddQuickRecipient("admin@university.edu.gh", "")
                     }
                     className="px-2 py-0.5 rounded-full bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-[10.5px] font-semibold shrink-0 cursor-pointer transition-colors"
                   >

@@ -38,8 +38,14 @@ import {
   Globe,
   CheckSquare,
   UserCheck,
+  Info,
 } from "lucide-react";
-import type { UniversityItem, SystemAdminItem, SuperAdminStats } from "@/lib/superadmin/service";
+import {
+  type UniversityItem,
+  type SystemAdminItem,
+  type SuperAdminStats,
+  AVAILABLE_UNIVERSITY_ROLES,
+} from "@/lib/superadmin/service";
 
 export default function SuperAdminDashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -52,13 +58,13 @@ export default function SuperAdminDashboardPage() {
 
   // Stats
   const [stats, setStats] = useState<SuperAdminStats>({
-    totalUniversities: 1,
-    activeUniversities: 1,
-    totalSystemAdmins: 1,
-    totalCampuses: 1,
-    totalStudents: 3,
-    totalLecturers: 2,
-    totalStaff: 5,
+    totalUniversities: 0,
+    activeUniversities: 0,
+    totalSystemAdmins: 0,
+    totalCampuses: 0,
+    totalStudents: 0,
+    totalLecturers: 0,
+    totalStaff: 0,
     systemStatus: "healthy",
     dbLatencyMs: 1.2,
   });
@@ -75,29 +81,109 @@ export default function SuperAdminDashboardPage() {
   const [showUnivModal, setShowUnivModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
 
-  // University Form State
+  // School Modal & Form State (matching Schools Page Register Form)
+  const [univModalTab, setUnivModalTab] = useState<"general" | "governance">("general");
   const [univName, setUnivName] = useState("");
   const [univCode, setUnivCode] = useState("");
+  const [univShortName, setUnivShortName] = useState("");
   const [univSchoolType, setUnivSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
   const [univCountry, setUnivCountry] = useState("Ghana");
   const [univCity, setUnivCity] = useState("Accra");
+  const [univAddress, setUnivAddress] = useState("");
   const [univEmail, setUnivEmail] = useState("");
   const [univPhone, setUnivPhone] = useState("");
   const [univWebsite, setUnivWebsite] = useState("");
-  const [univCurrency, setUnivCurrency] = useState("USD");
+  const [univCurrency, setUnivCurrency] = useState("GHS");
+  const [univEstablishedYear, setUnivEstablishedYear] = useState("");
+  const [univStatus, setUnivStatus] = useState<"active" | "inactive" | "maintenance" | "suspended" | "deleted">("active");
+
+  // Governance & Quota fields
+  const [univFullAccess, setUnivFullAccess] = useState(true);
+  const [univHasUserLimit, setUnivHasUserLimit] = useState(false);
+  const [univMaxUsers, setUnivMaxUsers] = useState<string>("");
+  const [univHasDeptLimit, setUnivHasDeptLimit] = useState(false);
+  const [univMaxDepartments, setUnivMaxDepartments] = useState<string>("");
+  const [univHasRoleLimit, setUnivHasRoleLimit] = useState(false);
+  const [univMaxRoles, setUnivMaxRoles] = useState<string>("");
+  const [univAllowedRoles, setUnivAllowedRoles] = useState<string[]>([]);
+
   const [isSubmittingUniv, setIsSubmittingUniv] = useState(false);
   const [univError, setUnivError] = useState("");
   const [univSuccess, setUnivSuccess] = useState("");
+
+  const openAddSchoolModal = () => {
+    setUnivModalTab("general");
+    setUnivName("");
+    setUnivCode("");
+    setUnivShortName("");
+    setUnivSchoolType("university");
+    setUnivCountry("Ghana");
+    setUnivCity("Accra");
+    setUnivAddress("");
+    setUnivEmail("");
+    setUnivPhone("");
+    setUnivWebsite("");
+    setUnivCurrency("GHS");
+    setUnivEstablishedYear("");
+    setUnivStatus("active");
+
+    setUnivFullAccess(true);
+    setUnivHasUserLimit(false);
+    setUnivMaxUsers("");
+    setUnivHasDeptLimit(false);
+    setUnivMaxDepartments("");
+    setUnivHasRoleLimit(false);
+    setUnivMaxRoles("");
+    setUnivAllowedRoles(AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code));
+
+    setUnivError("");
+    setUnivSuccess("");
+    setShowUnivModal(true);
+  };
+
+  const toggleUnivRoleSelection = (roleCode: string) => {
+    setUnivAllowedRoles((prev) =>
+      prev.includes(roleCode) ? prev.filter((r) => r !== roleCode) : [...prev, roleCode]
+    );
+  };
+
+  const selectUnivCoreAcademicRoles = () => {
+    const core = [
+      "system_admin",
+      "registrar",
+      "dean",
+      "head_of_department",
+      "lecturer",
+      "student",
+      "finance_officer",
+    ];
+    setUnivAllowedRoles(core);
+  };
 
   // System Admin Form State
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminPhone, setAdminPhone] = useState("");
+  const [adminAccountStatus, setAdminAccountStatus] = useState("active");
   const [selectedUnivId, setSelectedUnivId] = useState("");
   const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
   const [adminError, setAdminError] = useState("");
   const [adminSuccess, setAdminSuccess] = useState("");
+
+  const openProvisionAdminModal = () => {
+    setAdminName("");
+    setAdminEmail("");
+    setAdminPassword("");
+    setAdminPhone("");
+    setAdminAccountStatus("active");
+    if (universities.length > 0) {
+      setSelectedUnivId(universities[0].id);
+    }
+    setAdminError("");
+    setAdminSuccess("");
+    setShowAdminModal(true);
+  };
 
   // Fetch Dashboard Data
   const fetchDashboardData = async () => {
@@ -126,25 +212,40 @@ export default function SuperAdminDashboardPage() {
     try {
       const [statsRes, univRes, adminRes, auditRes, commRes] = await Promise.all([
         fetch("/api/superadmin/stats"),
-        fetch("/api/superadmin/universities"),
+        fetch("/api/superadmin/schools"),
         fetch("/api/superadmin/system-admins"),
         fetch("/api/superadmin/audit"),
         fetch("/api/superadmin/communications"),
       ]);
 
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setStats(statsData);
-      }
+      let loadedUnivs: UniversityItem[] = [];
+      let loadedAdmins: SystemAdminItem[] = [];
+
       if (univRes.ok) {
         const univData = await univRes.json();
-        setUniversities(univData);
-        if (univData.length > 0 && !selectedUnivId) {
-          setSelectedUnivId(univData[0].id);
+        loadedUnivs = Array.isArray(univData) ? univData : [];
+        setUniversities(loadedUnivs);
+        if (loadedUnivs.length > 0 && !selectedUnivId) {
+          setSelectedUnivId(loadedUnivs[0].id);
         }
       }
       if (adminRes.ok) {
-        setSystemAdmins(await adminRes.json());
+        const adminData = await adminRes.json();
+        loadedAdmins = Array.isArray(adminData) ? adminData : [];
+        setSystemAdmins(loadedAdmins);
+      }
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        if (loadedUnivs.length === 0) {
+          statsData.totalUniversities = 0;
+          statsData.activeUniversities = 0;
+          statsData.totalCampuses = 0;
+          statsData.totalSystemAdmins = 0;
+          statsData.totalStudents = 0;
+          statsData.totalLecturers = 0;
+          statsData.totalStaff = 0;
+        }
+        setStats(statsData);
       }
       if (auditRes.ok) {
         setAuditLogs(await auditRes.json());
@@ -203,57 +304,76 @@ export default function SuperAdminDashboardPage() {
     return list;
   }, [universities, searchQuery, countrySortOrder]);
 
-  // Handle Add University
+  // Handle Add School (matching Schools page)
   const handleCreateUniversity = async (e: React.FormEvent) => {
     e.preventDefault();
     setUnivError("");
     setUnivSuccess("");
 
     if (!univName || !univCode) {
-      setUnivError("Please enter school name and short code.");
+      setUnivError("School name and code are required.");
+      return;
+    }
+
+    if (!univFullAccess && univHasUserLimit && (!univMaxUsers || Number(univMaxUsers) <= 0)) {
+      setUnivError("Please specify a valid user limit (greater than 0).");
+      return;
+    }
+
+    if (!univFullAccess && univHasDeptLimit && (!univMaxDepartments || Number(univMaxDepartments) <= 0)) {
+      setUnivError("Please specify a valid department limit (greater than 0).");
+      return;
+    }
+
+    if (!univFullAccess && univAllowedRoles.length === 0) {
+      setUnivError("Please select at least one permitted role for restricted access.");
       return;
     }
 
     setIsSubmittingUniv(true);
     try {
-      const res = await fetch("/api/superadmin/universities", {
+      const payload = {
+        name: univName.trim(),
+        code: univCode.trim().toUpperCase(),
+        short_name: univShortName.trim(),
+        school_type: univSchoolType,
+        institution_type: univSchoolType,
+        country: univCountry.trim(),
+        city: univCity.trim(),
+        address: univAddress.trim(),
+        email: univEmail.trim(),
+        phone: univPhone.trim(),
+        website: univWebsite.trim(),
+        default_currency: univCurrency,
+        currency_symbol: univCurrency === "GHS" ? "GH₵" : "$",
+        established_year: univEstablishedYear ? Number(univEstablishedYear) : undefined,
+        status: univStatus,
+        full_access: univFullAccess,
+        max_users: !univFullAccess && univHasUserLimit && univMaxUsers ? Number(univMaxUsers) : null,
+        max_departments: !univFullAccess && univHasDeptLimit && univMaxDepartments ? Number(univMaxDepartments) : null,
+        max_roles: !univFullAccess && univHasRoleLimit && univMaxRoles ? Number(univMaxRoles) : null,
+        allowed_roles: univFullAccess ? AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code) : univAllowedRoles,
+      };
+
+      const res = await fetch("/api/superadmin/schools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: univName,
-          code: univCode.toUpperCase(),
-          school_type: univSchoolType,
-          institution_type: univSchoolType,
-          country: univCountry,
-          city: univCity,
-          email: univEmail,
-          phone: univPhone,
-          website: univWebsite,
-          default_currency: univCurrency,
-          currency_symbol: univCurrency === "GHS" ? "GH₵" : "$",
-          status: "active",
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create school");
+        throw new Error(data.error || "Failed to register school");
       }
 
-      setUnivSuccess(`Successfully registered ${univName}!`);
-      setUnivName("");
-      setUnivCode("");
-      setUnivSchoolType("university");
-      setUnivEmail("");
-      setUnivPhone("");
-      setUnivWebsite("");
+      setUnivSuccess(`Registered ${univName} with specified access limits successfully!`);
       await fetchDashboardData();
       setTimeout(() => {
         setShowUnivModal(false);
         setUnivSuccess("");
       }, 1200);
     } catch (err: any) {
-      setUnivError(err.message || "Failed to create school");
+      setUnivError(err.message || "An error occurred");
     } finally {
       setIsSubmittingUniv(false);
     }
@@ -265,7 +385,7 @@ export default function SuperAdminDashboardPage() {
     setAdminError("");
     setAdminSuccess("");
 
-    if (!adminName || !adminEmail || !adminPassword) {
+    if (!adminName.trim() || !adminEmail.trim() || !adminPassword) {
       setAdminError("Please provide name, email, and a secure password.");
       return;
     }
@@ -280,11 +400,12 @@ export default function SuperAdminDashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: adminName,
-          email: adminEmail,
+          full_name: adminName.trim(),
+          email: adminEmail.trim(),
           password: adminPassword,
-          phone: adminPhone,
-          university_id: selectedUnivId || undefined,
+          phone: adminPhone.trim(),
+          account_status: adminAccountStatus,
+          university_id: selectedUnivId || (universities.length > 0 ? universities[0].id : undefined),
         }),
       });
 
@@ -298,11 +419,12 @@ export default function SuperAdminDashboardPage() {
       setAdminEmail("");
       setAdminPassword("");
       setAdminPhone("");
+      setAdminAccountStatus("active");
       await fetchDashboardData();
       setTimeout(() => {
         setShowAdminModal(false);
         setAdminSuccess("");
-      }, 1200);
+      }, 1000);
     } catch (err: any) {
       setAdminError(err.message || "Failed to provision system admin");
     } finally {
@@ -331,7 +453,7 @@ export default function SuperAdminDashboardPage() {
         {/* Right Action Buttons */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowUnivModal(true)}
+            onClick={openAddSchoolModal}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -339,7 +461,7 @@ export default function SuperAdminDashboardPage() {
           </button>
 
           <button
-            onClick={() => setShowAdminModal(true)}
+            onClick={openProvisionAdminModal}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <UserCheck className="h-3.5 w-3.5" />
@@ -435,7 +557,7 @@ export default function SuperAdminDashboardPage() {
               </strong>
             </span>
             <Link
-              href="/superadmin/universities"
+              href="/superadmin/schools"
               className="text-blue-600 font-semibold hover:text-blue-700 hover:underline"
             >
               View all
@@ -461,7 +583,7 @@ export default function SuperAdminDashboardPage() {
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="text-slate-500">
               Active: <strong className="text-slate-800">{stats.totalSystemAdmins}</strong> | Provisioned:{" "}
-              <strong className="text-slate-400">100%</strong>
+              <strong className="text-slate-400">{stats.totalSystemAdmins > 0 ? "100%" : "0%"}</strong>
             </span>
             <Link
               href="/superadmin/system-admins"
@@ -638,7 +760,7 @@ export default function SuperAdminDashboardPage() {
                   />
                 </div>
                 <button
-                  onClick={() => setShowUnivModal(true)}
+                  onClick={openAddSchoolModal}
                   className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -756,7 +878,7 @@ export default function SuperAdminDashboardPage() {
                               Portal
                             </Link>
                             <Link
-                              href={`/superadmin/universities`}
+                              href={`/superadmin/schools`}
                               className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-medium transition-colors"
                             >
                               Manage
@@ -773,7 +895,7 @@ export default function SuperAdminDashboardPage() {
             <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-500">
               <span>Showing {filteredUniversities.length} registered schools</span>
               <Link
-                href="/superadmin/universities"
+                href="/superadmin/schools"
                 className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
               >
                 <span>Full Directory</span>
@@ -799,7 +921,7 @@ export default function SuperAdminDashboardPage() {
               </div>
 
               <button
-                onClick={() => setShowAdminModal(true)}
+                onClick={openProvisionAdminModal}
                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -843,7 +965,7 @@ export default function SuperAdminDashboardPage() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4 font-medium text-slate-700">
-                          {adm.university_name || "Accra Institute of Technology"}
+                          {adm.university_name || "—"}
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1061,7 +1183,7 @@ export default function SuperAdminDashboardPage() {
 
             <div className="grid grid-cols-2 gap-2.5">
               <button
-                onClick={() => setShowUnivModal(true)}
+                onClick={openAddSchoolModal}
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-blue-50 hover:border-blue-200 text-slate-700 hover:text-blue-700 text-xs font-medium transition-all text-left cursor-pointer"
               >
                 <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
@@ -1069,7 +1191,7 @@ export default function SuperAdminDashboardPage() {
               </button>
 
               <button
-                onClick={() => setShowAdminModal(true)}
+                onClick={openProvisionAdminModal}
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 text-xs font-medium transition-all text-left cursor-pointer"
               >
                 <UserCheck className="h-4 w-4 text-indigo-600 shrink-0" />
@@ -1113,32 +1235,58 @@ export default function SuperAdminDashboardPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: ADD UNIVERSITY (MATCHING ADMIN DIALOG DESIGN)                     */}
+      {/* MODAL 1: ADD SCHOOL (IDENTICAL TO SCHOOLS PAGE REGISTER FORM)             */}
       {/* ========================================================================= */}
       {showUnivModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden text-slate-800 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                  <Building2 className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Register New School</h3>
-                  <p className="text-[11px] text-slate-500">Create an institutional tenant in UMS</p>
-                </div>
+            <div className="h-14 px-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+                <Building2 className="h-5 w-5 text-blue-600" />
+                <span>Register New School</span>
               </div>
               <button
                 onClick={() => setShowUnivModal(false)}
-                className="h-8 w-8 rounded-lg hover:bg-slate-200/60 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors"
+                className="h-8 w-8 rounded-lg hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Modal Form */}
-            <form onSubmit={handleCreateUniversity} className="p-6 space-y-4">
+            {/* Modal Tabs */}
+            <div className="flex border-b border-slate-200 px-6 bg-white gap-6 shrink-0">
+              <button
+                type="button"
+                onClick={() => setUnivModalTab("general")}
+                className={`py-3 text-xs font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
+                  univModalTab === "general"
+                    ? "text-blue-600 border-b-2 border-blue-600"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Building2 className="h-4 w-4" />
+                <span>General Information</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUnivModalTab("governance")}
+                className={`py-3 text-xs font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
+                  univModalTab === "governance"
+                    ? "text-blue-600 border-b-2 border-blue-600"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>Role & Quota Restrictions</span>
+                {!univFullAccess && (
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                )}
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUniversity} className="flex-1 overflow-y-auto p-6 space-y-4">
               {univError && (
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
@@ -1152,155 +1300,566 @@ export default function SuperAdminDashboardPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5 col-span-2">
-                  <label className="text-xs font-semibold text-slate-700">Type of School *</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setUnivSchoolType("university")}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        univSchoolType === "university"
-                          ? "bg-blue-50 border-blue-500 text-blue-700 shadow-2xs font-bold"
-                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                      }`}
+              {/* TAB 1: GENERAL INFORMATION */}
+              {univModalTab === "general" && (
+                <div className="grid grid-cols-2 gap-4">
+                  {/* School Type Selector */}
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
+                      School Type *
+                    </label>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setUnivSchoolType("university")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          univSchoolType === "university"
+                            ? "border-blue-500 bg-blue-50/70 text-blue-900 shadow-2xs ring-1 ring-blue-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Building2 className={`h-4 w-4 ${univSchoolType === "university" ? "text-blue-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">University</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          Tertiary & Degree Institution
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUnivSchoolType("high_school")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          univSchoolType === "high_school"
+                            ? "border-emerald-500 bg-emerald-50/70 text-emerald-900 shadow-2xs ring-1 ring-emerald-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <GraduationCap className={`h-4 w-4 ${univSchoolType === "high_school" ? "text-emerald-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">High School</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          Secondary & Senior High
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUnivSchoolType("vocational_school")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                          univSchoolType === "vocational_school"
+                            ? "border-amber-500 bg-amber-50/70 text-amber-900 shadow-2xs ring-1 ring-amber-500"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Layers className={`h-4 w-4 ${univSchoolType === "vocational_school" ? "text-amber-600" : "text-slate-500"}`} />
+                          <span className="text-xs font-bold">Vocational</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 leading-tight">
+                          TVET & Technical Trades
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      School Full Legal Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={univName}
+                      onChange={(e) => setUnivName(e.target.value)}
+                      placeholder="e.g. Accra Metropolitan University"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Short Code *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={univCode}
+                      onChange={(e) => setUnivCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. AMU"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-mono text-xs uppercase focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Abbreviation / Short Name
+                    </label>
+                    <input
+                      type="text"
+                      value={univShortName}
+                      onChange={(e) => setUnivShortName(e.target.value)}
+                      placeholder="e.g. Metro Uni"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Operating Status
+                    </label>
+                    <select
+                      value={univStatus}
+                      onChange={(e) => setUnivStatus(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     >
-                      <Building2 className="h-3.5 w-3.5" />
-                      <span>University</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUnivSchoolType("high_school")}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        univSchoolType === "high_school"
-                          ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-2xs font-bold"
-                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                      }`}
+                      <option value="active">Active (Operational)</option>
+                      <option value="maintenance">Maintenance Mode</option>
+                      <option value="suspended">Suspended (Blocked Access)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Default Currency
+                    </label>
+                    <select
+                      value={univCurrency}
+                      onChange={(e) => setUnivCurrency(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     >
-                      <GraduationCap className="h-3.5 w-3.5" />
-                      <span>High School</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUnivSchoolType("vocational_school")}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        univSchoolType === "vocational_school"
-                          ? "bg-amber-50 border-amber-500 text-amber-700 shadow-2xs font-bold"
-                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                      <span>Vocational</span>
-                    </button>
+                      <option value="GHS">GHS (GH₵ - Ghanaian Cedi)</option>
+                      <option value="USD">USD ($ - US Dollar)</option>
+                      <option value="EUR">EUR (€ - Euro)</option>
+                      <option value="GBP">GBP (£ - British Pound)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Country</label>
+                    <input
+                      type="text"
+                      value={univCountry}
+                      onChange={(e) => setUnivCountry(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">City</label>
+                    <input
+                      type="text"
+                      value={univCity}
+                      onChange={(e) => setUnivCity(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Official Email
+                    </label>
+                    <input
+                      type="email"
+                      value={univEmail}
+                      onChange={(e) => setUnivEmail(e.target.value)}
+                      placeholder="info@university.edu"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Official Phone
+                    </label>
+                    <input
+                      type="text"
+                      value={univPhone}
+                      onChange={(e) => setUnivPhone(e.target.value)}
+                      placeholder="+233 24 000 0000"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Campus Main Address
+                    </label>
+                    <input
+                      type="text"
+                      value={univAddress}
+                      onChange={(e) => setUnivAddress(e.target.value)}
+                      placeholder="Main Campus Boulevard, Cantonments, Accra"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                    />
                   </div>
                 </div>
+              )}
 
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-semibold text-slate-700">School Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={univName}
-                    onChange={(e) => setUnivName(e.target.value)}
-                    placeholder="e.g. University of Ghana"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+              {/* TAB 2: ROLE & QUOTA RESTRICTIONS */}
+              {univModalTab === "governance" && (
+                <div className="space-y-5">
+                  {/* Access Mode Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-2">
+                      Access Tier & Governance Model
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div
+                        onClick={() => setUnivFullAccess(true)}
+                        className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                          univFullAccess
+                            ? "border-emerald-500 bg-emerald-50/40 text-emerald-950 shadow-xs"
+                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs flex items-center gap-1.5 text-emerald-800">
+                            <Sparkles className="h-4 w-4 text-emerald-600" />
+                            Full Access (Unrestricted)
+                          </span>
+                          <input
+                            type="radio"
+                            checked={univFullAccess}
+                            onChange={() => setUnivFullAccess(true)}
+                            className="text-emerald-600 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          Institution has unrestricted access to all standard platform roles, unlimited
+                          department creation, and uncapped user provisioning.
+                        </p>
+                      </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Short Code *</label>
-                  <input
-                    type="text"
-                    required
-                    value={univCode}
-                    onChange={(e) => setUnivCode(e.target.value)}
-                    placeholder="e.g. UG"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 uppercase focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                      <div
+                        onClick={() => setUnivFullAccess(false)}
+                        className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                          !univFullAccess
+                            ? "border-indigo-600 bg-indigo-50/40 text-indigo-950 shadow-xs"
+                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs flex items-center gap-1.5 text-indigo-800">
+                            <ShieldAlert className="h-4 w-4 text-indigo-600" />
+                            Custom Restrictions & Quotas
+                          </span>
+                          <input
+                            type="radio"
+                            checked={!univFullAccess}
+                            onChange={() => setUnivFullAccess(false)}
+                            className="text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          Strictly restrict the maximum number of users, maximum departments, and specify
+                          exactly which roles this institution is allowed to provision.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Operating Currency</label>
-                  <select
-                    value={univCurrency}
-                    onChange={(e) => setUnivCurrency(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="GHS">GHS (Ghanaian Cedi)</option>
-                    <option value="USD">USD (US Dollar)</option>
-                    <option value="EUR">EUR (Euro)</option>
-                    <option value="GBP">GBP (British Pound)</option>
-                  </select>
-                </div>
+                  {/* Restrictive Quota Inputs (Shown only if Full Access is false) */}
+                  {!univFullAccess ? (
+                    <div className="space-y-4 pt-3 border-t border-slate-200">
+                      <div className="bg-indigo-50/60 border border-indigo-200 p-3 rounded-xl text-xs text-indigo-900 flex items-start gap-2">
+                        <Info className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Multi-Tenant Quota Enforcement:</strong> The limits configured below
+                          will be enforced across the tenant. Attempting to exceed these quotas will
+                          trigger a restriction block until adjusted by Super Admin.
+                        </div>
+                      </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Country</label>
-                  <input
-                    type="text"
-                    value={univCountry}
-                    onChange={(e) => setUnivCountry(e.target.value)}
-                    placeholder="Ghana"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                      {/* 1. Max Users Limit */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                            <Users className="h-4 w-4 text-blue-600" />
+                            <span>Maximum Allowed Users</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={univHasUserLimit}
+                              onChange={(e) => {
+                                setUnivHasUserLimit(e.target.checked);
+                                if (!e.target.checked) setUnivMaxUsers("");
+                                else if (!univMaxUsers) setUnivMaxUsers("100");
+                              }}
+                              className="rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-slate-600 font-medium">Enforce User Limit</span>
+                          </label>
+                        </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">City / Town</label>
-                  <input
-                    type="text"
-                    value={univCity}
-                    onChange={(e) => setUnivCity(e.target.value)}
-                    placeholder="Accra"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                        {univHasUserLimit ? (
+                          <div className="space-y-2 pt-1">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="e.g. 100"
+                                value={univMaxUsers}
+                                onChange={(e) => setUnivMaxUsers(e.target.value)}
+                                className="w-40 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                              />
+                              <span className="text-xs text-slate-500">total accounts (admins, faculty, students)</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400">Presets:</span>
+                              {[25, 50, 100, 250, 500, 1000].map((preset) => (
+                                <button
+                                  type="button"
+                                  key={preset}
+                                  onClick={() => setUnivMaxUsers(String(preset))}
+                                  className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 italic">
+                            Uncapped user provisioning allowed for this institution.
+                          </p>
+                        )}
+                      </div>
 
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-semibold text-slate-700">Official Contact Email</label>
-                  <input
-                    type="email"
-                    value={univEmail}
-                    onChange={(e) => setUnivEmail(e.target.value)}
-                    placeholder="registrar@ug.edu.gh"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                      {/* 2. Max Departments Limit */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                            <Layers className="h-4 w-4 text-purple-600" />
+                            <span>Maximum Allowed Departments</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={univHasDeptLimit}
+                              onChange={(e) => {
+                                setUnivHasDeptLimit(e.target.checked);
+                                if (!e.target.checked) setUnivMaxDepartments("");
+                                else if (!univMaxDepartments) setUnivMaxDepartments("10");
+                              }}
+                              className="rounded text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="text-slate-600 font-medium">Enforce Department Limit</span>
+                          </label>
+                        </div>
 
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-semibold text-slate-700">Official Website</label>
-                  <input
-                    type="url"
-                    value={univWebsite}
-                    onChange={(e) => setUnivWebsite(e.target.value)}
-                    placeholder="https://ug.edu.gh"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
+                        {univHasDeptLimit ? (
+                          <div className="space-y-2 pt-1">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="e.g. 10"
+                                value={univMaxDepartments}
+                                onChange={(e) => setUnivMaxDepartments(e.target.value)}
+                                className="w-40 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                              />
+                              <span className="text-xs text-slate-500">academic departments</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400">Presets:</span>
+                              {[3, 5, 10, 15, 25].map((preset) => (
+                                <button
+                                  type="button"
+                                  key={preset}
+                                  onClick={() => setUnivMaxDepartments(String(preset))}
+                                  className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-600 hover:border-purple-300 hover:text-purple-600 transition-colors"
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 italic">
+                            Unrestricted academic department creation.
+                          </p>
+                        )}
+                      </div>
 
-              {/* Modal Actions */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setShowUnivModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingUniv}
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                >
-                  {isSubmittingUniv ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Registering...</span>
-                    </>
+                      {/* 3. Max Roles Limit */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                            <Lock className="h-4 w-4 text-indigo-600" />
+                            <span>Maximum Distinct Roles</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={univHasRoleLimit}
+                              onChange={(e) => {
+                                setUnivHasRoleLimit(e.target.checked);
+                                if (!e.target.checked) setUnivMaxRoles("");
+                                else if (!univMaxRoles) setUnivMaxRoles("6");
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-slate-600 font-medium">Enforce Roles Count Limit</span>
+                          </label>
+                        </div>
+
+                        {univHasRoleLimit ? (
+                          <div className="flex items-center gap-3 pt-1">
+                            <input
+                              type="number"
+                              min="1"
+                              max="17"
+                              placeholder="e.g. 6"
+                              value={univMaxRoles}
+                              onChange={(e) => setUnivMaxRoles(e.target.value)}
+                              className="w-40 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                            />
+                            <span className="text-xs text-slate-500">max distinct roles assigned simultaneously</span>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 italic">
+                            No restriction on the count of distinct roles used.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* 4. Permitted Role Types */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-xs font-bold text-slate-900">
+                              Permitted Role Types ({univAllowedRoles.length} of {AVAILABLE_UNIVERSITY_ROLES.length} selected)
+                            </label>
+                            <p className="text-[10.5px] text-slate-500">
+                              Only the selected roles can be provisioned or assigned within this school
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setUnivAllowedRoles(AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code))}
+                              className="text-blue-600 hover:underline cursor-pointer font-medium"
+                            >
+                              All Roles
+                            </button>
+                            <span className="text-slate-300">•</span>
+                            <button
+                              type="button"
+                              onClick={selectUnivCoreAcademicRoles}
+                              className="text-indigo-600 hover:underline cursor-pointer font-medium"
+                            >
+                              Core Academic Only
+                            </button>
+                            <span className="text-slate-300">•</span>
+                            <button
+                              type="button"
+                              onClick={() => setUnivAllowedRoles([])}
+                              className="text-slate-500 hover:underline cursor-pointer font-medium"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2 border border-slate-200 rounded-xl bg-slate-50/50">
+                          {AVAILABLE_UNIVERSITY_ROLES.map((r) => {
+                            const isChecked = univAllowedRoles.includes(r.code);
+                            return (
+                              <label
+                                key={r.code}
+                                className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                                  isChecked
+                                    ? "bg-indigo-50/80 border-indigo-200 text-indigo-950 font-medium"
+                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleUnivRoleSelection(r.code)}
+                                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-slate-900 truncate flex items-center justify-between">
+                                    <span>{r.name}</span>
+                                    <span className="text-[9px] font-mono px-1 rounded bg-slate-100 text-slate-500 ml-1">
+                                      {r.code}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 line-clamp-1">
+                                    {r.category} • {r.description}
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   ) : (
-                    <span>Register Institution</span>
+                    <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        <span>Full Unrestricted Platform Access Enabled</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        This institution operates without user caps, department quotas, or role
+                        restrictions. All 17 standard roles and custom roles can be provisioned at will.
+                      </p>
+                    </div>
                   )}
-                </button>
+                </div>
+              )}
+
+              {/* Form Actions Footer */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="text-xs text-slate-500">
+                  {univModalTab === "general" ? (
+                    <button
+                      type="button"
+                      onClick={() => setUnivModalTab("governance")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      Next: Configure Quotas & Roles →
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setUnivModalTab("general")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      ← Back to General Info
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowUnivModal(false)}
+                    className="px-4 py-2 rounded-xl hover:bg-slate-100 text-slate-600 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingUniv}
+                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    {isSubmittingUniv ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Registering...</span>
+                      </>
+                    ) : (
+                      <span>Register School</span>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1308,31 +1867,24 @@ export default function SuperAdminDashboardPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: ADD SYSTEM ADMIN (MATCHING ADMIN DIALOG DESIGN)                   */}
+      {/* MODAL 2: ADD SYSTEM ADMIN (MATCHING PROVISION SYSTEM ADMIN FORM)          */}
       {/* ========================================================================= */}
       {showAdminModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                  <UserCheck className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Provision System Administrator</h3>
-                  <p className="text-[11px] text-slate-500">Assign elevated administrative credentials</p>
-                </div>
+          <div className="relative w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+            <div className="h-14 px-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+                <ShieldCheck className="h-5 w-5 text-indigo-600" />
+                <span>Provision System Administrator</span>
               </div>
               <button
                 onClick={() => setShowAdminModal(false)}
-                className="h-8 w-8 rounded-lg hover:bg-slate-200/60 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors"
+                className="h-8 w-8 rounded-lg hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Modal Form */}
             <form onSubmit={handleCreateSystemAdmin} className="p-6 space-y-4">
               {adminError && (
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
@@ -1348,49 +1900,56 @@ export default function SuperAdminDashboardPage() {
               )}
 
               <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Administrator Full Name *</label>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Administrator Full Legal Name *
+                  </label>
                   <input
                     type="text"
                     required
                     value={adminName}
                     onChange={(e) => setAdminName(e.target.value)}
                     placeholder="e.g. Dr. Kwame Mensah"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Institutional Email Address *</label>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Institutional Email Address *
+                  </label>
                   <input
                     type="email"
                     required
                     value={adminEmail}
                     onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="kwame.admin@university.edu.gh"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    placeholder="kwame.admin@institution.edu.gh"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Temporary Password *</label>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Temporary Initial Password *
+                  </label>
                   <input
                     type="password"
                     required
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs"
                   />
-                  <p className="text-[10px] text-slate-400">Must be at least 6 characters.</p>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Assign to School Tenant</label>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Assign to School *
+                  </label>
                   <select
                     value={selectedUnivId}
                     onChange={(e) => setSelectedUnivId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs cursor-pointer"
                   >
                     {universities.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -1399,29 +1958,57 @@ export default function SuperAdminDashboardPage() {
                     ))}
                   </select>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Account Status
+                    </label>
+                    <select
+                      value={adminAccountStatus}
+                      onChange={(e) => setAdminAccountStatus(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="active">Active</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Phone Contact
+                    </label>
+                    <input
+                      type="tel"
+                      value={adminPhone}
+                      onChange={(e) => setAdminPhone(e.target.value)}
+                      placeholder="+233 24 000 0000"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-indigo-500 shadow-2xs"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Modal Actions */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowAdminModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                  className="px-4 py-2 rounded-xl hover:bg-slate-100 text-slate-600 text-xs font-semibold cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingAdmin}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer transition-all"
                 >
                   {isSubmittingAdmin ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Provisioning...</span>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Provision Administrator</span>
+                    <span>Provision Credentials</span>
                   )}
                 </button>
               </div>

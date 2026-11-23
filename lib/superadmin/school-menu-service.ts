@@ -90,6 +90,19 @@ const DEFAULT_SCHOOL_MENU_ITEMS: SchoolSidebarMenuItem[] = [
 
   // Academics & Schedule
   {
+    id: "programs",
+    label: "Programs",
+    href: "/admin/programs",
+    category: "Academics & Schedule",
+    icon: "Award",
+    badge: null,
+    description: "Academic degree programs, curricula, faculties, duration, and credit requirements.",
+    school_types: ["university", "high_school", "vocational_school"],
+    is_active: true,
+    display_order: 6,
+    created_at: "2026-10-29T00:00:00.000Z",
+  },
+  {
     id: "courses",
     label: "Courses & Subjects",
     href: "/admin/courses",
@@ -99,7 +112,7 @@ const DEFAULT_SCHOOL_MENU_ITEMS: SchoolSidebarMenuItem[] = [
     description: "Curriculum requirements, course offerings, syllabus modules, and prerequisites.",
     school_types: ["university", "high_school", "vocational_school"],
     is_active: true,
-    display_order: 6,
+    display_order: 7,
     created_at: "2026-10-29T00:00:00.000Z",
   },
   {
