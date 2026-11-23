@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  deleteLiveTenantUser,
+  provisionLiveTenantUser,
+  resolveAdminTenantRequest,
+  resolveTargetSchoolForMutation,
+  scopeQueryBySchool,
+  syncVirtualProfileAndRole,
+} from "@/lib/admin/tenant-provisioning";
 
 const PROTECTED_ADMIN_ID = "a0000000-0000-0000-0000-000000000001";
 const PROTECTED_ADMIN_EMAIL = "admin@university.edu.gh";
@@ -19,32 +26,22 @@ const VALID_STUDENT_STATUSES = [
 
 const VALID_LEVELS = [100, 200, 300, 400, 500, 600, 700, 800] as const;
 
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(supabaseUrl, serviceRoleKey, {
-    global: {
-      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 8000),
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
-
-// GET: Fetch all students with real profiles, programmes, terms, and dynamic KPI metrics
-export async function GET() {
+// GET: Fetch all students with real profiles, programmes, terms, and dynamic KPI metrics scoped to school_id
+export async function GET(req: NextRequest) {
   try {
-    const supabase = getAdminClient();
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
+    const supabase = createAdminClient();
 
     const [studentsRes, programmesRes, termsRes] = await Promise.all([
-      supabase
-        .from("students")
-        .select(
-          `
+      scopeQueryBySchool(
+        (supabase as any)
+          .from("students")
+          .select(
+            `
           id,
+          school_id,
           profile_id,
           student_number,
           programme_id,
@@ -62,16 +59,24 @@ export async function GET() {
           programme:programme_id(id, name, code, degree_level),
           entry_term:entry_term_id(id, name, code)
         `
-        )
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("programmes")
-        .select("id, name, code, degree_level, is_active")
-        .order("name", { ascending: true }),
-      supabase
-        .from("terms")
-        .select("id, name, code, is_active, start_date")
-        .order("start_date", { ascending: false }),
+          )
+          .order("created_at", { ascending: false }),
+        tenant.schoolId
+      ),
+      scopeQueryBySchool(
+        (supabase as any)
+          .from("programmes")
+          .select("id, name, code, degree_level, is_active")
+          .order("name", { ascending: true }),
+        tenant.schoolId
+      ),
+      scopeQueryBySchool(
+        (supabase as any)
+          .from("terms")
+          .select("id, name, code, is_active, start_date")
+          .order("start_date", { ascending: false }),
+        tenant.schoolId
+      ),
     ]);
 
     if (studentsRes.error) {
@@ -109,17 +114,17 @@ export async function GET() {
     });
 
     const total = students.length;
-    const active = students.filter((s) => s.status === "active").length;
-    const admitted = students.filter((s) => s.status === "admitted").length;
+    const active = students.filter((s: any) => s.status === "active").length;
+    const admitted = students.filter((s: any) => s.status === "admitted").length;
     const graduated = students.filter(
-      (s) => s.status === "graduated" || s.status === "completed"
+      (s: any) => s.status === "graduated" || s.status === "completed"
     ).length;
-    const inactive = students.filter((s) =>
+    const inactive = students.filter((s: any) =>
       ["deferred", "leave_of_absence", "suspended", "withdrawn", "deceased"].includes(s.status)
     ).length;
     const avgCgpa =
       total > 0
-        ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / total).toFixed(2))
+        ? Number((students.reduce((sum: number, s: any) => sum + (s.cgpa || 0), 0) / total).toFixed(2))
         : 0;
 
     return NextResponse.json({
@@ -143,13 +148,19 @@ export async function GET() {
   }
 }
 
-// POST: Provision Auth User + Profile + Student Role + Student Record
+// POST: Provision Auth User + Live Profile/Membership + Virtual Profile + Student Record
 export async function POST(req: NextRequest) {
-  const supabase = getAdminClient();
-  let createdAuthUserId: string | null = null;
+  const supabase = createAdminClient();
+  let createdNewAuthUserId: string | null = null;
 
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const body = await req.json();
+    const targetSchool = await resolveTargetSchoolForMutation(tenant, body.school_id);
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
+
     const fullName = String(body.full_name || "").trim();
     const email = String(body.email || "")
       .trim()
@@ -197,10 +208,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Check duplicate student_number
-    const { data: existingNumber } = await supabase
+    const { data: existingNumber } = await (supabase as any)
       .from("students")
       .select("id")
+      .eq("school_id", targetSchool.schoolId)
       .eq("student_number", studentNumber)
       .maybeSingle();
 
@@ -211,19 +222,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Resolve or create Auth user & Profile
-    let profileId: string | null = null;
-    const { data: existingProfile } = await supabase
+    const { data: existingVProfile } = await (supabase as any)
       .from("profiles")
       .select("id")
       .eq("email", email)
       .maybeSingle();
 
-    if (existingProfile?.id) {
-      const { data: alreadyStudent } = await supabase
+    if (existingVProfile?.id) {
+      const { data: alreadyStudent } = await (supabase as any)
         .from("students")
         .select("id")
-        .eq("profile_id", existingProfile.id)
+        .eq("profile_id", existingVProfile.id)
+        .eq("school_id", targetSchool.schoolId)
         .maybeSingle();
 
       if (alreadyStudent) {
@@ -232,70 +242,47 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      profileId = existingProfile.id;
-
-      if (rawPassword) {
-        await supabase.auth.admin.updateUserById(existingProfile.id, {
-          password: rawPassword,
-          user_metadata: { full_name: fullName, role: "student" },
-        });
-      }
-    } else {
-      const passwordToUse =
-        rawPassword || `Stu#${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}!`;
-
-      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-        email,
-        password: passwordToUse,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName,
-          role: "student",
-        },
-      });
-
-      if (authErr) {
-        // Check if an orphaned auth user exists without a profile row
-        const { data: usersList } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-        const matchedAuthUser = usersList?.users?.find(
-          (u) => u.email?.toLowerCase() === email
-        );
-        if (!matchedAuthUser) {
-          return NextResponse.json({ error: authErr.message }, { status: 400 });
-        }
-        profileId = matchedAuthUser.id;
-      } else {
-        profileId = authData.user.id;
-        createdAuthUserId = profileId;
-      }
     }
 
-    // 3. Upsert public.profiles
-    const { error: profileErr } = await supabase.from("profiles").upsert(
-      {
-        id: profileId!,
-        email,
-        full_name: fullName,
-        phone,
-        account_status: "active",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" }
-    );
+    const accountStatus = ["suspended", "withdrawn", "deceased"].includes(status)
+      ? "suspended"
+      : "active";
 
-    if (profileErr) {
-      if (createdAuthUserId) {
-        await supabase.auth.admin.deleteUser(createdAuthUserId);
-      }
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    const provisioned = await provisionLiveTenantUser({
+      email,
+      password: rawPassword || undefined,
+      fullName,
+      phone,
+      roleCode: "student",
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus,
+      existingUserId: existingVProfile?.id || null,
+    });
+    const profileId = provisioned.userId;
+    if (provisioned.createdNewAuthUser) {
+      createdNewAuthUserId = profileId;
     }
 
-    // 4. Resolve default active term if entryTermId not provided
+    await syncVirtualProfileAndRole(supabase, {
+      userId: profileId,
+      email,
+      fullName,
+      phone,
+      roleCode: "student",
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus,
+    });
+
     let resolvedTermId = entryTermId;
     if (!resolvedTermId) {
-      const { data: activeTerm } = await supabase
+      const { data: activeTerm } = await (supabase as any)
         .from("terms")
         .select("id")
+        .eq("school_id", targetSchool.schoolId)
         .order("is_active", { ascending: false })
         .order("start_date", { ascending: false })
         .limit(1)
@@ -303,11 +290,12 @@ export async function POST(req: NextRequest) {
       resolvedTermId = activeTerm?.id || null;
     }
 
-    // 5. Insert public.students record
-    const { data: createdStudent, error: studentErr } = await supabase
+    const { data: createdStudent, error: studentErr } = await (supabase as any)
       .from("students")
       .insert({
-        profile_id: profileId!,
+        school_id: targetSchool.schoolId,
+        university_id: targetSchool.schoolId,
+        profile_id: profileId,
         student_number: studentNumber,
         programme_id: programmeId,
         entry_term_id: resolvedTermId,
@@ -323,65 +311,33 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (studentErr) {
-      if (createdAuthUserId) {
-        await supabase.from("profiles").delete().eq("id", createdAuthUserId);
-        await supabase.auth.admin.deleteUser(createdAuthUserId);
+      if (createdNewAuthUserId) {
+        await deleteLiveTenantUser(createdNewAuthUserId, null);
+        await (supabase as any).from("profiles").delete().eq("id", createdNewAuthUserId);
       }
       return NextResponse.json({ error: studentErr.message }, { status: 400 });
     }
 
-    // 6. Assign RBAC 'student' role
-    const { data: studentRole } = await supabase
-      .from("roles")
-      .select("id")
-      .eq("code", "student")
-      .maybeSingle();
-
-    if (studentRole?.id) {
-      await supabase
-        .from("user_role_assignments")
-        .upsert(
-          {
-            user_id: profileId!,
-            role_id: studentRole.id,
-            is_active: true,
-          },
-          { onConflict: "user_id,role_id" }
-        )
-        .then(async ({ error }) => {
-          if (error) {
-            await supabase
-              .from("user_role_assignments")
-              .delete()
-              .eq("user_id", profileId!)
-              .eq("role_id", studentRole.id);
-            await supabase.from("user_role_assignments").insert({
-              user_id: profileId!,
-              role_id: studentRole.id,
-              is_active: true,
-            });
-          }
-        });
-    }
-
-    // 7. Record initial status history & audit event
     try {
-      await supabase.from("student_status_history").insert({
+      await (supabase as any).from("student_status_history").insert({
+        school_id: targetSchool.schoolId,
         student_id: createdStudent.id,
         old_status: null,
         new_status: status,
         reason: "Initial student registration by System Administrator",
       });
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "STUDENT_CREATED",
         entity_type: "students",
         entity_id: createdStudent.id,
+        school_id: targetSchool.schoolId,
         outcome: "success",
         metadata: {
           student_number: studentNumber,
           email,
           full_name: fullName,
           programme_id: programmeId,
+          school_id: targetSchool.schoolId,
         },
       });
     } catch {
@@ -393,24 +349,27 @@ export async function POST(req: NextRequest) {
       student: createdStudent,
     });
   } catch (err: any) {
-    if (createdAuthUserId) {
+    if (createdNewAuthUserId) {
       try {
-        await supabase.from("profiles").delete().eq("id", createdAuthUserId);
-        await supabase.auth.admin.deleteUser(createdAuthUserId);
+        await deleteLiveTenantUser(createdNewAuthUserId, null);
+        await (supabase as any).from("profiles").delete().eq("id", createdNewAuthUserId);
       } catch {
         // Ignore rollback failure
       }
     }
     return NextResponse.json(
       { error: err.message || "Failed to create student." },
-      { status: 500 }
+      { status: err.statusCode || 500 }
     );
   }
 }
 
-// PUT: Update existing Student, Profile, Auth credentials, and Academic Status/Programme history
+// PUT: Update existing Student, Live Profile/Membership, Virtual Profile, and Auth credentials
 export async function PUT(req: NextRequest) {
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const body = await req.json();
     const id = String(body.id || "").trim();
     const fullName = String(body.full_name || "").trim();
@@ -453,12 +412,11 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const supabase = getAdminClient();
+    const supabase = createAdminClient();
 
-    // 1. Fetch existing student record
-    const { data: existingStudent, error: fetchErr } = await supabase
+    const { data: existingStudent, error: fetchErr } = await (supabase as any)
       .from("students")
-      .select("id, profile_id, student_number, status, programme_id")
+      .select("id, school_id, university_id, profile_id, student_number, status, programme_id")
       .eq("id", id)
       .single();
 
@@ -466,10 +424,31 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Student record not found." }, { status: 404 });
     }
 
-    // 2. Check duplicate student_number against other rows
-    const { data: conflictNumber } = await supabase
+    const recordSchoolId =
+      existingStudent.school_id || existingStudent.university_id || null;
+
+    if (
+      !tenant.isSuperAdmin &&
+      recordSchoolId &&
+      tenant.schoolId &&
+      String(recordSchoolId).toLowerCase() !== tenant.schoolId.toLowerCase()
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden: Cannot update a student from another school." },
+        { status: 403 }
+      );
+    }
+
+    const targetSchool = await resolveTargetSchoolForMutation(
+      tenant,
+      recordSchoolId || body.school_id
+    );
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
+
+    const { data: conflictNumber } = await (supabase as any)
       .from("students")
       .select("id")
+      .eq("school_id", targetSchool.schoolId)
       .eq("student_number", studentNumber)
       .neq("id", id)
       .maybeSingle();
@@ -481,8 +460,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // 3. Check duplicate email against other profiles
-    const { data: conflictEmail } = await supabase
+    const { data: conflictEmail } = await (supabase as any)
       .from("profiles")
       .select("id")
       .eq("email", email)
@@ -496,39 +474,38 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // 4. Update Auth User
-    const authUpdates: Record<string, any> = {
+    const accountStatus = ["suspended", "withdrawn", "deceased"].includes(status)
+      ? "suspended"
+      : "active";
+
+    await provisionLiveTenantUser({
+      existingUserId: existingStudent.profile_id,
       email,
-      user_metadata: {
-        full_name: fullName,
-        role: "student",
-      },
-    };
-    if (rawPassword) {
-      authUpdates.password = rawPassword;
-    }
-    await supabase.auth.admin.updateUserById(existingStudent.profile_id, authUpdates);
+      password: rawPassword || undefined,
+      fullName,
+      phone,
+      roleCode: "student",
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus,
+    });
 
-    // 5. Update Profile
-    const { error: profileErr } = await supabase
-      .from("profiles")
-      .update({
-        full_name: fullName,
-        email,
-        phone,
-        account_status: ["suspended", "withdrawn", "deceased"].includes(status)
-          ? "suspended"
-          : "active",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existingStudent.profile_id);
+    await syncVirtualProfileAndRole(supabase, {
+      userId: existingStudent.profile_id,
+      email,
+      fullName,
+      phone,
+      roleCode: "student",
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus,
+    });
 
-    if (profileErr) {
-      return NextResponse.json({ error: profileErr.message }, { status: 400 });
-    }
-
-    // 6. Update Student Record
     const studentUpdates: Record<string, any> = {
+      school_id: targetSchool.schoolId,
+      university_id: targetSchool.schoolId,
       student_number: studentNumber,
       programme_id: programmeId,
       cohort_year: cohortYear,
@@ -543,7 +520,7 @@ export async function PUT(req: NextRequest) {
       studentUpdates.entry_term_id = entryTermId;
     }
 
-    const { error: updateErr } = await supabase
+    const { error: updateErr } = await (supabase as any)
       .from("students")
       .update(studentUpdates)
       .eq("id", id);
@@ -552,10 +529,10 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: updateErr.message }, { status: 400 });
     }
 
-    // 7. Record status / programme transitions and audit trail
     try {
       if (existingStudent.status !== status) {
-        await supabase.from("student_status_history").insert({
+        await (supabase as any).from("student_status_history").insert({
+          school_id: targetSchool.schoolId,
           student_id: id,
           old_status: existingStudent.status,
           new_status: status,
@@ -563,23 +540,26 @@ export async function PUT(req: NextRequest) {
         });
       }
       if (existingStudent.programme_id !== programmeId) {
-        await supabase.from("student_programme_history").insert({
+        await (supabase as any).from("student_programme_history").insert({
+          school_id: targetSchool.schoolId,
           student_id: id,
           old_programme_id: existingStudent.programme_id,
           new_programme_id: programmeId,
           reason: "Programme updated by System Administrator",
         });
       }
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "STUDENT_UPDATED",
         entity_type: "students",
         entity_id: id,
+        school_id: targetSchool.schoolId,
         outcome: "success",
         metadata: {
           student_number: studentNumber,
           email,
           full_name: fullName,
           status,
+          school_id: targetSchool.schoolId,
         },
       });
     } catch {
@@ -590,7 +570,7 @@ export async function PUT(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to update student." },
-      { status: 500 }
+      { status: err.statusCode || 500 }
     );
   }
 }
@@ -598,6 +578,9 @@ export async function PUT(req: NextRequest) {
 // DELETE: Clean dependent FK records and delete Student + Profile + Auth User
 export async function DELETE(req: NextRequest) {
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -605,16 +588,30 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Student ID is required." }, { status: 400 });
     }
 
-    const supabase = getAdminClient();
+    const supabase = createAdminClient();
 
-    const { data: student, error: fetchErr } = await supabase
+    const { data: student, error: fetchErr } = await (supabase as any)
       .from("students")
-      .select("id, profile_id, student_number")
+      .select("id, school_id, university_id, profile_id, student_number")
       .eq("id", id)
       .single();
 
     if (fetchErr || !student) {
       return NextResponse.json({ error: "Student record not found." }, { status: 404 });
+    }
+
+    const recordSchoolId = student.school_id || student.university_id || null;
+
+    if (
+      !tenant.isSuperAdmin &&
+      recordSchoolId &&
+      tenant.schoolId &&
+      String(recordSchoolId).toLowerCase() !== tenant.schoolId.toLowerCase()
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden: Cannot delete a student from another school." },
+        { status: 403 }
+      );
     }
 
     if (student.profile_id === PROTECTED_ADMIN_ID) {
@@ -624,71 +621,63 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // 1. Clean ON DELETE RESTRICT financial & academic child rows referencing student_id
-    await supabase.from("refund_requests").delete().eq("student_id", id);
-    await supabase.from("receipts").delete().eq("student_id", id);
+    await (supabase as any).from("refund_requests").delete().eq("student_id", id);
+    await (supabase as any).from("receipts").delete().eq("student_id", id);
 
-    const { data: studentPayments } = await supabase
+    const { data: studentPayments } = await (supabase as any)
       .from("payments")
       .select("id")
       .eq("student_id", id);
     const paymentIds = (studentPayments || []).map((p: any) => p.id);
     if (paymentIds.length > 0) {
-      await supabase.from("payment_allocations").delete().in("payment_id", paymentIds);
+      await (supabase as any).from("payment_allocations").delete().in("payment_id", paymentIds);
     }
 
-    const { data: studentInvoices } = await supabase
+    const { data: studentInvoices } = await (supabase as any)
       .from("student_invoices")
       .select("id")
       .eq("student_id", id);
     const invoiceIds = (studentInvoices || []).map((inv: any) => inv.id);
     if (invoiceIds.length > 0) {
-      await supabase.from("payment_allocations").delete().in("invoice_id", invoiceIds);
+      await (supabase as any).from("payment_allocations").delete().in("invoice_id", invoiceIds);
     }
 
-    await supabase.from("payments").delete().eq("student_id", id);
-    await supabase.from("waivers").delete().eq("student_id", id);
-    await supabase.from("student_invoices").delete().eq("student_id", id);
-    await supabase.from("course_enrolments").delete().eq("student_id", id);
+    await (supabase as any).from("payments").delete().eq("student_id", id);
+    await (supabase as any).from("waivers").delete().eq("student_id", id);
+    await (supabase as any).from("student_invoices").delete().eq("student_id", id);
+    await (supabase as any).from("course_enrolments").delete().eq("student_id", id);
 
-    // 2. Delete authoritative student record
-    const { error: delStudentErr } = await supabase.from("students").delete().eq("id", id);
+    const { error: delStudentErr } = await (supabase as any).from("students").delete().eq("id", id);
     if (delStudentErr) {
       return NextResponse.json({ error: delStudentErr.message }, { status: 400 });
     }
 
-    // 3. Check if profile is also a staff member before removing profile & Auth account
-    const { data: linkedStaff } = await supabase
+    const { data: linkedStaff } = await (supabase as any)
       .from("staff")
       .select("id")
       .eq("profile_id", student.profile_id)
       .maybeSingle();
 
     if (!linkedStaff && student.profile_id !== PROTECTED_ADMIN_ID) {
-      await supabase
-        .from("maintenance_requests")
-        .delete()
-        .eq("reported_by", student.profile_id);
-      await supabase.from("refund_requests").delete().eq("requested_by", student.profile_id);
-      await supabase
+      await (supabase as any).from("maintenance_requests").delete().eq("reported_by", student.profile_id);
+      await (supabase as any).from("refund_requests").delete().eq("requested_by", student.profile_id);
+      await (supabase as any)
         .from("attendance_amendments")
         .delete()
         .eq("requested_by", student.profile_id);
-      await supabase.from("result_amendments").delete().eq("requested_by", student.profile_id);
-      await supabase
-        .from("user_role_assignments")
-        .delete()
-        .eq("user_id", student.profile_id);
-      await supabase.from("profiles").delete().eq("id", student.profile_id);
-      await supabase.auth.admin.deleteUser(student.profile_id);
+      await (supabase as any).from("result_amendments").delete().eq("requested_by", student.profile_id);
+      await (supabase as any).from("user_role_assignments").delete().eq("user_id", student.profile_id);
+      await (supabase as any).from("profiles").delete().eq("id", student.profile_id);
+
+      await deleteLiveTenantUser(student.profile_id, tenant.isSuperAdmin ? null : tenant.schoolId);
     }
 
-    // 4. Audit Event
     try {
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "STUDENT_DELETED",
         entity_type: "students",
         entity_id: id,
+        school_id: recordSchoolId || tenant.schoolId,
         outcome: "success",
         metadata: {
           student_number: student.student_number,
@@ -703,7 +692,7 @@ export async function DELETE(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to delete student." },
-      { status: 500 }
+      { status: err.statusCode || 500 }
     );
   }
 }

@@ -2,12 +2,12 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Award,
   Plus,
   Search,
   CheckCircle,
-  XCircle,
   RefreshCw,
   X,
   Edit2,
@@ -16,12 +16,15 @@ import {
   GraduationCap,
   Layers,
   Clock,
-  BookOpen,
   Building2,
   ChevronRight,
   Loader2,
-  Check,
 } from "lucide-react";
+import {
+  type CanonicalSchoolType,
+  getSchoolTerminology,
+  normalizeSchoolType,
+} from "@/lib/academics/school-terminology";
 
 interface ProgramItem {
   id: string;
@@ -52,17 +55,12 @@ interface ProgramStats {
   diplomaCount: number;
 }
 
-const DEGREE_LEVEL_OPTIONS = [
-  { value: "undergraduate", label: "Undergraduate (Bachelor's)" },
-  { value: "postgraduate", label: "Postgraduate (Master's / Ph.D.)" },
-  { value: "diploma", label: "Diploma" },
-  { value: "certificate", label: "Certificate" },
-  { value: "doctorate", label: "Doctorate / Ph.D." },
-];
-
 export default function ProgramsPage() {
+  const router = useRouter();
   const [programs, setPrograms] = useState<ProgramItem[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [schoolType, setSchoolType] = useState<CanonicalSchoolType | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [stats, setStats] = useState<ProgramStats>({
     totalPrograms: 0,
     activePrograms: 0,
@@ -99,6 +97,25 @@ export default function ProgramsPage() {
     isActive: true,
   });
 
+  const term = useMemo(
+    () => getSchoolTerminology(schoolType).programs,
+    [schoolType]
+  );
+  const isHighSchool = schoolType === "high_school";
+
+  const modalLevelOptions = useMemo(() => {
+    if (
+      formData.degreeLevel &&
+      !term.levelOptions.some((o) => o.value === formData.degreeLevel)
+    ) {
+      return [
+        { value: formData.degreeLevel, label: formData.degreeLevel },
+        ...term.levelOptions,
+      ];
+    }
+    return term.levelOptions;
+  }, [term.levelOptions, formData.degreeLevel]);
+
   const showNotification = (type: "success" | "error", message: string) => {
     setToast({ type, message });
     setTimeout(() => {
@@ -109,11 +126,25 @@ export default function ProgramsPage() {
   const fetchPrograms = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/programs");
+      const res = await fetch("/api/admin/programs", { cache: "no-store" });
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to load academic programs");
+        throw new Error(data.error || "Failed to load academic records");
+      }
+
+      if (data?.restricted && data?.redirectTo) {
+        setIsRedirecting(true);
+        router.replace(data.redirectTo);
+        return;
+      }
+
+      if (data?.school_type) {
+        const canonical = normalizeSchoolType(data.school_type);
+        setSchoolType(canonical);
+        if (canonical === "high_school") {
+          setDeptFilter("all");
+        }
       }
 
       setPrograms(data.programs || []);
@@ -123,7 +154,7 @@ export default function ProgramsPage() {
       }
     } catch (err: any) {
       console.error("Error loading programs:", err);
-      showNotification("error", err.message || "Failed to load academic programs");
+      showNotification("error", err.message || "Failed to load academic records");
     } finally {
       setLoading(false);
     }
@@ -133,7 +164,7 @@ export default function ProgramsPage() {
     fetchPrograms();
   }, []);
 
-  // Filtered Programs
+  // Filtered Programs / Classes
   const filteredPrograms = useMemo(() => {
     return programs.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
@@ -141,33 +172,38 @@ export default function ProgramsPage() {
         q === "" ||
         p.code.toLowerCase().includes(q) ||
         p.name.toLowerCase().includes(q) ||
-        p.department_name.toLowerCase().includes(q) ||
-        p.department_code.toLowerCase().includes(q);
+        p.degree_level.toLowerCase().includes(q) ||
+        (term.showDepartmentField &&
+          (p.department_name.toLowerCase().includes(q) ||
+            p.department_code.toLowerCase().includes(q)));
 
-      const matchesLevel =
-        levelFilter === "all" ||
-        (levelFilter === "undergraduate" &&
-          ["undergraduate", "bachelor"].includes(p.degree_level.toLowerCase())) ||
-        (levelFilter === "postgraduate" &&
-          ["postgraduate", "master", "doctorate"].includes(p.degree_level.toLowerCase())) ||
-        (levelFilter === "diploma" &&
-          ["diploma", "certificate"].includes(p.degree_level.toLowerCase()));
+      const levelLower = p.degree_level.toLowerCase();
+      const matchesLevel = isHighSchool
+        ? levelFilter === "all" || levelLower === levelFilter
+        : levelFilter === "all" ||
+          (levelFilter === "undergraduate" &&
+            ["undergraduate", "bachelor"].includes(levelLower)) ||
+          (levelFilter === "postgraduate" &&
+            ["postgraduate", "master", "doctorate"].includes(levelLower)) ||
+          (levelFilter === "diploma" &&
+            ["diploma", "certificate"].includes(levelLower));
 
-      const matchesDept = deptFilter === "all" || p.department_id === deptFilter;
+      const matchesDept =
+        !term.showDepartmentField || deptFilter === "all" || p.department_id === deptFilter;
 
       return matchesSearch && matchesLevel && matchesDept;
     });
-  }, [programs, searchQuery, levelFilter, deptFilter]);
+  }, [programs, searchQuery, levelFilter, deptFilter, isHighSchool, term.showDepartmentField]);
 
   // Handle Open Create
   const handleOpenAddModal = () => {
     setFormData({
       code: "",
       name: "",
-      departmentId: departments[0]?.id || "",
-      degreeLevel: "undergraduate",
-      durationYears: 4,
-      totalCredits: 120,
+      departmentId: term.showDepartmentField ? departments[0]?.id || "" : "",
+      degreeLevel: term.defaultLevel,
+      durationYears: term.defaultDurationYears,
+      totalCredits: term.defaultCredits,
       isActive: true,
     });
     setShowAddModal(true);
@@ -179,8 +215,8 @@ export default function ProgramsPage() {
     setFormData({
       code: prog.code,
       name: prog.name,
-      departmentId: prog.department_id,
-      degreeLevel: prog.degree_level,
+      departmentId: term.showDepartmentField ? prog.department_id || "" : "",
+      degreeLevel: prog.degree_level || term.defaultLevel,
       durationYears: prog.duration_years,
       totalCredits: prog.total_credits,
       isActive: prog.is_active,
@@ -194,11 +230,14 @@ export default function ProgramsPage() {
     setShowDeleteModal(true);
   };
 
-  // Create Program
+  // Create Program / Class
   const handleCreateProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.code.trim() || !formData.name.trim()) {
-      showNotification("error", "Program code and program name are required.");
+      showNotification(
+        "error",
+        `${term.codeLabel} and ${term.nameLabel.toLowerCase()} are required.`
+      );
       return;
     }
 
@@ -210,7 +249,7 @@ export default function ProgramsPage() {
         body: JSON.stringify({
           code: formData.code.trim(),
           name: formData.name.trim(),
-          department_id: formData.departmentId,
+          department_id: term.showDepartmentField ? formData.departmentId || null : null,
           degree_level: formData.degreeLevel,
           duration_years: Number(formData.durationYears),
           total_credits: Number(formData.totalCredits),
@@ -220,27 +259,36 @@ export default function ProgramsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create program");
+        throw new Error(data.error || `Failed to create ${term.singular.toLowerCase()}`);
       }
 
-      showNotification("success", `Program ${formData.code.toUpperCase()} created successfully!`);
+      showNotification(
+        "success",
+        `${term.singular} ${formData.code.toUpperCase()} created successfully!`
+      );
       setShowAddModal(false);
       await fetchPrograms();
     } catch (err: any) {
       console.error("Create program error:", err);
-      showNotification("error", err.message || "Failed to create program");
+      showNotification(
+        "error",
+        err.message || `Failed to create ${term.singular.toLowerCase()}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  // Update Program
+  // Update Program / Class
   const handleUpdateProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProgram) return;
 
     if (!formData.code.trim() || !formData.name.trim()) {
-      showNotification("error", "Program code and program name are required.");
+      showNotification(
+        "error",
+        `${term.codeLabel} and ${term.nameLabel.toLowerCase()} are required.`
+      );
       return;
     }
 
@@ -253,7 +301,7 @@ export default function ProgramsPage() {
           id: selectedProgram.id,
           code: formData.code.trim(),
           name: formData.name.trim(),
-          department_id: formData.departmentId,
+          department_id: term.showDepartmentField ? formData.departmentId || null : null,
           degree_level: formData.degreeLevel,
           duration_years: Number(formData.durationYears),
           total_credits: Number(formData.totalCredits),
@@ -263,22 +311,28 @@ export default function ProgramsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update program");
+        throw new Error(data.error || `Failed to update ${term.singular.toLowerCase()}`);
       }
 
-      showNotification("success", `Program ${formData.code.toUpperCase()} updated successfully!`);
+      showNotification(
+        "success",
+        `${term.singular} ${formData.code.toUpperCase()} updated successfully!`
+      );
       setShowEditModal(false);
       setSelectedProgram(null);
       await fetchPrograms();
     } catch (err: any) {
       console.error("Update program error:", err);
-      showNotification("error", err.message || "Failed to update program");
+      showNotification(
+        "error",
+        err.message || `Failed to update ${term.singular.toLowerCase()}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete Program
+  // Delete Program / Class
   const handleDeleteProgram = async () => {
     if (!selectedProgram) return;
 
@@ -290,20 +344,42 @@ export default function ProgramsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to delete program");
+        throw new Error(data.error || `Failed to delete ${term.singular.toLowerCase()}`);
       }
 
-      showNotification("success", `Program ${selectedProgram.code} removed successfully!`);
+      showNotification(
+        "success",
+        `${term.singular} ${selectedProgram.code} removed successfully!`
+      );
       setShowDeleteModal(false);
       setSelectedProgram(null);
       await fetchPrograms();
     } catch (err: any) {
       console.error("Delete program error:", err);
-      showNotification("error", err.message || "Failed to delete program");
+      showNotification(
+        "error",
+        err.message || `Failed to delete ${term.singular.toLowerCase()}`
+      );
     } finally {
       setDeleting(false);
     }
   };
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-slate-500 gap-3">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+        <p className="text-xs font-semibold">
+          Redirecting to your school&apos;s Classes workspace...
+        </p>
+      </div>
+    );
+  }
+
+  const colSpan = term.showDepartmentField ? 8 : 7;
+  const distinctTracksCount = new Set(
+    programs.map((p) => String(p.degree_level || "").toLowerCase()).filter(Boolean)
+  ).size;
 
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
@@ -338,21 +414,19 @@ export default function ProgramsPage() {
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
             <span>Academics & Schedule</span>
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-            <span className="text-slate-800 font-semibold">Programs</span>
+            <span className="text-slate-800 font-semibold">{term.plural}</span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 mt-1 flex items-center gap-2">
             <Award className="h-6 w-6 text-blue-600" />
-            <span>Academic Programs Management</span>
+            <span>{term.pageTitle}</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Configure degree offerings, curricular duration, and graduation credit requirements in Supabase.
-          </p>
+          <p className="text-xs text-slate-500 mt-0.5">{term.pageSubtitle}</p>
         </div>
 
         <div className="flex items-center gap-2.5">
           <button
             onClick={fetchPrograms}
-            title="Refresh programs"
+            title={`Refresh ${term.plural.toLowerCase()}`}
             className="p-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 shadow-2xs transition-colors cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
@@ -363,14 +437,13 @@ export default function ProgramsPage() {
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            <span>Add Program</span>
+            <span>{term.addButtonLabel}</span>
           </button>
         </div>
       </div>
 
       {/* KPI Metrics Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Programs */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-2xs">
@@ -381,13 +454,12 @@ export default function ProgramsPage() {
                 {stats.totalPrograms}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                Total Academic Programs
+                {isHighSchool ? "Total Classes" : "Total Academic Programs"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Active Programs */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-2xs">
@@ -404,7 +476,6 @@ export default function ProgramsPage() {
           </div>
         </div>
 
-        {/* Card 3: Undergraduate */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
@@ -412,16 +483,15 @@ export default function ProgramsPage() {
             </div>
             <div>
               <div className="text-2xl font-extrabold text-indigo-600 leading-tight">
-                {stats.undergraduateCount}
+                {isHighSchool ? distinctTracksCount : stats.undergraduateCount}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                Undergraduate Degrees
+                {isHighSchool ? "Active Class Tracks" : "Undergraduate Degrees"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Card 4: Postgraduate & Diplomas */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shadow-2xs">
@@ -429,10 +499,12 @@ export default function ProgramsPage() {
             </div>
             <div>
               <div className="text-2xl font-extrabold text-purple-600 leading-tight">
-                {stats.postgraduateCount + stats.diplomaCount}
+                {isHighSchool
+                  ? Math.max(0, stats.totalPrograms - stats.activePrograms)
+                  : stats.postgraduateCount + stats.diplomaCount}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                Postgraduate & Diplomas
+                {isHighSchool ? "Archived Classes" : "Postgraduate & Diplomas"}
               </div>
             </div>
           </div>
@@ -441,14 +513,13 @@ export default function ProgramsPage() {
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search */}
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by program name, code, or department..."
+            placeholder={term.searchPlaceholder}
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
           />
           {searchQuery && (
@@ -461,50 +532,37 @@ export default function ProgramsPage() {
           )}
         </div>
 
-        {/* Level Filter Tabs */}
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold overflow-x-auto">
-          <button
-            onClick={() => setLevelFilter("all")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              levelFilter === "all" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            All Degrees
-          </button>
-          <button
-            onClick={() => setLevelFilter("undergraduate")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              levelFilter === "undergraduate"
-                ? "bg-white text-indigo-600 shadow-2xs"
-                : "text-slate-600 hover:text-indigo-600"
-            }`}
-          >
-            Undergraduate
-          </button>
-          <button
-            onClick={() => setLevelFilter("postgraduate")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              levelFilter === "postgraduate"
-                ? "bg-white text-purple-600 shadow-2xs"
-                : "text-slate-600 hover:text-purple-600"
-            }`}
-          >
-            Postgraduate
-          </button>
-          <button
-            onClick={() => setLevelFilter("diploma")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              levelFilter === "diploma"
-                ? "bg-white text-emerald-600 shadow-2xs"
-                : "text-slate-600 hover:text-emerald-600"
-            }`}
-          >
-            Diploma
-          </button>
+          {(isHighSchool
+            ? [
+                { id: "all", label: "All Tracks" },
+                { id: "general", label: "General / Core" },
+                { id: "science", label: "Science" },
+                { id: "arts", label: "Arts" },
+                { id: "business", label: "Business" },
+              ]
+            : [
+                { id: "all", label: "All Degrees" },
+                { id: "undergraduate", label: "Undergraduate" },
+                { id: "postgraduate", label: "Postgraduate" },
+                { id: "diploma", label: "Diploma" },
+              ]
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setLevelFilter(tab.id)}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                levelFilter === tab.id
+                  ? "bg-white text-slate-900 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Department Filter Dropdown */}
-        {departments.length > 0 && (
+        {term.showDepartmentField && departments.length > 0 && (
           <select
             value={deptFilter}
             onChange={(e) => setDeptFilter(e.target.value)}
@@ -520,18 +578,18 @@ export default function ProgramsPage() {
         )}
       </div>
 
-      {/* Programs Table */}
+      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="py-3 px-4">Program Code</th>
-                <th className="py-3 px-4">Program Title</th>
-                <th className="py-3 px-4">Department</th>
-                <th className="py-3 px-4">Level</th>
+                <th className="py-3 px-4">{term.codeLabel}</th>
+                <th className="py-3 px-4">{term.nameLabel}</th>
+                {term.showDepartmentField && <th className="py-3 px-4">Department</th>}
+                <th className="py-3 px-4">{term.levelColumnLabel}</th>
                 <th className="py-3 px-4">Duration</th>
-                <th className="py-3 px-4">Credits</th>
+                <th className="py-3 px-4">{term.creditsColumnLabel}</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -539,9 +597,9 @@ export default function ProgramsPage() {
             <tbody className="divide-y divide-slate-100 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={colSpan} className="py-12 text-center text-slate-400">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    <span>Loading academic programs from Supabase...</span>
+                    <span>Loading {term.plural.toLowerCase()}...</span>
                   </td>
                 </tr>
               ) : filteredPrograms.length > 0 ? (
@@ -553,19 +611,27 @@ export default function ProgramsPage() {
                     <td className="py-3.5 px-4 font-bold text-slate-900">
                       <div>{prog.name}</div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600">
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                        <span>{prog.department_name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">({prog.department_code})</span>
-                      </div>
-                    </td>
+                    {term.showDepartmentField && (
+                      <td className="py-3.5 px-4 text-slate-600">
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                          <span>{prog.department_name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            ({prog.department_code})
+                          </span>
+                        </div>
+                      </td>
+                    )}
                     <td className="py-3.5 px-4">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          ["undergraduate", "bachelor"].includes(prog.degree_level.toLowerCase())
+                          ["undergraduate", "bachelor", "general", "science"].includes(
+                            prog.degree_level.toLowerCase()
+                          )
                             ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                            : ["postgraduate", "master", "doctorate"].includes(prog.degree_level.toLowerCase())
+                            : ["postgraduate", "master", "doctorate", "honors"].includes(
+                                prog.degree_level.toLowerCase()
+                              )
                             ? "bg-purple-50 text-purple-700 border border-purple-200"
                             : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                         }`}
@@ -576,11 +642,14 @@ export default function ProgramsPage() {
                     <td className="py-3.5 px-4 text-slate-700 font-medium">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3 text-slate-400" />
-                        <span>{prog.duration_years} {prog.duration_years === 1 ? "Year" : "Years"}</span>
+                        <span>
+                          {prog.duration_years}{" "}
+                          {prog.duration_years === 1 ? "Year" : "Years"}
+                        </span>
                       </span>
                     </td>
                     <td className="py-3.5 px-4 font-bold text-slate-800">
-                      {prog.total_credits} Credits
+                      {prog.total_credits} {term.creditsUnit}
                     </td>
                     <td className="py-3.5 px-4">
                       <span
@@ -602,14 +671,14 @@ export default function ProgramsPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleOpenEditModal(prog)}
-                          title="Edit Program"
+                          title={`Edit ${term.singular}`}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenDeleteModal(prog)}
-                          title="Delete Program"
+                          title={`Delete ${term.singular}`}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -620,13 +689,15 @@ export default function ProgramsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={colSpan} className="py-12 text-center text-slate-400">
                     <Award className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-semibold text-sm text-slate-600">No academic programs found</p>
+                    <p className="font-semibold text-sm text-slate-600">
+                      No {term.plural.toLowerCase()} found
+                    </p>
                     <p className="text-xs text-slate-400 mt-1">
                       {searchQuery
-                        ? "Try adjusting your search query or degree level filter."
-                        : "Click 'Add Program' above to register the first academic program."}
+                        ? "Try adjusting your search query or filter criteria."
+                        : `Click '${term.addButtonLabel}' above to register the first ${term.singular.toLowerCase()}.`}
                     </p>
                   </td>
                 </tr>
@@ -636,16 +707,14 @@ export default function ProgramsPage() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* MODAL 1: ADD PROGRAM                                                      */}
-      {/* ========================================================================= */}
+      {/* MODAL 1: ADD PROGRAM / CLASS */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="h-14 px-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                 <Award className="h-5 w-5 text-blue-600" />
-                <span>Add Academic Program</span>
+                <span>{term.addModalTitle}</span>
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -660,61 +729,64 @@ export default function ProgramsPage() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Program Code *
+                      {term.codeLabel} *
                     </label>
                     <input
                       type="text"
                       required
                       value={formData.code}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                      placeholder="e.g. BSC-CS"
+                      placeholder={term.codePlaceholder}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-mono focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
 
                   <div className="col-span-2">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Program Name *
+                      {term.nameLabel} *
                     </label>
                     <input
                       type="text"
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g. B.Sc. Computer Science"
+                      placeholder={term.namePlaceholder}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Academic Department *
-                  </label>
-                  <select
-                    value={formData.departmentId}
-                    onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {term.showDepartmentField && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Academic Department *
+                    </label>
+                    <select
+                      value={formData.departmentId}
+                      onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="">Unassigned / General</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Degree Level
+                      {term.levelLabel}
                     </label>
                     <select
                       value={formData.degreeLevel}
                       onChange={(e) => setFormData({ ...formData, degreeLevel: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
                     >
-                      {DEGREE_LEVEL_OPTIONS.map((opt) => (
+                      {modalLevelOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
@@ -738,7 +810,7 @@ export default function ProgramsPage() {
 
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Total Credits Req.
+                      {term.creditsLabel}
                     </label>
                     <input
                       type="number"
@@ -760,7 +832,7 @@ export default function ProgramsPage() {
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-xs font-semibold text-slate-700">
-                      Active Program (Available for new student admissions)
+                      {term.activeCheckboxLabel}
                     </span>
                   </label>
                 </div>
@@ -782,10 +854,10 @@ export default function ProgramsPage() {
                   {saving ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Saving to Supabase...</span>
+                      <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Save Program</span>
+                    <span>Save {term.singular}</span>
                   )}
                 </button>
               </div>
@@ -794,16 +866,16 @@ export default function ProgramsPage() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL 2: EDIT PROGRAM                                                     */}
-      {/* ========================================================================= */}
+      {/* MODAL 2: EDIT PROGRAM / CLASS */}
       {showEditModal && selectedProgram && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="h-14 px-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                 <Edit2 className="h-5 w-5 text-blue-600" />
-                <span>Edit Academic Program ({selectedProgram.code})</span>
+                <span>
+                  {term.editModalPrefix} ({selectedProgram.code})
+                </span>
               </div>
               <button
                 onClick={() => setShowEditModal(false)}
@@ -818,61 +890,64 @@ export default function ProgramsPage() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Program Code *
+                      {term.codeLabel} *
                     </label>
                     <input
                       type="text"
                       required
                       value={formData.code}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                      placeholder="e.g. BSC-CS"
+                      placeholder={term.codePlaceholder}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-mono focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
 
                   <div className="col-span-2">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Program Name *
+                      {term.nameLabel} *
                     </label>
                     <input
                       type="text"
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g. B.Sc. Computer Science"
+                      placeholder={term.namePlaceholder}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Academic Department *
-                  </label>
-                  <select
-                    value={formData.departmentId}
-                    onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {term.showDepartmentField && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Academic Department *
+                    </label>
+                    <select
+                      value={formData.departmentId}
+                      onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="">Unassigned / General</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Degree Level
+                      {term.levelLabel}
                     </label>
                     <select
                       value={formData.degreeLevel}
                       onChange={(e) => setFormData({ ...formData, degreeLevel: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
                     >
-                      {DEGREE_LEVEL_OPTIONS.map((opt) => (
+                      {modalLevelOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
@@ -896,7 +971,7 @@ export default function ProgramsPage() {
 
                   <div className="col-span-1">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Total Credits Req.
+                      {term.creditsLabel}
                     </label>
                     <input
                       type="number"
@@ -918,7 +993,7 @@ export default function ProgramsPage() {
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-xs font-semibold text-slate-700">
-                      Active Program (Available for new student admissions)
+                      {term.activeCheckboxLabel}
                     </span>
                   </label>
                 </div>
@@ -952,16 +1027,14 @@ export default function ProgramsPage() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL 3: DELETE CONFIRMATION                                              */}
-      {/* ========================================================================= */}
+      {/* MODAL 3: DELETE CONFIRMATION */}
       {showDeleteModal && selectedProgram && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="h-14 px-6 border-b border-slate-100 bg-red-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-red-700 text-sm">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
-                <span>Delete Program</span>
+                <span>{term.deleteModalTitle}</span>
               </div>
               <button
                 onClick={() => setShowDeleteModal(false)}
@@ -973,14 +1046,18 @@ export default function ProgramsPage() {
 
             <div className="p-6 space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed">
-                Are you sure you want to permanently delete the program{" "}
+                Are you sure you want to permanently delete the{" "}
+                {term.singular.toLowerCase()}{" "}
                 <strong className="text-slate-900 font-bold">
                   {selectedProgram.name} ({selectedProgram.code})
-                </strong>{" "}
-                from Supabase database?
+                </strong>
+                ?
               </p>
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11.5px] leading-relaxed">
-                <strong>Warning:</strong> This will delete this program and its associated curriculum versions.
+                <strong>Warning:</strong>{" "}
+                {isHighSchool
+                  ? "This will permanently delete this class and its curriculum mapping."
+                  : "This will delete this program and its associated curriculum versions."}
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3">
@@ -1003,7 +1080,7 @@ export default function ProgramsPage() {
                       <span>Deleting...</span>
                     </>
                   ) : (
-                    <span>Delete Program</span>
+                    <span>{term.deleteModalTitle}</span>
                   )}
                 </button>
               </div>

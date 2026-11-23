@@ -32,6 +32,10 @@ import {
   Briefcase,
   AlertCircle,
 } from "lucide-react";
+import {
+  type CanonicalSchoolType,
+  normalizeSchoolType,
+} from "@/lib/academics/school-terminology";
 
 interface StatCounts {
   totalStudents: number;
@@ -46,6 +50,11 @@ interface StatCounts {
   totalSubjects: number;
   activeSubjects: number;
   inactiveSubjects: number;
+  totalAcademicUnits: number;
+  activeAcademicUnits: number;
+  inactiveAcademicUnits: number;
+  academicCardLabel: string;
+  academicCardHref: string;
 }
 
 interface FeesSummary {
@@ -108,6 +117,11 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState<string>("Administrator");
   const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [schoolType, setSchoolType] = useState<CanonicalSchoolType>("university");
+  const [currencyCode, setCurrencyCode] = useState<string>("");
+  const [tenantError, setTenantError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [showAlert, setShowAlert] = useState(true);
   const [alertMessage, setAlertMessage] = useState<string>(
@@ -128,6 +142,11 @@ export default function AdminDashboardPage() {
     totalSubjects: 0,
     activeSubjects: 0,
     inactiveSubjects: 0,
+    totalAcademicUnits: 0,
+    activeAcademicUnits: 0,
+    inactiveAcademicUnits: 0,
+    academicCardLabel: "Total Programs",
+    academicCardHref: "/admin/programs",
   });
 
   // Attendance Widget State
@@ -172,14 +191,8 @@ export default function AdminDashboardPage() {
   const [notificationsList, setNotificationsList] = useState<NotificationItem[]>([]);
   const [studentActivities, setStudentActivities] = useState<StudentActivityItem[]>([]);
 
-  // Interactive Todo List
-  const [todos, setTodos] = useState<{ id: number; text: string; time: string; completed: boolean }[]>([
-    { id: 1, text: "Send Fees Reminder to All Students", time: "01:00 PM", completed: true },
-    { id: 2, text: "Create Routine for new staff", time: "04:50 PM", completed: false },
-    { id: 3, text: "Extra Class Info to Students & Teachers", time: "04:55 PM", completed: false },
-    { id: 4, text: "Fees Creation for Upcoming Academic Year", time: "04:55 PM", completed: false },
-    { id: 5, text: "Course syllabus approval review", time: "05:15 PM", completed: false },
-  ]);
+  // Interactive Todo List (empty until school tasks exist)
+  const [todos, setTodos] = useState<{ id: number; text: string; time: string; completed: boolean }[]>([]);
 
   // Calendar State
   const [currentDate, setCurrentDate] = useState<Date | null>(null);
@@ -188,21 +201,45 @@ export default function AdminDashboardPage() {
     setCurrentDate(new Date());
   }, []);
 
-  // Main Data Fetcher directly from Supabase
+  // Main Data Fetcher from verified server APIs & tenant-scoped Supabase queries
   const fetchDashboardData = async () => {
     setLoading(true);
+    setTenantError(null);
+    setDashboardError(null);
     const supabase = createClient();
     const db = supabase as any;
 
+    const logSecondaryQueryError = (table: string, error: any) => {
+      if (!error) return;
+      const msg = String(error.message || error || "");
+      if (
+        error.code === "PGRST205" ||
+        msg.includes("Could not find the table") ||
+        msg.includes("does not exist")
+      ) {
+        return;
+      }
+      console.error(`[AdminDashboard] ${table} query error:`, error);
+    };
+
     try {
       // 1. Current user profile
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: authErr,
+      } = await supabase.auth.getUser();
+      if (authErr) {
+        console.error("[AdminDashboard] auth.getUser error:", authErr);
+      }
       if (user) {
-        const { data: profile } = await supabase
+        const { data: profile, error: profErr } = await supabase
           .from("profiles")
           .select("full_name")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
+        if (profErr) {
+          console.error("[AdminDashboard] profile lookup error:", profErr);
+        }
         if (profile?.full_name) {
           setAdminName(profile.full_name);
         } else if (user.user_metadata?.full_name) {
@@ -210,16 +247,41 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // Fetch institution name from database settings
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const d = await res.json();
-          if (d?.name) setSchoolName(d.name);
-        }
-      } catch {
-        // non-blocking
+      // Fetch authoritative institution context FIRST
+      const res = await fetch("/api/settings/institution", { cache: "no-store" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTenantError(
+          d?.error ||
+            "Your account is not linked to a registered school. Contact your Super Administrator."
+        );
+        setLoading(false);
+        return;
       }
+
+      const resolvedSchoolId: string | null = d?.school_id || d?.id || null;
+      if (!resolvedSchoolId) {
+        setTenantError("No school context is linked to this account.");
+        setLoading(false);
+        return;
+      }
+
+      const resolvedSchoolName = d?.name || "";
+      const resolvedCurrency = d?.currency_symbol || d?.currency || "";
+      const instSchoolType = normalizeSchoolType(d?.school_type || d?.institution_type);
+      setSchoolId(resolvedSchoolId);
+      setSchoolName(resolvedSchoolName);
+      setSchoolType(instSchoolType);
+      setCurrencyCode(resolvedCurrency);
+      setStats((prev) => ({
+        ...prev,
+        academicCardLabel:
+          instSchoolType === "university" ? "Total Programs" : "Total Classes",
+        academicCardHref:
+          instSchoolType === "vocational_school"
+            ? "/admin/departments"
+            : "/admin/programs",
+      }));
 
       // Format updated date
       const now = new Date();
@@ -231,171 +293,128 @@ export default function AdminDashboardPage() {
         })
       );
 
-      // 2. Query Students (Total, Active, Inactive)
-      const { data: studentsData } = await db
-        .from("students")
-        .select("status");
+      // 2. Fetch authoritative server-side KPI counts, fees, attendance, and top performers
+      const dashRes = await fetch("/api/admin/dashboard", { cache: "no-store" });
+      const dashData = await dashRes.json().catch(() => ({}));
 
-      let totalStudents = 0;
-      let activeStudents = 0;
-      let inactiveStudents = 0;
-
-      if (studentsData) {
-        totalStudents = studentsData.length;
-        activeStudents = studentsData.filter(
-          (s: any) => s.status === "active" || s.status === "admitted"
-        ).length;
-        inactiveStudents = totalStudents - activeStudents;
-      }
-
-      // 3. Query Staff & Teachers (from staff table)
-      const { data: staffData } = await db
-        .from("staff")
-        .select("status, job_title");
-
-      let totalTeachers = 0;
-      let activeTeachers = 0;
-      let inactiveTeachers = 0;
-      let totalStaff = 0;
-      let activeStaff = 0;
-      let inactiveStaff = 0;
-
-      if (staffData) {
-        const facultyRegex =
-          /lecturer|professor|teacher|instructor|faculty|dean|academic advisor|fellow|researcher/i;
-        const teacherList = staffData.filter((s: any) =>
-          facultyRegex.test(s.job_title || "")
-        );
-        const nonTeacherStaff = staffData.filter(
-          (s: any) => !facultyRegex.test(s.job_title || "")
-        );
-
-        totalTeachers = teacherList.length;
-        activeTeachers = teacherList.filter((s: any) => s.status === "active").length;
-        inactiveTeachers = totalTeachers - activeTeachers;
-
-        totalStaff = nonTeacherStaff.length;
-        activeStaff = nonTeacherStaff.filter((s: any) => s.status === "active").length;
-        inactiveStaff = totalStaff - activeStaff;
-      }
-
-      // 4. Query Courses / Subjects
-      const { data: coursesData } = await db
-        .from("courses")
-        .select("is_active");
-
-      let totalSubjects = 0;
-      let activeSubjects = 0;
-      let inactiveSubjects = 0;
-
-      if (coursesData) {
-        totalSubjects = coursesData.length;
-        activeSubjects = coursesData.filter((c: any) => c.is_active === true).length;
-        inactiveSubjects = totalSubjects - activeSubjects;
-      }
-
-      setStats({
-        totalStudents,
-        activeStudents,
-        inactiveStudents,
-        totalTeachers,
-        activeTeachers,
-        inactiveTeachers,
-        totalStaff,
-        activeStaff,
-        inactiveStaff,
-        totalSubjects,
-        activeSubjects,
-        inactiveSubjects,
-      });
-
-      // 5. Query Fees & Payments
-      const { data: paymentsData } = await db
-        .from("payments")
-        .select("amount, created_at, status")
-        .eq("status", "successful");
-
-      let totalCollected = 0;
-      if (paymentsData) {
-        totalCollected = paymentsData.reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0);
-      }
-
-      const { data: invoicesData } = await db
-        .from("student_invoices")
-        .select("total_amount, paid_amount, balance_amount, status");
-
-      let totalOutstanding = 0;
-      let unpaidCount = 0;
-      if (invoicesData) {
-        totalOutstanding = invoicesData.reduce(
-          (acc: number, inv: any) => acc + Number(inv.balance_amount || 0),
-          0
-        );
-        unpaidCount = invoicesData.filter(
-          (inv: any) => inv.status === "posted" || inv.status === "partially_paid" || inv.status === "overdue"
-        ).length;
-      }
-
-      // Dynamic Quarters / Terms Fees comparison
-      const dummyQuarters = [
-        { quarter: "Q1 2025", totalFee: 32000, collectedFee: 24000 },
-        { quarter: "Q2 2025", totalFee: 36000, collectedFee: 30000 },
-        { quarter: "Q3 2025", totalFee: 34000, collectedFee: 28000 },
-        { quarter: "Q4 2025", totalFee: 38000, collectedFee: 32000 },
-        { quarter: "Q1 2026", totalFee: 42000, collectedFee: 35000 },
-        { quarter: "Q2 2026", totalFee: 40000, collectedFee: 29000 },
-        { quarter: "Q3 2026", totalFee: 37000, collectedFee: 26000 },
-        { quarter: "Q4 2026", totalFee: 45000, collectedFee: 38000 },
-        { quarter: "Q1 2027", totalFee: 48000, collectedFee: totalCollected > 0 ? totalCollected : 41000 },
-      ];
-
-      setFees({
-        totalCollected,
-        termCollected: totalCollected > 0 ? Math.round(totalCollected * 0.4) : 0,
-        unpaidCount,
-        totalOutstanding,
-        quarterData: dummyQuarters,
-      });
-
-      // Check for latest payment notification for green alert banner
-      if (paymentsData && paymentsData.length > 0) {
-        setAlertMessage(`Payment Verified: Recent student payment of GHS ${paymentsData[0].amount} successfully logged.`);
-      }
-
-      // 6. Query Attendance stats
-      const { data: attendanceData } = await db
-        .from("attendance_records")
-        .select("status");
-
-      if (attendanceData && attendanceData.length > 0) {
-        const present = attendanceData.filter((r: any) => r.status === "present").length;
-        const absent = attendanceData.filter((r: any) => r.status === "absent").length;
-        const late = attendanceData.filter((r: any) => r.status === "late").length;
-        const emergency = attendanceData.filter((r: any) => r.status === "excused").length;
-        setAttendanceStats({
-          present,
-          absent,
-          emergency,
-          medical: 0,
-          late,
-        });
+      if (!dashRes.ok) {
+        const msg =
+          dashData?.error ||
+          `Failed to load live dashboard metrics (HTTP ${dashRes.status})`;
+        console.error("[AdminDashboard] /api/admin/dashboard error:", msg);
+        setDashboardError(msg);
       } else {
-        // Fresh DB default baseline
-        setAttendanceStats({
-          present: activeStudents > 0 ? activeStudents : 0,
-          absent: 0,
-          emergency: 0,
-          medical: 0,
-          late: 0,
-        });
+        if (dashData?.school_type) {
+          setSchoolType(normalizeSchoolType(dashData.school_type));
+        }
+
+        if (dashData?.stats) {
+          setStats({
+            totalStudents: Number(dashData.stats.totalStudents) || 0,
+            activeStudents: Number(dashData.stats.activeStudents) || 0,
+            inactiveStudents: Number(dashData.stats.inactiveStudents) || 0,
+            totalTeachers: Number(dashData.stats.totalTeachers) || 0,
+            activeTeachers: Number(dashData.stats.activeTeachers) || 0,
+            inactiveTeachers: Number(dashData.stats.inactiveTeachers) || 0,
+            totalStaff: Number(dashData.stats.totalStaff) || 0,
+            activeStaff: Number(dashData.stats.activeStaff) || 0,
+            inactiveStaff: Number(dashData.stats.inactiveStaff) || 0,
+            totalSubjects: Number(dashData.stats.totalSubjects) || 0,
+            activeSubjects: Number(dashData.stats.activeSubjects) || 0,
+            inactiveSubjects: Number(dashData.stats.inactiveSubjects) || 0,
+            totalAcademicUnits: Number(dashData.stats.totalAcademicUnits) || 0,
+            activeAcademicUnits: Number(dashData.stats.activeAcademicUnits) || 0,
+            inactiveAcademicUnits: Number(dashData.stats.inactiveAcademicUnits) || 0,
+            academicCardLabel: String(dashData.stats.academicCardLabel || "Total Programs"),
+            academicCardHref: String(dashData.stats.academicCardHref || "/admin/programs"),
+          });
+        }
+
+        if (dashData?.fees) {
+          setFees({
+            totalCollected: Number(dashData.fees.totalCollected) || 0,
+            termCollected: Number(dashData.fees.termCollected) || 0,
+            unpaidCount: Number(dashData.fees.unpaidCount) || 0,
+            totalOutstanding: Number(dashData.fees.totalOutstanding) || 0,
+            quarterData: Array.isArray(dashData.fees.quarterData)
+              ? dashData.fees.quarterData
+              : [],
+          });
+
+          if (dashData.fees.latestPaymentAmount !== null && dashData.fees.latestPaymentAmount !== undefined) {
+            const amtLabel = `${resolvedCurrency ? `${resolvedCurrency} ` : ""}${dashData.fees.latestPaymentAmount}`;
+            setAlertMessage(
+              `Payment Verified: Recent student payment of ${amtLabel} successfully logged.`
+            );
+          }
+        }
+
+        if (dashData?.attendanceStats) {
+          setAttendanceStats({
+            present: Number(dashData.attendanceStats.present) || 0,
+            absent: Number(dashData.attendanceStats.absent) || 0,
+            emergency: Number(dashData.attendanceStats.emergency) || 0,
+            medical: Number(dashData.attendanceStats.medical) || 0,
+            late: Number(dashData.attendanceStats.late) || 0,
+          });
+        }
+
+        setBestPerformer(dashData?.bestPerformer || null);
+        setStarStudent(dashData?.starStudent || null);
+
+        if (Array.isArray(dashData?.queryErrors) && dashData.queryErrors.length > 0) {
+          setDashboardError(
+            `Some live Supabase queries reported errors: ${dashData.queryErrors.join("; ")}`
+          );
+        }
       }
 
-      // 7. Query Staff Leave Requests
-      const { data: leavesData } = await db
-        .from("leave_requests")
-        .select("id, leave_type, start_date, end_date, status, created_at, staff:staff_id(job_title, profile:profile_id(full_name))")
-        .limit(5);
+      // 3. Query secondary school widgets (strictly scoped by school_id)
+      const [leavesRes, announcementsRes, docsRes, notifRes, auditRes, eventsRes] =
+        await Promise.all([
+          db
+            .from("leave_requests")
+            .select("id, leave_type, start_date, end_date, status, created_at, staff:staff_id(job_title, profile:profile_id(full_name))")
+            .eq("school_id", resolvedSchoolId)
+            .limit(5),
+          db
+            .from("announcements")
+            .select("id, title, published_at, target_audience")
+            .eq("school_id", resolvedSchoolId)
+            .order("published_at", { ascending: false })
+            .limit(4),
+          db
+            .from("generated_documents")
+            .select("id, document_reference, issued_at, status")
+            .eq("school_id", resolvedSchoolId)
+            .limit(4),
+          db
+            .from("notifications")
+            .select("id, title, message, created_at")
+            .eq("school_id", resolvedSchoolId)
+            .order("created_at", { ascending: false })
+            .limit(4),
+          db
+            .from("audit_events")
+            .select("id, action, entity_type, event_time, outcome")
+            .eq("school_id", resolvedSchoolId)
+            .order("event_time", { ascending: false })
+            .limit(4),
+          db
+            .from("timetable_events")
+            .select("id, start_time, end_time, recurrence_pattern")
+            .eq("school_id", resolvedSchoolId)
+            .limit(4),
+        ]);
 
+      logSecondaryQueryError("leave_requests", leavesRes?.error);
+      logSecondaryQueryError("announcements", announcementsRes?.error);
+      logSecondaryQueryError("generated_documents", docsRes?.error);
+      logSecondaryQueryError("notifications", notifRes?.error);
+      logSecondaryQueryError("audit_events", auditRes?.error);
+      logSecondaryQueryError("timetable_events", eventsRes?.error);
+
+      const leavesData = leavesRes?.data;
       if (leavesData && leavesData.length > 0) {
         const formattedLeaves: LeaveItem[] = leavesData.map((l: any) => ({
           id: l.id,
@@ -411,13 +430,7 @@ export default function AdminDashboardPage() {
         setLeaveRequests([]);
       }
 
-      // 8. Query Announcements / Notices
-      const { data: announcementsData } = await db
-        .from("announcements")
-        .select("id, title, published_at, target_audience")
-        .order("published_at", { ascending: false })
-        .limit(4);
-
+      const announcementsData = announcementsRes?.data;
       if (announcementsData && announcementsData.length > 0) {
         setNotices(
           announcementsData.map((a: any) => ({
@@ -435,12 +448,7 @@ export default function AdminDashboardPage() {
         setNotices([]);
       }
 
-      // 9. Query Generated Documents / Activities
-      const { data: docsData } = await db
-        .from("generated_documents")
-        .select("id, document_reference, issued_at, status")
-        .limit(4);
-
+      const docsData = docsRes?.data;
       if (docsData && docsData.length > 0) {
         setActivities(
           docsData.map((d: any) => ({
@@ -458,13 +466,7 @@ export default function AdminDashboardPage() {
         setActivities([]);
       }
 
-      // 10. Query Notifications / Inbox
-      const { data: notifData } = await db
-        .from("notifications")
-        .select("id, title, message, created_at")
-        .order("created_at", { ascending: false })
-        .limit(4);
-
+      const notifData = notifRes?.data;
       if (notifData && notifData.length > 0) {
         setNotificationsList(
           notifData.map((n: any) => ({
@@ -479,13 +481,7 @@ export default function AdminDashboardPage() {
         setNotificationsList([]);
       }
 
-      // 11. Query Audit Events / Student Activity
-      const { data: auditData } = await db
-        .from("audit_events")
-        .select("id, action, entity_type, event_time, outcome")
-        .order("event_time", { ascending: false })
-        .limit(4);
-
+      const auditData = auditRes?.data;
       if (auditData && auditData.length > 0) {
         setStudentActivities(
           auditData.map((ev: any) => ({
@@ -500,55 +496,22 @@ export default function AdminDashboardPage() {
         setStudentActivities([]);
       }
 
-      // 12. Query Timetable Events for Upcoming Events
-      const { data: eventsData } = await db
-        .from("timetable_events")
-        .select("id, start_time, end_time, recurrence_pattern")
-        .limit(4);
-
+      const eventsData = eventsRes?.data;
       if (eventsData && eventsData.length > 0) {
         setUpcomingEvents(
           eventsData.map((ev: any, idx: number) => ({
             id: ev.id,
             title: `Scheduled Session #${idx + 1}`,
-            dateStr: "Weekly Event",
+            dateStr: ev.recurrence_pattern || "Scheduled Session",
             timeRange: `${ev.start_time?.slice(0, 5)} - ${ev.end_time?.slice(0, 5)}`,
           }))
         );
       } else {
         setUpcomingEvents([]);
       }
-
-      // 13. Query top teacher & star student
-      const { data: topStaff } = await db
-        .from("staff")
-        .select("job_title, profile:profile_id(full_name)")
-        .limit(1);
-
-      if (topStaff && topStaff.length > 0) {
-        const staffObj: any = topStaff[0];
-        setBestPerformer({
-          name: staffObj.profile?.full_name || "Faculty Member",
-          role: staffObj.job_title || "Senior Lecturer",
-          department: "School of Computing",
-        });
-      }
-
-      const { data: topStudent } = await db
-        .from("students")
-        .select("student_number, programme:programme_id(name), profile:profile_id(full_name)")
-        .limit(1);
-
-      if (topStudent && topStudent.length > 0) {
-        const studObj: any = topStudent[0];
-        setStarStudent({
-          name: studObj.profile?.full_name || "Outstanding Scholar",
-          programme: studObj.programme?.name || "Computer Science",
-          score: "94%",
-        });
-      }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error loading admin dashboard metrics from Supabase:", err);
+      setDashboardError(err?.message || "Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -583,7 +546,8 @@ export default function AdminDashboardPage() {
   };
 
   const handleDownloadRoutine = (name: string) => {
-    const text = `Premier University Class Routine\nSemester: October - December 2026\nTimetable: ${name}\nGenerated on: ${new Date().toLocaleString()}`;
+    const label = schoolName || "School";
+    const text = `${label} Class Routine\nTimetable: ${name}\nGenerated on: ${new Date().toLocaleString()}`;
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -593,7 +557,8 @@ export default function AdminDashboardPage() {
   };
 
   const handleDownloadReport = (title: string) => {
-    const text = `Premier University Official Document\nReference: ${title}\nGenerated on: ${new Date().toLocaleString()}\nVerification Status: Valid and Authenticated`;
+    const label = schoolName || "School";
+    const text = `${label} Official Document\nReference: ${title}\nGenerated on: ${new Date().toLocaleString()}\nVerification Status: Valid and Authenticated`;
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -606,7 +571,11 @@ export default function AdminDashboardPage() {
     const supabase = createClient();
     const db = supabase as any;
     try {
-      await db.from("leave_requests").update({ status: newStatus }).eq("id", id);
+      let query = db.from("leave_requests").update({ status: newStatus }).eq("id", id);
+      if (schoolId) {
+        query = query.eq("school_id", schoolId);
+      }
+      await query;
     } catch {
       // optimistic update
     }
@@ -615,6 +584,31 @@ export default function AdminDashboardPage() {
     );
     alert(`Leave request has been marked as ${newStatus}.`);
   };
+
+  const totalAttendance =
+    attendanceStats.present +
+    attendanceStats.absent +
+    attendanceStats.late +
+    attendanceStats.emergency +
+    attendanceStats.medical;
+  const presentPct =
+    totalAttendance > 0
+      ? Math.round((attendanceStats.present / totalAttendance) * 100)
+      : 0;
+  const maxQuarterAmount = Math.max(
+    1,
+    ...fees.quarterData.map((q) => Math.max(q.totalFee, q.collectedFee))
+  );
+  const currencyPrefix = currencyCode ? `${currencyCode} ` : "";
+
+  if (tenantError) {
+    return (
+      <div className="max-w-xl mx-auto mt-10 rounded-2xl bg-white border border-rose-200 p-6 shadow-xs space-y-3">
+        <h2 className="text-base font-bold text-slate-900">Unable to Load School Dashboard</h2>
+        <p className="text-sm text-slate-600">{tenantError}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 font-sans">
@@ -707,7 +701,13 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* 4. Top 4 Metric Cards (Total Students, Teachers, Staff, Subjects) */}
+      {/* 4. Top 4 Metric Cards (Total Students, Teachers, Staff, Dynamic Academic Card) */}
+      {dashboardError && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+          <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+          <span>{dashboardError}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Students */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
@@ -717,7 +717,7 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalStudents}
+                {loading ? "…" : stats.totalStudents}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Total Students
@@ -742,7 +742,7 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalTeachers}
+                {loading ? "…" : stats.totalTeachers}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Total Teachers
@@ -767,7 +767,7 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalStaff}
+                {loading ? "…" : stats.totalStaff}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Total Staff
@@ -784,7 +784,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Card 4: Total Subjects */}
+        {/* Card 4: Dynamic Academic Card (Programs for University, Classes for High School & Vocational) */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center gap-4">
             <div className="h-13 w-13 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-2xs">
@@ -792,18 +792,19 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalSubjects}
+                {loading ? "…" : stats.totalAcademicUnits}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
-                Total Subjects
+                {stats.academicCardLabel ||
+                  (schoolType === "university" ? "Total Programs" : "Total Classes")}
               </div>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="text-slate-500">
-              Active: <strong className="text-slate-800">{stats.activeSubjects}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveSubjects}</strong>
+              Active: <strong className="text-slate-800">{stats.activeAcademicUnits}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveAcademicUnits}</strong>
             </span>
-            <Link href="/admin/courses" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
+            <Link href={stats.academicCardHref} className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
               View all
             </Link>
           </div>
@@ -976,7 +977,7 @@ export default function AdminDashboardPage() {
                   />
                   <path
                     className="text-blue-600"
-                    strokeDasharray="85, 100"
+                    strokeDasharray={`${presentPct}, 100`}
                     strokeWidth="4"
                     strokeLinecap="round"
                     stroke="currentColor"
@@ -1019,10 +1020,10 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 text-sm font-extrabold truncate">
-                  {bestPerformer?.name || "Adrian Rubell"}
+                  {bestPerformer?.name || "No data yet"}
                 </div>
                 <div className="text-[10px] text-emerald-100 truncate">
-                  {bestPerformer?.role || "Physics Teacher"}
+                  {bestPerformer?.role || "Add staff records"}
                 </div>
               </div>
 
@@ -1046,10 +1047,10 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 text-sm font-extrabold truncate">
-                  {starStudent?.name || "Teresa Mensah"}
+                  {starStudent?.name || "No data yet"}
                 </div>
                 <div className="text-[10px] text-blue-100 truncate">
-                  {starStudent?.programme || "BSc Computer Science"}
+                  {starStudent?.programme || "Add student records"}
                 </div>
               </div>
 
@@ -1058,7 +1059,7 @@ export default function AdminDashboardPage() {
                   🎓
                 </div>
                 <div className="px-2.5 py-1 rounded-full bg-white text-blue-600 font-black text-xs shadow-xs">
-                  {starStudent?.score || "94%"}
+                  {starStudent?.score || "—"}
                 </div>
               </div>
             </div>
@@ -1137,33 +1138,32 @@ export default function AdminDashboardPage() {
 
             {/* Routines list */}
             <div className="space-y-2">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-900">October 2026 Routine</div>
-                  <div className="text-[10px] text-slate-500">Semester Class Timetable</div>
+              {upcomingEvents.length > 0 ? (
+                upcomingEvents.slice(0, 2).map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">{ev.title}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {ev.dateStr} • {ev.timeRange}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDownloadRoutine(ev.title)}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="h-3 w-3 text-slate-500" />
+                      <span>Download</span>
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                  No class routines scheduled yet.
                 </div>
-                <button
-                  onClick={() => handleDownloadRoutine("October 2026 Regular Class Routine")}
-                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="h-3 w-3 text-slate-500" />
-                  <span>Download</span>
-                </button>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-900">November 2026 Routine</div>
-                  <div className="text-[10px] text-slate-500">Mid-Term Class Outline</div>
-                </div>
-                <button
-                  onClick={() => handleDownloadRoutine("November 2026 Mid-Term Class Outline")}
-                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="h-3 w-3 text-slate-500" />
-                  <span>Download</span>
-                </button>
-              </div>
+              )}
             </div>
           </div>
 
@@ -1194,7 +1194,7 @@ export default function AdminDashboardPage() {
                   />
                   <path
                     className="text-cyan-500"
-                    strokeDasharray="92, 100"
+                    strokeDasharray={`${presentPct}, 100`}
                     strokeWidth="4"
                     strokeLinecap="round"
                     stroke="currentColor"
@@ -1203,29 +1203,37 @@ export default function AdminDashboardPage() {
                   />
                 </svg>
                 <div className="absolute text-center">
-                  <span className="text-xs font-black text-slate-900">Good</span>
-                  <div className="text-[10px] text-slate-500 font-bold">92%</div>
+                  <span className="text-xs font-black text-slate-900">
+                    {totalAttendance > 0
+                      ? presentPct >= 80
+                        ? "Good"
+                        : presentPct >= 60
+                        ? "Fair"
+                        : "Low"
+                      : "No Data"}
+                  </span>
+                  <div className="text-[10px] text-slate-500 font-bold">{presentPct}%</div>
                 </div>
               </div>
 
               {/* Stats breakdown */}
               <div className="space-y-1.5 text-xs">
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-500">Top Students</span>
+                  <span className="text-slate-500">Present Records</span>
                   <strong className="text-slate-900 font-bold">
-                    {stats.totalStudents > 0 ? Math.round(stats.totalStudents * 0.35) : 0}
+                    {totalAttendance > 0 ? attendanceStats.present : 0}
                   </strong>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-500">Average Students</span>
+                  <span className="text-slate-500">Late Records</span>
                   <strong className="text-slate-900 font-bold">
-                    {stats.totalStudents > 0 ? Math.round(stats.totalStudents * 0.55) : 0}
+                    {totalAttendance > 0 ? attendanceStats.late : 0}
                   </strong>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-500">Below Average</span>
+                  <span className="text-slate-500">Absent Records</span>
                   <strong className="text-slate-900 font-bold">
-                    {stats.totalStudents > 0 ? Math.round(stats.totalStudents * 0.1) : 0}
+                    {totalAttendance > 0 ? attendanceStats.absent : 0}
                   </strong>
                 </div>
               </div>
@@ -1262,43 +1270,49 @@ export default function AdminDashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
             {/* Dual Bar Chart (SVG) */}
             <div className="md:col-span-8">
-              <div className="h-56 flex items-end justify-between gap-2 pt-6 pb-2 px-2 border-b border-slate-100">
-                {fees.quarterData.map((q, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                    <div className="w-full max-w-[20px] flex items-end justify-center gap-1 h-44">
-                      {/* Total Invoiced Bar (gray) */}
-                      <div
-                        className="w-2.5 bg-slate-200 rounded-t-sm transition-all"
-                        style={{ height: `${Math.min(100, (q.totalFee / 50000) * 100)}%` }}
-                        title={`Total: GHS ${q.totalFee}`}
-                      />
-                      {/* Collected Bar (blue) */}
-                      <div
-                        className="w-2.5 bg-blue-600 rounded-t-sm transition-all"
-                        style={{ height: `${Math.min(100, (q.collectedFee / 50000) * 100)}%` }}
-                        title={`Collected: GHS ${q.collectedFee}`}
-                      />
+              {fees.quarterData.length > 0 ? (
+                <div className="h-56 flex items-end justify-between gap-2 pt-6 pb-2 px-2 border-b border-slate-100">
+                  {fees.quarterData.map((q, idx) => (
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                      <div className="w-full max-w-[20px] flex items-end justify-center gap-1 h-44">
+                        {/* Total Invoiced Bar (gray) */}
+                        <div
+                          className="w-2.5 bg-slate-200 rounded-t-sm transition-all"
+                          style={{ height: `${Math.min(100, (q.totalFee / maxQuarterAmount) * 100)}%` }}
+                          title={`Total: ${currencyPrefix}${q.totalFee.toLocaleString()}`}
+                        />
+                        {/* Collected Bar (blue) */}
+                        <div
+                          className="w-2.5 bg-blue-600 rounded-t-sm transition-all"
+                          style={{ height: `${Math.min(100, (q.collectedFee / maxQuarterAmount) * 100)}%` }}
+                          title={`Collected: ${currencyPrefix}${q.collectedFee.toLocaleString()}`}
+                        />
+                      </div>
+                      <span className="text-[9px] font-semibold text-slate-400 whitespace-nowrap">
+                        {q.quarter}
+                      </span>
                     </div>
-                    <span className="text-[9px] font-semibold text-slate-400 whitespace-nowrap">
-                      {q.quarter.split(" ")[0]}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-56 flex items-center justify-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500">
+                  No fee collection data recorded for this school yet.
+                </div>
+              )}
             </div>
 
             {/* Right KPI sidebar */}
             <div className="md:col-span-4 space-y-2.5">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
                 <div className="text-base font-extrabold text-slate-900">
-                  GHS {fees.totalCollected.toLocaleString()}
+                  {currencyPrefix}{fees.totalCollected.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-slate-500 font-semibold">Total Fees Collected</div>
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
                 <div className="text-base font-extrabold text-slate-900">
-                  GHS {fees.termCollected.toLocaleString()}
+                  {currencyPrefix}{fees.termCollected.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-slate-500 font-semibold">Fees Collected This Term</div>
               </div>
@@ -1322,7 +1336,7 @@ export default function AdminDashboardPage() {
 
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
                 <div className="text-base font-extrabold text-rose-600">
-                  GHS {fees.totalOutstanding.toLocaleString()}
+                  {currencyPrefix}{fees.totalOutstanding.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-slate-500 font-semibold">Total Outstanding</div>
               </div>
@@ -1570,30 +1584,36 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="space-y-2 pt-1">
-            {todos.map((todo) => (
-              <div
-                key={todo.id}
-                onClick={() => toggleTodo(todo.id)}
-                className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => toggleTodo(todo.id)}
-                  className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div
-                    className={`text-xs font-medium ${
-                      todo.completed ? "line-through text-slate-400" : "text-slate-800"
-                    }`}
-                  >
-                    {todo.text}
+            {todos.length > 0 ? (
+              todos.map((todo) => (
+                <div
+                  key={todo.id}
+                  onClick={() => toggleTodo(todo.id)}
+                  className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={todo.completed}
+                    onChange={() => toggleTodo(todo.id)}
+                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <div
+                      className={`text-xs font-medium ${
+                        todo.completed ? "line-through text-slate-400" : "text-slate-800"
+                      }`}
+                    >
+                      {todo.text}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{todo.time}</div>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{todo.time}</div>
                 </div>
+              ))
+            ) : (
+              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                No tasks scheduled yet.
               </div>
-            ))}
+            )}
           </div>
         </div>
 

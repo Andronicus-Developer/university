@@ -91,6 +91,23 @@
     "page_created": true
   },
   {
+    "id": "departments",
+    "label": "Departments",
+    "href": "/admin/departments",
+    "category": "Academics & Schedule",
+    "icon": "Layers",
+    "badge": null,
+    "description": "Academic departments, department heads, and faculty structural units.",
+    "school_types": [
+      "university",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 6,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true
+  },
+  {
     "id": "programs",
     "label": "Programs",
     "href": "/admin/programs",
@@ -100,11 +117,10 @@
     "description": "Academic degree programs, curricula, faculties, duration, and credit requirements.",
     "school_types": [
       "university",
-      "high_school",
-      "vocational_school"
+      "high_school"
     ],
     "is_active": true,
-    "display_order": 6,
+    "display_order": 7,
     "created_at": "2026-10-29T00:00:00.000Z",
     "page_created": true
   },

@@ -6,6 +6,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import {
+  formatSchoolMonogram,
+  resolveClientTenantContext,
+} from "@/lib/saas/useTenantInstitution";
+import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import {
   LayoutGrid,
   User,
   GraduationCap,
@@ -61,15 +66,16 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
-  const [studentName, setStudentName] = useState<string>("Ama Johnson");
-  const [studentNumber, setStudentNumber] = useState<string>("STU20260001");
-  const [programmeName, setProgrammeName] = useState<string>("BSc Computer Science");
-  const [studentLevel, setStudentLevel] = useState<string>("Level 100");
-  const [userEmail, setUserEmail] = useState<string>("ama.johnson@university.edu.gh");
-  const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("University Portal");
-  const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
+  const [studentName, setStudentName] = useState<string>("Student");
+  const [studentNumber, setStudentNumber] = useState<string>("");
+  const [programmeName, setProgrammeName] = useState<string>("");
+  const [studentLevel, setStudentLevel] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [academicYear, setAcademicYear] = useState<string>("");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -101,114 +107,86 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Load student profile & academic status from Supabase
+  // Load student profile, strict tenant school details, and academic status
   useEffect(() => {
+    let isMounted = true;
     async function loadStudentData() {
+      const tenantRes = await resolveClientTenantContext();
+      if (!isMounted) return;
+
+      if (tenantRes.status === "unauthenticated") {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
+
+      const activeUser = tenantRes.user;
+      setUserEmail(activeUser.email || "");
+      setStudentName(activeUser.user_metadata?.full_name || "Student");
+
+      if (tenantRes.status === "unlinked") {
+        setTenantError(tenantRes.error);
+        return;
+      }
+
+      setTenantError(null);
+      setSchoolName(tenantRes.schoolName);
+      setSchoolAbbr(tenantRes.schoolAbbr);
+      setSchoolLogo(tenantRes.schoolLogo);
+
       const supabase = createClient();
       const db = supabase as any;
+      const tenantSchoolId = tenantRes.schoolId;
 
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        let stuQuery = db
+          .from("students")
+          .select("*, profile:profile_id(full_name, email), programme:programme_id(name, code)")
+          .or(`profile_id.eq.${activeUser.id},id.eq.${activeUser.id}`);
+        if (tenantSchoolId) {
+          stuQuery = stuQuery.eq("school_id", tenantSchoolId);
+        }
+        const { data: stu } = await stuQuery.maybeSingle();
 
-        if (!user) {
-          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
-          return;
+        if (stu && isMounted) {
+          if (stu.profile?.full_name) setStudentName(stu.profile.full_name);
+          if (stu.student_number) setStudentNumber(stu.student_number);
+          if (stu.programme?.name) setProgrammeName(stu.programme.name);
+          if (stu.current_level) setStudentLevel(`Level ${stu.current_level}`);
         }
 
-        setUserEmail(user.email || "ama.johnson@university.edu.gh");
-
-          // Check students table
-          const { data: stu } = await db
-            .from("students")
-            .select("*, profile:profile_id(full_name, email), programme:programme_id(name, code)")
-            .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-            .maybeSingle();
-
-          if (stu) {
-            if (stu.profile?.full_name) setStudentName(stu.profile.full_name);
-            if (stu.student_number) setStudentNumber(stu.student_number);
-            if (stu.programme?.name) setProgrammeName(stu.programme.name);
-            if (stu.current_level) setStudentLevel(`Level ${stu.current_level}`);
-          } else {
-            // Fallback to first student if admin is browsing portal
-            const { data: firstStu } = await db
-              .from("students")
-              .select("*, profile:profile_id(full_name, email), programme:programme_id(name, code)")
-              .limit(1)
-              .maybeSingle();
-
-            if (firstStu) {
-              if (firstStu.profile?.full_name) setStudentName(firstStu.profile.full_name);
-              if (firstStu.student_number) setStudentNumber(firstStu.student_number);
-              if (firstStu.programme?.name) setProgrammeName(firstStu.programme.name);
-              if (firstStu.current_level) setStudentLevel(`Level ${firstStu.current_level}`);
-            }
+        try {
+          let notifQuery = db
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", activeUser.id)
+            .eq("is_read", false);
+          if (tenantSchoolId) {
+            notifQuery = notifQuery.eq("school_id", tenantSchoolId);
           }
-
-          // Fetch notifications count
-          try {
-            const { count } = await db
-              .from("notifications")
-              .select("*", { count: "exact", head: true })
-              .eq("is_read", false);
-            if (count !== null) setUnreadNotifications(count);
-          } catch {
-            // ignore
-          }
+          const { count } = await notifQuery;
+          if (count !== null && isMounted) setUnreadNotifications(count);
+        } catch {
+          // ignore
+        }
       } catch (err) {
         console.warn("Could not load student auth details:", err);
       }
 
-      try {
-        const { data: years } = await db
-          .from("academic_years")
-          .select("code, name, is_current")
-          .order("is_current", { ascending: false })
-          .limit(1);
+      if (tenantSchoolId) {
+        try {
+          const { data: years } = await db
+            .from("academic_years")
+            .select("code, name, is_current")
+            .eq("school_id", tenantSchoolId)
+            .order("is_current", { ascending: false })
+            .limit(1);
 
-        if (years && years.length > 0 && years[0]?.code) {
-          setAcademicYear(years[0].code);
-        }
-      } catch {
-        // keep fallback
-      }
-
-      // Fetch School / Institution Info directly from database
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.name) {
-            setSchoolName(data.name);
-            if (data.abbreviation) setSchoolAbbr(data.abbreviation);
-            if (data.logo_url) setSchoolLogo(data.logo_url);
-            return;
+          if (years && years.length > 0 && years[0]?.code && isMounted) {
+            setAcademicYear(years[0].code);
           }
+        } catch {
+          // non-blocking
         }
-      } catch {
-        // Fallback directly to supabase table
-      }
-
-      try {
-        const { data: settingRow } = await db
-          .from("system_settings")
-          .select("setting_value")
-          .eq("setting_key", "institution_info")
-          .maybeSingle();
-
-        if (settingRow?.setting_value?.name) {
-          setSchoolName(settingRow.setting_value.name);
-          if (settingRow.setting_value.abbreviation) {
-            setSchoolAbbr(settingRow.setting_value.abbreviation);
-          }
-          if (settingRow.setting_value.logo_url) {
-            setSchoolLogo(settingRow.setting_value.logo_url);
-          }
-        }
-      } catch (err) {
-        console.warn("Could not load institution info from DB:", err);
       }
     }
 
@@ -224,6 +202,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
 
     window.addEventListener("institution_updated", handleInstitutionUpdate);
     return () => {
+      isMounted = false;
       window.removeEventListener("institution_updated", handleInstitutionUpdate);
     };
   }, []);
@@ -299,7 +278,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             {schoolLogo ? (
               <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
             ) : (
-              (schoolAbbr || "AIT").slice(0, 4)
+              formatSchoolMonogram(schoolAbbr, schoolName)
             )}
           </div>
           <div className="flex flex-col min-w-0">
@@ -307,7 +286,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
               className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
-              {schoolName}
+              {schoolName || "—"}
             </span>
             <span className="text-[11px] font-medium text-blue-600">
               Student Portal
@@ -461,7 +440,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             {/* Academic Year Badge */}
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50/70 border border-blue-100 text-[11px] font-semibold text-blue-700">
               <Calendar className="h-3.5 w-3.5 text-blue-600" />
-              <span>AY: {academicYear}</span>
+              <span>AY: {academicYear || "Not Configured"}</span>
             </div>
 
             {/* Notification Bell */}
@@ -550,7 +529,15 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
         {/* Page Content Body */}
         <main className="flex-1 overflow-y-auto bg-[#F8FAFC] p-4 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
-            {children}
+            {tenantError ? (
+              <UnlinkedSchoolNotice
+                error={tenantError}
+                onSignOut={handleSignOut}
+                isSigningOut={isSigningOut}
+              />
+            ) : (
+              children
+            )}
           </div>
         </main>
       </div>

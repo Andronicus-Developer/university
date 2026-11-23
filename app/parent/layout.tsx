@@ -5,6 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
+import { resolveClientTenantContext } from "@/lib/saas/useTenantInstitution";
+import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import {
   LayoutGrid,
   FileCheck2,
@@ -35,10 +37,11 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   // Parent & Ward State
-  const [parentName, setParentName] = useState<string>("Mr. Kwame Mensah");
-  const [parentEmail, setUserEmail] = useState<string>("parent@schoolcloud.edu.gh");
+  const [parentName, setParentName] = useState<string>("Parent / Guardian");
+  const [parentEmail, setUserEmail] = useState<string>("");
   const [activeWardType, setActiveWardType] = useState<"high_school" | "vocational_school">("high_school");
-  const [schoolName, setSchoolName] = useState<string>("Institution Portal");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -66,25 +69,47 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Sync ward view changes across child components
+  // Load authenticated user and real tenant school info
   useEffect(() => {
+    let isMounted = true;
+    async function loadParentTenant() {
+      const tenantRes = await resolveClientTenantContext();
+      if (!isMounted) return;
+
+      if (tenantRes.status === "unauthenticated") {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
+
+      const activeUser = tenantRes.user;
+      setUserEmail(activeUser.email || "");
+      setParentName(activeUser.user_metadata?.full_name || "Parent / Guardian");
+
+      if (tenantRes.status === "unlinked") {
+        setTenantError(tenantRes.error);
+        return;
+      }
+
+      setTenantError(null);
+      setSchoolName(tenantRes.schoolName);
+    }
+
+    loadParentTenant();
+
     const handleWardSwitch = (e: any) => {
       if (e.detail?.wardType) {
         setActiveWardType(e.detail.wardType);
-        if (e.detail.wardType === "vocational_school") {
-          setSchoolName("Vocational Institute");
-        } else {
-          setSchoolName("Senior High School");
-        }
       }
     };
     window.addEventListener("switch_parent_ward_view", handleWardSwitch);
-    return () => window.removeEventListener("switch_parent_ward_view", handleWardSwitch);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("switch_parent_ward_view", handleWardSwitch);
+    };
   }, []);
 
   const handleToggleWard = (type: "high_school" | "vocational_school") => {
     setActiveWardType(type);
-    setSchoolName(type === "vocational_school" ? "Vocational Institute" : "Senior High School");
     window.dispatchEvent(new CustomEvent("switch_parent_ward_view", { detail: { wardType: type } }));
   };
 
@@ -154,7 +179,7 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
                 Parent & Guardian Portal
               </span>
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
-                {schoolName}
+                {schoolName || "—"}
               </span>
             </div>
           </Link>
@@ -338,7 +363,15 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
 
         {/* Scrollable Page Body */}
         <main className="flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-6 lg:p-8">
-          {children}
+          {tenantError ? (
+            <UnlinkedSchoolNotice
+              error={tenantError}
+              onSignOut={handleSignOut}
+              isSigningOut={isSigningOut}
+            />
+          ) : (
+            children
+          )}
         </main>
       </div>
 

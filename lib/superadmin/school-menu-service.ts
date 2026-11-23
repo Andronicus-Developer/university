@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  getSchoolTerminology,
+  normalizeSchoolType,
+} from "@/lib/academics/school-terminology";
 
 export type SchoolType = "university" | "high_school" | "vocational_school";
 
@@ -90,6 +94,19 @@ const DEFAULT_SCHOOL_MENU_ITEMS: SchoolSidebarMenuItem[] = [
 
   // Academics & Schedule
   {
+    id: "departments",
+    label: "Departments",
+    href: "/admin/departments",
+    category: "Academics & Schedule",
+    icon: "Layers",
+    badge: null,
+    description: "Academic departments, department heads, and faculty structural units.",
+    school_types: ["university", "vocational_school"],
+    is_active: true,
+    display_order: 6,
+    created_at: "2026-10-29T00:00:00.000Z",
+  },
+  {
     id: "programs",
     label: "Programs",
     href: "/admin/programs",
@@ -97,9 +114,9 @@ const DEFAULT_SCHOOL_MENU_ITEMS: SchoolSidebarMenuItem[] = [
     icon: "Award",
     badge: null,
     description: "Academic degree programs, curricula, faculties, duration, and credit requirements.",
-    school_types: ["university", "high_school", "vocational_school"],
+    school_types: ["university", "high_school"],
     is_active: true,
-    display_order: 6,
+    display_order: 7,
     created_at: "2026-10-29T00:00:00.000Z",
   },
   {
@@ -331,7 +348,7 @@ function writeLocalMenuFile(items: SchoolSidebarMenuItem[]): void {
  * Fetch all school sidebar menu items with optional filtering.
  */
 export async function getSchoolSidebarMenuItems(
-  filterSchoolType?: SchoolType,
+  filterSchoolType?: SchoolType | string,
   activeOnly?: boolean
 ): Promise<SchoolSidebarMenuItem[]> {
   let items: SchoolSidebarMenuItem[] = [];
@@ -364,6 +381,21 @@ export async function getSchoolSidebarMenuItems(
   if (items.length === 0) {
     items = DEFAULT_SCHOOL_MENU_ITEMS;
     writeLocalMenuFile(items);
+  } else if (
+    !items.some(
+      (it) =>
+        it.id === "departments" ||
+        String(it.href || "").toLowerCase() === "/admin/departments"
+    )
+  ) {
+    const deptItem = DEFAULT_SCHOOL_MENU_ITEMS.find((it) => it.id === "departments");
+    if (deptItem) {
+      const progIdx = items.findIndex((it) => it.id === "programs");
+      items =
+        progIdx !== -1
+          ? [...items.slice(0, progIdx), deptItem, ...items.slice(progIdx)]
+          : [...items, deptItem];
+    }
   }
 
   // Check which routes have existing pages on disk
@@ -385,11 +417,33 @@ export async function getSchoolSidebarMenuItems(
   }
 
   if (filterSchoolType) {
-    items = items.filter(
-      (item) =>
-        Array.isArray(item.school_types) &&
-        item.school_types.includes(filterSchoolType)
-    );
+    const normalizedType = normalizeSchoolType(filterSchoolType);
+    const terminology = getSchoolTerminology(normalizedType);
+
+    items = items
+      .filter((item) => {
+        const href = String(item.href || "").toLowerCase();
+        if (item.id === "departments" || href === "/admin/departments") {
+          return terminology.departments.visible;
+        }
+        if (item.id === "programs" || href === "/admin/programs") {
+          return terminology.programs.visible;
+        }
+        return (
+          Array.isArray(item.school_types) &&
+          item.school_types.includes(normalizedType)
+        );
+      })
+      .map((item) => {
+        const href = String(item.href || "").toLowerCase();
+        if (item.id === "departments" || href === "/admin/departments") {
+          return { ...item, label: terminology.departments.navLabel };
+        }
+        if (item.id === "programs" || href === "/admin/programs") {
+          return { ...item, label: terminology.programs.navLabel };
+        }
+        return item;
+      });
   }
 
   return items;

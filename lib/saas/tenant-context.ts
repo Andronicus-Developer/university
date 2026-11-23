@@ -135,9 +135,25 @@ export function resolveSchoolIdForUser(
     return { isSuperAdmin: false, schoolId: metaSchoolId, role };
   }
 
-  // 2. Check virtual DB profiles & university_system_admins if available
+  // 2. Check virtual DB profiles, school_memberships & university_system_admins if available
   const db = vdb || (globalThis as any).__UMS_VIRTUAL_DB__;
   if (db) {
+    if (Array.isArray(db.school_memberships)) {
+      const mem = db.school_memberships.find(
+        (m: any) =>
+          String(m.user_id) === String(user.id) &&
+          String(m.status || "active").toLowerCase() === "active" &&
+          m.school_id
+      );
+      if (mem?.school_id) {
+        return {
+          isSuperAdmin: false,
+          schoolId: String(mem.school_id),
+          role: mem.role || role,
+        };
+      }
+    }
+
     if (Array.isArray(db.university_system_admins)) {
       const mapping = db.university_system_admins.find(
         (m: any) => String(m.user_id) === String(user.id)
@@ -167,7 +183,7 @@ export function resolveSchoolIdForUser(
           return {
             isSuperAdmin: false,
             schoolId: String(profSchoolId),
-            role: profile.metadata?.role || role,
+            role: profile.role || profile.metadata?.role || role,
           };
         }
       }
@@ -183,7 +199,8 @@ export function resolveSchoolIdForUser(
  */
 export function resolveTenantContextFromHeaders(
   headers?: Headers | Record<string, string> | null,
-  cookies?: Array<{ name: string; value: string }>
+  cookies?: Array<{ name: string; value: string }>,
+  vdb?: Record<string, any[]>
 ): TenantContext {
   let authHeader = "";
   let explicitTenantHeader = "";
@@ -229,8 +246,8 @@ export function resolveTenantContextFromHeaders(
     };
   }
 
-  const { isSuperAdmin, schoolId, role } = resolveSchoolIdForUser(user);
-  const vdb = (globalThis as any).__UMS_VIRTUAL_DB__;
+  const activeVdb = vdb || (globalThis as any).__UMS_VIRTUAL_DB__;
+  const { isSuperAdmin, schoolId, role } = resolveSchoolIdForUser(user, activeVdb);
   const effectiveSchoolId = isSuperAdmin
     ? explicitTenantHeader || null
     : schoolId;
@@ -242,8 +259,8 @@ export function resolveTenantContextFromHeaders(
   let subscriptionPlan: "starter" | "professional" | "enterprise" =
     "enterprise";
 
-  if (effectiveSchoolId && vdb && Array.isArray(vdb.universities)) {
-    const schoolRow = vdb.universities.find(
+  if (effectiveSchoolId && activeVdb && Array.isArray(activeVdb.universities)) {
+    const schoolRow = activeVdb.universities.find(
       (u: any) => String(u.id) === String(effectiveSchoolId)
     );
     if (schoolRow) {
@@ -277,9 +294,29 @@ export function rowBelongsToTenant(
   tableName: string,
   row: Record<string, any>,
   tenantSchoolId: string | null,
-  currentUserId?: string | null
+  currentUserId?: string | null,
+  isSuperAdmin?: boolean
 ): boolean {
-  if (!tenantSchoolId) return true; // Super Admin with no tenant filter sees all
+  if (!tenantSchoolId) {
+    // Allow Super Admin (or explicitly trusted service-role callers) to see all rows
+    if (isSuperAdmin !== false) return true;
+    // Allow non-superadmin users with no school assignment to see only their own profile row
+    if (
+      tableName === "profiles" &&
+      currentUserId &&
+      String(row.id) === String(currentUserId)
+    ) {
+      return true;
+    }
+    if (
+      tableName !== "schools" &&
+      tableName !== "universities" &&
+      !TENANT_SCOPED_TABLES.has(tableName)
+    ) {
+      return true;
+    }
+    return false;
+  }
 
   // For the `universities` / `schools` table itself, only allow viewing their own school row
   if (tableName === "universities" || tableName === "schools") {

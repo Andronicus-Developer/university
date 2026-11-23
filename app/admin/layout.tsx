@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import React, { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import GlobalSearchBar from "@/app/components/GlobalSearchBar";
+import {
+  getSchoolTerminology,
+  normalizeSchoolType,
+} from "@/lib/academics/school-terminology";
 import {
   LayoutGrid,
   GraduationCap,
@@ -101,16 +105,20 @@ interface NavCategory {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   const [userName, setUserName] = useState<string>("System Admin");
-  const [userEmail, setUserEmail] = useState<string>("admin@university.edu.gh");
+  const [userEmail, setUserEmail] = useState<string>("");
   const [userRole, setUserRole] = useState<string>("System Administrator");
-  const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
+  const [academicYear, setAcademicYear] = useState<string>("");
   const [schoolName, setSchoolName] = useState<string>("");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
-  const [schoolType, setSchoolType] = useState<string>("university");
+  const [schoolType, setSchoolType] = useState<string>("");
+  const [tenantLoaded, setTenantLoaded] = useState<boolean>(false);
+  const [isSuperAdminTenant, setIsSuperAdminTenant] = useState<boolean>(false);
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [dynamicCategories, setDynamicCategories] = useState<NavCategory[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
@@ -180,7 +188,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         if (!isMounted) return;
 
-        setUserEmail(currentUser.email || "admin@university.edu.gh");
+        setUserEmail(currentUser.email || "");
         const metaName = currentUser.user_metadata?.full_name || "System Administrator";
         setUserName(metaName);
 
@@ -195,6 +203,53 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 .replace(/\b\w/g, (c: string) => c.toUpperCase());
         setUserRole(formattedRole);
 
+        // Fetch Tenant School / Institution Info FIRST so every subsequent query is scoped to school_id
+        let currentSchoolType = "";
+        let tenantSchoolId: string | null = null;
+        try {
+          const res = await fetch("/api/settings/institution");
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            if (isMounted) {
+              setTenantError(
+                data?.error ||
+                  "Your account is not linked to a registered school. Contact your Super Administrator."
+              );
+            }
+            return;
+          }
+
+          tenantSchoolId = data?.school_id || data?.id || null;
+          if (!tenantSchoolId && !data?.is_super_admin) {
+            if (isMounted) {
+              setTenantError(
+                "Your account is not linked to a registered school. Contact your Super Administrator."
+              );
+            }
+            return;
+          }
+
+          if (isMounted) {
+            setTenantError(null);
+            setIsSuperAdminTenant(Boolean(data?.is_super_admin));
+            setTenantLoaded(true);
+            if (data?.name) setSchoolName(data.name);
+            if (data?.abbreviation) setSchoolAbbr(data.abbreviation);
+            if (data?.logo_url) setSchoolLogo(data.logo_url);
+            if (data?.school_type) {
+              currentSchoolType = normalizeSchoolType(data.school_type);
+              setSchoolType(currentSchoolType);
+            }
+          }
+        } catch {
+          if (isMounted) {
+            setTenantError(
+              "Unable to verify your school assignment. Please refresh or contact support."
+            );
+          }
+          return;
+        }
+
         try {
           const { count } = await (supabase as any)
             .from("notifications")
@@ -206,89 +261,52 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           // ignore
         }
 
-        try {
-          const { data: years } = await (supabase as any)
-            .from("academic_years")
-            .select("code, name, is_current")
-            .order("is_current", { ascending: false })
-            .limit(1);
-
-          if (years && years.length > 0 && (years[0] as any)?.code && isMounted) {
-            setAcademicYear((years[0] as any).code);
-          }
-        } catch {
-          // Fallback default
-        }
-
-        // Fetch Tenant School / Institution Info from SaaS tenant endpoint
-        let currentSchoolType = "university";
-        let loadedFromTenantApi = false;
-        try {
-          const res = await fetch("/api/settings/institution");
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.name && isMounted) {
-              loadedFromTenantApi = true;
-              setSchoolName(data.name);
-              if (data.abbreviation) setSchoolAbbr(data.abbreviation);
-              if (data.logo_url) setSchoolLogo(data.logo_url);
-              if (data.school_type) {
-                currentSchoolType = data.school_type;
-                setSchoolType(data.school_type);
-              }
-            }
-          }
-        } catch {
-          // Fallback directly to supabase table
-        }
-
-        // Fetch dynamic configurable school sidebar menu items for this school's type
-        try {
-          const resMenu = await fetch(`/api/admin/sidebar-menu?school_type=${currentSchoolType}`);
-          if (resMenu.ok) {
-            const menuItems = await resMenu.json();
-            if (Array.isArray(menuItems) && menuItems.length > 0 && isMounted) {
-              const grouped: Record<string, NavCategory> = {};
-              for (const m of menuItems) {
-                const catTitle = m.category || "Core Administration";
-                if (!grouped[catTitle]) {
-                  grouped[catTitle] = { title: catTitle, items: [] };
-                }
-                const IconC = ICON_MAP[m.icon] || Boxes;
-                grouped[catTitle].items.push({
-                  id: m.id,
-                  label: m.label,
-                  href: m.href,
-                  icon: IconC,
-                  badge: m.badge || undefined,
-                });
-              }
-              setDynamicCategories(Object.values(grouped));
-            }
-          }
-        } catch (menuErr) {
-          console.warn("Could not load dynamic school sidebar menu:", menuErr);
-        }
-
-        if (!loadedFromTenantApi && isMounted) {
+        if (tenantSchoolId) {
           try {
-            const { data: settingRow } = await (supabase as any)
-              .from("system_settings")
-              .select("setting_value")
-              .eq("setting_key", "institution_info")
-              .maybeSingle();
+            const { data: years } = await (supabase as any)
+              .from("academic_years")
+              .select("code, name, is_current")
+              .eq("school_id", tenantSchoolId)
+              .order("is_current", { ascending: false })
+              .limit(1);
 
-            if (settingRow?.setting_value?.name && isMounted) {
-              setSchoolName(settingRow.setting_value.name);
-              if (settingRow.setting_value.abbreviation) {
-                setSchoolAbbr(settingRow.setting_value.abbreviation);
-              }
-              if (settingRow.setting_value.logo_url) {
-                setSchoolLogo(settingRow.setting_value.logo_url);
+            if (years && years.length > 0 && (years[0] as any)?.code && isMounted) {
+              setAcademicYear((years[0] as any).code);
+            }
+          } catch {
+            // Academic year not configured yet
+          }
+        }
+
+        // Fetch dynamic configurable school sidebar menu items once school_type is resolved
+        if (currentSchoolType) {
+          try {
+            const resMenu = await fetch(
+              `/api/admin/sidebar-menu?school_type=${encodeURIComponent(currentSchoolType)}`
+            );
+            if (resMenu.ok) {
+              const menuItems = await resMenu.json();
+              if (Array.isArray(menuItems) && menuItems.length > 0 && isMounted) {
+                const grouped: Record<string, NavCategory> = {};
+                for (const m of menuItems) {
+                  const catTitle = m.category || "Core Administration";
+                  if (!grouped[catTitle]) {
+                    grouped[catTitle] = { title: catTitle, items: [] };
+                  }
+                  const IconC = ICON_MAP[m.icon] || Boxes;
+                  grouped[catTitle].items.push({
+                    id: m.id,
+                    label: m.label,
+                    href: m.href,
+                    icon: IconC,
+                    badge: m.badge || undefined,
+                  });
+                }
+                setDynamicCategories(Object.values(grouped));
               }
             }
-          } catch (err) {
-            console.warn("Could not load institution info from DB:", err);
+          } catch (menuErr) {
+            console.warn("Could not load dynamic school sidebar menu:", menuErr);
           }
         }
       } catch (err) {
@@ -319,6 +337,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     };
   }, []);
 
+  // Enforce school_type route eligibility (hide /admin/departments for High School, /admin/programs for Vocational)
+  useEffect(() => {
+    if (!tenantLoaded || isSuperAdminTenant) return;
+    const term = getSchoolTerminology(schoolType);
+    if (pathname === "/admin/departments" && !term.departments.visible) {
+      router.replace(term.departments.redirectWhenHidden);
+      return;
+    }
+    if (
+      (pathname === "/admin/programs" || pathname === "/admin/programmes") &&
+      !term.programs.visible
+    ) {
+      router.replace(term.programs.redirectWhenHidden);
+    }
+  }, [tenantLoaded, isSuperAdminTenant, schoolType, pathname, router]);
+
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
@@ -343,6 +377,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     {
       title: "Academics & Schedule",
       items: [
+        { id: "departments", label: "Departments", href: "/admin/departments", icon: Layers },
         { id: "programs", label: "Programs", href: "/admin/programs", icon: Award },
         { id: "courses", label: "Courses & Subjects", href: "/admin/courses", icon: BookOpen },
         { id: "routine", label: "Class Routine", href: "/admin/routine", icon: CalendarDays },
@@ -377,6 +412,38 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     },
   ];
 
+  const resolvedCategories = useMemo(() => {
+    const base = dynamicCategories.length > 0 ? dynamicCategories : navCategories;
+    if (isSuperAdminTenant || !schoolType) return base;
+    const term = getSchoolTerminology(schoolType);
+    return base
+      .map((group) => ({
+        ...group,
+        items: (group.items || [])
+          .filter((item) => {
+            if (item.id === "departments" || item.href === "/admin/departments") {
+              return term.departments.visible;
+            }
+            if (item.id === "programs" || item.href === "/admin/programs") {
+              return term.programs.visible;
+            }
+            return true;
+          })
+          .map((item) => {
+            if (item.id === "departments" || item.href === "/admin/departments") {
+              return { ...item, label: term.departments.navLabel };
+            }
+            if (item.id === "programs" || item.href === "/admin/programs") {
+              return { ...item, label: term.programs.navLabel };
+            }
+            return item;
+          }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [dynamicCategories, navCategories, isSuperAdminTenant, schoolType]);
+
+  const normalizedDisplayType = schoolType ? normalizeSchoolType(schoolType) : "";
+
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white select-none">
       {/* Brand Header */}
@@ -391,7 +458,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 onError={() => setSchoolLogo("")}
               />
             ) : (
-              (schoolAbbr || "AIT").slice(0, 4)
+              (
+                schoolAbbr ||
+                schoolName
+                  .split(/\s+/)
+                  .map((w) => w[0] || "")
+                  .join("") ||
+                "—"
+              )
+                .toUpperCase()
+                .slice(0, 4)
             )}
           </div>
           <div className="flex flex-col min-w-0">
@@ -399,16 +475,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
-              {schoolName}
+              {schoolName || "—"}
             </span>
             <span className="text-[10.5px] font-semibold text-blue-600 flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               <span>
-                {schoolType === "vocational_school"
+                {normalizedDisplayType === "vocational_school"
                   ? "Vocational SaaS Tenant"
-                  : schoolType === "high_school"
+                  : normalizedDisplayType === "high_school"
                   ? "High School SaaS Tenant"
-                  : "University SaaS Tenant"}
+                  : normalizedDisplayType === "university"
+                  ? "University SaaS Tenant"
+                  : "Tenant Portal"}
               </span>
             </span>
           </div>
@@ -425,7 +503,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       {/* Navigation Links (Configurable Dynamic Nav, Scrollable) */}
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-200">
-        {(dynamicCategories.length > 0 ? dynamicCategories : navCategories).map((group, groupIdx) => (
+        {resolvedCategories.map((group, groupIdx) => (
           <div key={groupIdx} className="space-y-1">
             <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               {group.title}
@@ -570,20 +648,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* Academic Year Badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 font-semibold shadow-2xs">
               <Calendar className="h-3.5 w-3.5 text-slate-500" />
-              <span>Academic Year: {academicYear}</span>
+              <span>Academic Year: {academicYear || "Not Configured"}</span>
               <ChevronDown className="h-3 w-3 text-slate-400" />
             </div>
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
-              {/* Region Flag */}
-              <div
-                className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-sm cursor-default"
-                title="Ghana University Region"
-              >
-                🇬🇭
-              </div>
-
               {/* Notifications */}
               <Link
                 href="/admin/settings#notifications"
@@ -690,7 +760,34 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Page Content Viewport */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          {children}
+          {tenantError ? (
+            <div className="max-w-lg mx-auto mt-12 rounded-2xl bg-white border border-rose-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center gap-3 text-rose-700">
+                <div className="h-10 w-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Account Not Linked to a School
+                  </h2>
+                  <p className="text-xs text-slate-500">Multi-Tenant Access Verification</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed">{tenantError}</p>
+              <div className="pt-2 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

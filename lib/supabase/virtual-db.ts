@@ -9,6 +9,7 @@ import {
   SCHOOL_A_ID,
   SCHOOL_B_ID,
   SCHOOL_C_ID,
+  TENANT_SCOPED_TABLES,
   resolveTenantContextFromHeaders,
   rowBelongsToTenant,
   stampRowWithTenant,
@@ -1344,32 +1345,52 @@ export async function handleVirtualPostgrestRequest(
     db[tableName] = [];
   }
 
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const authBearer = (reqHeaders.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const apiKeyHeader = (reqHeaders.get("apikey") || "").trim();
+  const isServiceRoleCall =
+    Boolean(serviceKey) && (authBearer === serviceKey || apiKeyHeader === serviceKey);
+
   // Resolve active SaaS Tenant Context (from reqHeaders or active Next.js request cookies/headers)
-  let tenantCtx: TenantContext = resolveTenantContextFromHeaders(reqHeaders);
-  if (!tenantCtx.isAuthenticated) {
+  let tenantCtx: TenantContext = resolveTenantContextFromHeaders(reqHeaders, undefined, db);
+  if (!isServiceRoleCall && !tenantCtx.isAuthenticated) {
     try {
       const nextHeadersMod = await import("next/headers");
       const activeHeaders = await nextHeadersMod.headers();
       const activeCookies = await nextHeadersMod.cookies();
       const cookieList = activeCookies.getAll().map((c) => ({ name: c.name, value: c.value }));
-      tenantCtx = resolveTenantContextFromHeaders(activeHeaders, cookieList);
+      tenantCtx = resolveTenantContextFromHeaders(activeHeaders, cookieList, db);
     } catch {
       // Outside Next.js request context (e.g. background script)
     }
   }
 
+  const isPrivilegedCaller = isServiceRoleCall || tenantCtx.isSuperAdmin;
   const activeTenantSchoolId =
-    tenantCtx.isAuthenticated && !tenantCtx.isSuperAdmin
+    isPrivilegedCaller
+      ? reqHeaders.get("x-tenant-school-id") || null
+      : tenantCtx.isAuthenticated
       ? tenantCtx.schoolId
       : reqHeaders.get("x-tenant-school-id") || null;
+
+  const isTenantBoundTable =
+    tableName === "schools" ||
+    tableName === "universities" ||
+    TENANT_SCOPED_TABLES.has(tableName);
+  const isUnlinkedTenantUser =
+    !isPrivilegedCaller && tenantCtx.isAuthenticated && !activeTenantSchoolId && isTenantBoundTable;
 
   const selectParam = url.searchParams.get("select");
 
   // 2. GET or HEAD (Enforce Tenant Isolation: School A users ONLY see School A rows)
   if (method === "GET" || method === "HEAD") {
-    const tenantScopedRows = activeTenantSchoolId
+    const tenantScopedRows = isUnlinkedTenantUser
+      ? tableName === "profiles" && tenantCtx.userId
+        ? db[tableName].filter((row) => String(row.id) === String(tenantCtx.userId))
+        : []
+      : activeTenantSchoolId
       ? db[tableName].filter((row) =>
-          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId, isPrivilegedCaller)
         )
       : db[tableName];
 
@@ -1424,6 +1445,12 @@ export async function handleVirtualPostgrestRequest(
 
   // 3. POST (Insert or Upsert — Automatically stamps new rows with caller's `school_id`)
   if (method === "POST") {
+    if (isUnlinkedTenantUser) {
+      return new Response(
+        JSON.stringify({ error: "Account is not linked to any school tenant." }),
+        { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } }
+      );
+    }
     let payload: any = {};
     if (bodyText) {
       try {
@@ -1446,7 +1473,7 @@ export async function handleVirtualPostgrestRequest(
       if (isUpsert && conflictCols.length > 0) {
         const existingIdx = db[tableName].findIndex(
           (r) =>
-            rowBelongsToTenant(tableName, r, activeTenantSchoolId, tenantCtx.userId) &&
+            rowBelongsToTenant(tableName, r, activeTenantSchoolId, tenantCtx.userId, isPrivilegedCaller) &&
             conflictCols.every((col) => item[col] !== undefined && String(r[col]) === String(item[col]))
         );
 
@@ -1506,6 +1533,12 @@ export async function handleVirtualPostgrestRequest(
 
   // 4. PATCH / PUT (Update — Strictly isolated to caller's tenant school)
   if (method === "PATCH" || method === "PUT") {
+    if (isUnlinkedTenantUser) {
+      return new Response(
+        JSON.stringify({ error: "Account is not linked to any school tenant." }),
+        { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } }
+      );
+    }
     let patchData: Row = {};
     if (bodyText) {
       try {
@@ -1517,7 +1550,7 @@ export async function handleVirtualPostgrestRequest(
 
     const tenantScopedRows = activeTenantSchoolId
       ? db[tableName].filter((row) =>
-          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId, isPrivilegedCaller)
         )
       : db[tableName];
 
@@ -1568,9 +1601,15 @@ export async function handleVirtualPostgrestRequest(
 
   // 5. DELETE (Strictly isolated to caller's tenant school)
   if (method === "DELETE") {
+    if (isUnlinkedTenantUser) {
+      return new Response(
+        JSON.stringify({ error: "Account is not linked to any school tenant." }),
+        { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } }
+      );
+    }
     const tenantScopedRows = activeTenantSchoolId
       ? db[tableName].filter((row) =>
-          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId)
+          rowBelongsToTenant(tableName, row, activeTenantSchoolId, tenantCtx.userId, isPrivilegedCaller)
         )
       : db[tableName];
 

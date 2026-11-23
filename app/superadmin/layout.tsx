@@ -33,6 +33,7 @@ import {
   X,
   Loader2,
   ExternalLink,
+  Award,
 } from "lucide-react";
 
 interface SuperAdminLayoutProps {
@@ -186,7 +187,8 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         },
         { id: "users", label: "Users & Directory", href: "/superadmin/users", icon: Users },
         { id: "roles", label: "Roles & Permissions", href: "/superadmin/roles", icon: UserCheck },
-        { id: "scopes", label: "Department & Campus Scopes", href: "/superadmin/scopes", icon: Layers },
+        { id: "departments", label: "Departments", href: "/super-admin/departments", icon: Layers },
+        { id: "programs", label: "Programs", href: "/super-admin/programs", icon: Award },
       ],
     },
     {
@@ -252,7 +254,10 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
             {group.items.map((item) => {
               const Icon = item.icon;
               const isActive =
-                pathname === item.href || (item.id === "dashboard" && pathname === "/superadmin");
+                pathname === item.href ||
+                (item.id === "dashboard" && pathname === "/superadmin") ||
+                (item.id === "departments" && pathname === "/superadmin/departments") ||
+                (item.id === "programs" && pathname === "/superadmin/programs");
 
               return (
                 <Link

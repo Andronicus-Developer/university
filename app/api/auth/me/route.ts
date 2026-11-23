@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
-import { getAdminClient } from "@/lib/supabase/admin";
+import { getAdminClient, createDirectAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,14 +89,85 @@ export async function GET(request: NextRequest) {
       // fallback to metadata roles
     }
 
+    let resolvedSchoolId: string | null =
+      user.app_metadata?.school_id ||
+      user.app_metadata?.university_id ||
+      user.user_metadata?.school_id ||
+      user.user_metadata?.university_id ||
+      null;
+
+    if (!isRootSuperAdmin) {
+      try {
+        const directAdmin = createDirectAdminClient();
+        const { data: liveProf } = await (directAdmin as any)
+          .from("profiles")
+          .select("school_id, university_id, role")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (liveProf?.school_id || liveProf?.university_id) {
+          resolvedSchoolId = String(liveProf.school_id || liveProf.university_id);
+        }
+        if (liveProf?.role) roles.push(liveProf.role);
+
+        if (!resolvedSchoolId) {
+          const { data: liveMem } = await (directAdmin as any)
+            .from("school_memberships")
+            .select("school_id, role")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (liveMem?.school_id) {
+            resolvedSchoolId = String(liveMem.school_id);
+          }
+          if (liveMem?.role) roles.push(liveMem.role);
+        }
+
+        if (!resolvedSchoolId) {
+          const { data: liveStaffProf } = await (directAdmin as any)
+            .from("staff_profiles")
+            .select("school_id")
+            .eq("user_id", user.id)
+            .limit(1)
+            .maybeSingle();
+          if (liveStaffProf?.school_id) {
+            resolvedSchoolId = String(liveStaffProf.school_id);
+          }
+        }
+      } catch {}
+
+      if (!resolvedSchoolId) {
+        try {
+          const adminClient = getAdminClient();
+          const { data: vProf } = await (adminClient as any)
+            .from("profiles")
+            .select("school_id, university_id, metadata")
+            .eq("id", user.id)
+            .maybeSingle();
+          const candidate =
+            vProf?.school_id ||
+            vProf?.university_id ||
+            vProf?.metadata?.school_id ||
+            vProf?.metadata?.university_id;
+          if (candidate) resolvedSchoolId = String(candidate);
+        } catch {}
+      }
+    }
+
+    roles = Array.from(new Set(roles.filter(Boolean)));
+
     const isSystemAdmin =
       roles.includes("system_admin") ||
+      roles.includes("school_admin") ||
       roles.includes("admin") ||
       roles.includes("superadmin") ||
       normalizedEmail === "admin@university.edu.gh";
 
     let targetDashboard = "/admin/dashboard";
-    if (isSystemAdmin) {
+    if (roles.includes("superadmin") || isRootSuperAdmin) {
+      targetDashboard = "/superadmin/dashboard";
+    } else if (isSystemAdmin) {
       targetDashboard = "/admin/dashboard";
     } else if (
       roles.includes("finance_officer") ||
@@ -120,7 +191,10 @@ export async function GET(request: NextRequest) {
         id: user.id,
         email: user.email,
         full_name: user.user_metadata?.full_name || user.email,
+        school_id: resolvedSchoolId,
+        user_metadata: user.user_metadata || {},
       },
+      school_id: resolvedSchoolId,
       roles,
       isSystemAdmin,
       targetDashboard,

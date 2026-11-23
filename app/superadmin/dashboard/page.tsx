@@ -46,6 +46,7 @@ import {
   type SuperAdminStats,
   AVAILABLE_UNIVERSITY_ROLES,
 } from "@/lib/superadmin/service";
+import { InitialSchoolAdminFields } from "@/components/superadmin/InitialSchoolAdminFields";
 
 export default function SuperAdminDashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -62,12 +63,14 @@ export default function SuperAdminDashboardPage() {
     activeUniversities: 0,
     totalSystemAdmins: 0,
     totalCampuses: 0,
+    totalUsers: 0,
     totalStudents: 0,
     totalLecturers: 0,
     totalStaff: 0,
     systemStatus: "healthy",
     dbLatencyMs: 1.2,
   });
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   // Data lists
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
@@ -87,15 +90,22 @@ export default function SuperAdminDashboardPage() {
   const [univCode, setUnivCode] = useState("");
   const [univShortName, setUnivShortName] = useState("");
   const [univSchoolType, setUnivSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
-  const [univCountry, setUnivCountry] = useState("Ghana");
-  const [univCity, setUnivCity] = useState("Accra");
+  const [univCountry, setUnivCountry] = useState("");
+  const [univCity, setUnivCity] = useState("");
   const [univAddress, setUnivAddress] = useState("");
   const [univEmail, setUnivEmail] = useState("");
   const [univPhone, setUnivPhone] = useState("");
   const [univWebsite, setUnivWebsite] = useState("");
-  const [univCurrency, setUnivCurrency] = useState("GHS");
+  const [univCurrency, setUnivCurrency] = useState("USD");
   const [univEstablishedYear, setUnivEstablishedYear] = useState("");
   const [univStatus, setUnivStatus] = useState<"active" | "inactive" | "maintenance" | "suspended" | "deleted">("active");
+
+  // Initial School Admin fields
+  const [univCreateInitialAdmin, setUnivCreateInitialAdmin] = useState(true);
+  const [univInitAdminName, setUnivInitAdminName] = useState("");
+  const [univInitAdminEmail, setUnivInitAdminEmail] = useState("");
+  const [univInitAdminPassword, setUnivInitAdminPassword] = useState("");
+  const [univInitAdminPhone, setUnivInitAdminPhone] = useState("");
 
   // Governance & Quota fields
   const [univFullAccess, setUnivFullAccess] = useState(true);
@@ -117,15 +127,21 @@ export default function SuperAdminDashboardPage() {
     setUnivCode("");
     setUnivShortName("");
     setUnivSchoolType("university");
-    setUnivCountry("Ghana");
-    setUnivCity("Accra");
+    setUnivCountry("");
+    setUnivCity("");
     setUnivAddress("");
     setUnivEmail("");
     setUnivPhone("");
     setUnivWebsite("");
-    setUnivCurrency("GHS");
+    setUnivCurrency("USD");
     setUnivEstablishedYear("");
     setUnivStatus("active");
+
+    setUnivCreateInitialAdmin(true);
+    setUnivInitAdminName("");
+    setUnivInitAdminEmail("");
+    setUnivInitAdminPassword("");
+    setUnivInitAdminPhone("");
 
     setUnivFullAccess(true);
     setUnivHasUserLimit(false);
@@ -209,13 +225,14 @@ export default function SuperAdminDashboardPage() {
       // Non-blocking
     }
 
+    setStatsError(null);
     try {
       const [statsRes, univRes, adminRes, auditRes, commRes] = await Promise.all([
-        fetch("/api/superadmin/stats"),
-        fetch("/api/superadmin/schools"),
-        fetch("/api/superadmin/system-admins"),
-        fetch("/api/superadmin/audit"),
-        fetch("/api/superadmin/communications"),
+        fetch("/api/superadmin/stats", { cache: "no-store" }),
+        fetch("/api/superadmin/schools", { cache: "no-store" }),
+        fetch("/api/superadmin/system-admins", { cache: "no-store" }),
+        fetch("/api/superadmin/audit", { cache: "no-store" }),
+        fetch("/api/superadmin/communications", { cache: "no-store" }),
       ]);
 
       let loadedUnivs: UniversityItem[] = [];
@@ -236,16 +253,17 @@ export default function SuperAdminDashboardPage() {
       }
       if (statsRes.ok) {
         const statsData = await statsRes.json();
-        if (loadedUnivs.length === 0) {
-          statsData.totalUniversities = 0;
-          statsData.activeUniversities = 0;
-          statsData.totalCampuses = 0;
-          statsData.totalSystemAdmins = 0;
-          statsData.totalStudents = 0;
-          statsData.totalLecturers = 0;
-          statsData.totalStaff = 0;
-        }
         setStats(statsData);
+        if (Array.isArray(statsData?.queryErrors) && statsData.queryErrors.length > 0) {
+          setStatsError(
+            `Some live telemetry queries reported errors: ${statsData.queryErrors.join("; ")}`
+          );
+        }
+      } else {
+        const errBody = await statsRes.json().catch(() => ({}));
+        const msg = errBody?.error || `Failed to load platform stats (HTTP ${statsRes.status})`;
+        console.error("Super Admin stats fetch failed:", msg);
+        setStatsError(msg);
       }
       if (auditRes.ok) {
         setAuditLogs(await auditRes.json());
@@ -330,6 +348,17 @@ export default function SuperAdminDashboardPage() {
       return;
     }
 
+    if (univCreateInitialAdmin) {
+      if (!univInitAdminName.trim() || !univInitAdminEmail.trim()) {
+        setUnivError("Please provide the initial School System Admin full name and email.");
+        return;
+      }
+      if (!univInitAdminPassword || univInitAdminPassword.length < 6) {
+        setUnivError("School System Admin password must be at least 6 characters.");
+        return;
+      }
+    }
+
     setIsSubmittingUniv(true);
     try {
       const payload = {
@@ -353,6 +382,17 @@ export default function SuperAdminDashboardPage() {
         max_departments: !univFullAccess && univHasDeptLimit && univMaxDepartments ? Number(univMaxDepartments) : null,
         max_roles: !univFullAccess && univHasRoleLimit && univMaxRoles ? Number(univMaxRoles) : null,
         allowed_roles: univFullAccess ? AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code) : univAllowedRoles,
+        ...(univCreateInitialAdmin
+          ? {
+              admin: {
+                full_name: univInitAdminName.trim(),
+                email: univInitAdminEmail.trim().toLowerCase(),
+                password: univInitAdminPassword,
+                phone: univInitAdminPhone.trim() || undefined,
+                role: "system_admin",
+              },
+            }
+          : {}),
       };
 
       const res = await fetch("/api/superadmin/schools", {
@@ -533,6 +573,12 @@ export default function SuperAdminDashboardPage() {
       </div>
 
       {/* 4. Top 4 Metric Cards (Total Universities, System Admins, Campuses, Global Users) */}
+      {statsError && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+          <span>{statsError}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Universities */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
@@ -542,7 +588,7 @@ export default function SuperAdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalUniversities}
+                {loading ? "…" : stats.totalUniversities}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Total Schools
@@ -573,7 +619,7 @@ export default function SuperAdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalSystemAdmins}
+                {loading ? "…" : stats.totalSystemAdmins}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 System Administrators
@@ -602,7 +648,7 @@ export default function SuperAdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalCampuses}
+                {loading ? "…" : stats.totalCampuses}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Campuses & Scopes
@@ -615,7 +661,7 @@ export default function SuperAdminDashboardPage() {
               <strong className="text-slate-400">0</strong>
             </span>
             <Link
-              href="/superadmin/scopes"
+              href="/super-admin/departments"
               className="text-blue-600 font-semibold hover:text-blue-700 hover:underline"
             >
               View all
@@ -631,7 +677,7 @@ export default function SuperAdminDashboardPage() {
             </div>
             <div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {stats.totalStudents + stats.totalLecturers + stats.totalStaff}
+                {loading ? "…" : stats.totalUsers}
               </div>
               <div className="text-xs font-semibold text-slate-500 mt-1">
                 Global Platform Users
@@ -1491,10 +1537,23 @@ export default function SuperAdminDashboardPage() {
                       type="text"
                       value={univAddress}
                       onChange={(e) => setUnivAddress(e.target.value)}
-                      placeholder="Main Campus Boulevard, Cantonments, Accra"
+                      placeholder="Main Campus Boulevard"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
+
+                  <InitialSchoolAdminFields
+                    enabled={univCreateInitialAdmin}
+                    onToggleEnabled={setUnivCreateInitialAdmin}
+                    fullName={univInitAdminName}
+                    onFullNameChange={setUnivInitAdminName}
+                    email={univInitAdminEmail}
+                    onEmailChange={setUnivInitAdminEmail}
+                    password={univInitAdminPassword}
+                    onPasswordChange={setUnivInitAdminPassword}
+                    phone={univInitAdminPhone}
+                    onPhoneChange={setUnivInitAdminPhone}
+                  />
                 </div>
               )}
 

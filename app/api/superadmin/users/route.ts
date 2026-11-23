@@ -5,9 +5,13 @@ import {
   updateDirectoryUser,
   deleteDirectoryUser,
 } from "@/lib/superadmin/service";
+import { verifySuperAdminRequest, mapSuperAdminErrorStatus } from "@/lib/superadmin/route-utils";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const auth = await verifySuperAdminRequest(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const users = await getDirectoryUsers();
     return NextResponse.json(users);
   } catch (error: any) {
@@ -21,6 +25,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await verifySuperAdminRequest(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const body = await request.json();
     const { full_name, email, password, phone, role, school_id, account_status } = body;
 
@@ -60,13 +67,16 @@ export async function POST(request: NextRequest) {
     console.error("Error creating directory user:", error);
     return NextResponse.json(
       { error: error.message || "Failed to provision user" },
-      { status: 500 }
+      { status: mapSuperAdminErrorStatus(error) }
     );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await verifySuperAdminRequest(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -83,13 +93,16 @@ export async function PATCH(request: NextRequest) {
     console.error("Error updating directory user:", error);
     return NextResponse.json(
       { error: error.message || "Failed to update user" },
-      { status: 400 }
+      { status: mapSuperAdminErrorStatus(error) }
     );
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = await verifySuperAdminRequest(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const { searchParams } = new URL(request.url);
     let id = searchParams.get("id");
 
@@ -113,7 +126,7 @@ export async function DELETE(request: NextRequest) {
     console.error("Error deleting directory user:", error);
     return NextResponse.json(
       { error: error.message || "Failed to delete user" },
-      { status: 400 }
+      { status: mapSuperAdminErrorStatus(error) }
     );
   }
 }

@@ -6,6 +6,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import {
+  formatSchoolMonogram,
+  resolveClientTenantContext,
+} from "@/lib/saas/useTenantInstitution";
+import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import {
   LayoutGrid,
   BookOpen,
   Users,
@@ -47,13 +52,14 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
 
   // Institution & User Info
   const [userName, setUserName] = useState<string>("Teacher / Instructor");
-  const [userEmail, setUserEmail] = useState<string>("teacher@schoolcloud.edu.gh");
-  const [schoolName, setSchoolName] = useState<string>("School Portal");
-  const [schoolAbbr, setSchoolAbbr] = useState<string>("ASHS");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [schoolType, setSchoolType] = useState<"high_school" | "vocational_school">("high_school");
-  const [activeTerm, setActiveTerm] = useState<string>("Term 2 • 2026 / 2027");
-  const [unreadCount, setUnreadCount] = useState<number>(3);
+  const [activeTerm, setActiveTerm] = useState<string>("");
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -85,53 +91,62 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
 
   // Load tenant profile & user details
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
-      // 1. Fetch Tenant Institution Info
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const tenant = await res.json();
-          if (tenant?.name) setSchoolName(tenant.name);
-          if (tenant?.abbreviation) setSchoolAbbr(tenant.abbreviation);
-          if (tenant?.logo_url) setSchoolLogo(tenant.logo_url);
-          if (tenant?.school_type === "vocational_school" || tenant?.school_type === "high_school") {
-            setSchoolType(tenant.school_type);
-          }
-        }
-      } catch (err) {
-        console.warn("Could not load tenant institution:", err);
+      const tenantRes = await resolveClientTenantContext();
+      if (!isMounted) return;
+
+      if (tenantRes.status === "unauthenticated") {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
       }
 
-      // 2. Fetch User Profile
-      try {
-        const supabase = createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+      const activeUser = tenantRes.user;
+      setUserEmail(activeUser.email || "");
+      setUserName(activeUser.user_metadata?.full_name || "Teacher / Instructor");
 
-        if (user) {
-          setUserEmail(user.email || "teacher@schoolcloud.edu.gh");
-          const fullName =
-            user.user_metadata?.full_name ||
-            (schoolType === "vocational_school" ? "Master Instructor Kwesi" : "Mr. Kwabena Boateng");
-          setUserName(fullName);
-        }
-      } catch (err) {
-        console.warn("Could not load teacher profile:", err);
+      if (tenantRes.status === "unlinked") {
+        setTenantError(tenantRes.error);
+        return;
+      }
+
+      setTenantError(null);
+      setSchoolName(tenantRes.schoolName);
+      setSchoolAbbr(tenantRes.schoolAbbr);
+      setSchoolLogo(tenantRes.schoolLogo);
+      if (tenantRes.schoolType === "vocational_school" || tenantRes.schoolType === "high_school") {
+        setSchoolType(tenantRes.schoolType);
+      }
+
+      if (tenantRes.schoolId) {
+        try {
+          const supabase = createClient();
+          const { data: terms } = await (supabase as any)
+            .from("terms")
+            .select("name, code")
+            .eq("school_id", tenantRes.schoolId)
+            .order("is_active", { ascending: false })
+            .limit(1);
+          if (terms && terms.length > 0 && isMounted) {
+            setActiveTerm(terms[0].name || terms[0].code || "");
+          }
+        } catch {}
       }
     }
 
     loadData();
 
-    // Listen for custom school type switch events from child views
     const handleSwitch = (e: any) => {
       if (e.detail?.schoolType) {
         setSchoolType(e.detail.schoolType);
       }
     };
     window.addEventListener("switch_school_type_view", handleSwitch);
-    return () => window.removeEventListener("switch_school_type_view", handleSwitch);
-  }, [schoolType]);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("switch_school_type_view", handleSwitch);
+    };
+  }, []);
 
   const handleToggleSchoolType = (type: "high_school" | "vocational_school") => {
     setSchoolType(type);
@@ -204,16 +219,20 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
         {/* Brand Header */}
         <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 bg-white">
           <Link href="/teacher/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm shrink-0 ${
+            <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm shrink-0 overflow-hidden ${
               schoolType === "vocational_school"
                 ? "bg-gradient-to-tr from-amber-600 via-orange-600 to-amber-700 shadow-amber-500/20"
                 : "bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-700 shadow-emerald-500/20"
             }`}>
-              {schoolType === "vocational_school" ? <Hammer className="h-4.5 w-4.5" /> : <School className="h-4.5 w-4.5" />}
+              {schoolLogo ? (
+                <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
+              ) : (
+                formatSchoolMonogram(schoolAbbr, schoolName)
+              )}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-slate-900 tracking-tight truncate leading-tight">
-                {schoolName}
+              <span className="text-xs font-bold text-slate-900 tracking-tight truncate leading-tight" title={schoolName}>
+                {schoolName || "—"}
               </span>
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                 {schoolType === "vocational_school" ? "Vocational Faculty" : "High School Faculty"}
@@ -384,7 +403,7 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
               <div className="hidden sm:flex flex-col text-left">
                 <span className="text-xs font-bold text-slate-900 leading-none">{userName}</span>
                 <span className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">
-                  {schoolAbbr} Faculty
+                  {schoolAbbr ? `${schoolAbbr} Faculty` : "Faculty"}
                 </span>
               </div>
             </div>
@@ -393,7 +412,15 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
 
         {/* Scrollable Page Body */}
         <main className="flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-6 lg:p-8">
-          {children}
+          {tenantError ? (
+            <UnlinkedSchoolNotice
+              error={tenantError}
+              onSignOut={handleSignOut}
+              isSigningOut={isSigningOut}
+            />
+          ) : (
+            children
+          )}
         </main>
       </div>
 
@@ -410,7 +437,7 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
                 <div className="h-8 w-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold">
                   {schoolType === "vocational_school" ? <Hammer className="h-4 w-4" /> : <School className="h-4 w-4" />}
                 </div>
-                <span className="text-xs font-bold text-slate-900 truncate">{schoolName}</span>
+                <span className="text-xs font-bold text-slate-900 truncate">{schoolName || "—"}</span>
               </div>
               <button
                 type="button"

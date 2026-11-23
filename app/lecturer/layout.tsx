@@ -6,6 +6,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import {
+  formatSchoolMonogram,
+  resolveClientTenantContext,
+} from "@/lib/saas/useTenantInstitution";
+import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import {
   LayoutGrid,
   BookOpen,
   Users,
@@ -53,13 +58,14 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   const [userName, setUserName] = useState<string>("Faculty Member");
-  const [userEmail, setUserEmail] = useState<string>("lecturer@university.edu.gh");
-  const [userTitle, setUserTitle] = useState<string>("Senior Lecturer");
-  const [departmentName, setDepartmentName] = useState<string>("Department of Computer Science");
-  const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("University Portal");
-  const [schoolAbbr, setSchoolAbbr] = useState<string>("AIT");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [userTitle, setUserTitle] = useState<string>("Faculty Lecturer");
+  const [departmentName, setDepartmentName] = useState<string>("");
+  const [academicYear, setAcademicYear] = useState<string>("");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -91,112 +97,100 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Load lecturer profile, staff record, academic year, and notification counts from Supabase
+  // Load lecturer profile, staff record, academic year, and strict tenant school details
   useEffect(() => {
+    let isMounted = true;
     async function loadLecturerData() {
+      const tenantRes = await resolveClientTenantContext();
+      if (!isMounted) return;
+
+      if (tenantRes.status === "unauthenticated") {
+        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
+
+      const activeUser = tenantRes.user;
+      setUserEmail(activeUser.email || "");
+      setUserName(activeUser.user_metadata?.full_name || "Faculty Member");
+
+      if (tenantRes.status === "unlinked") {
+        setTenantError(tenantRes.error);
+        return;
+      }
+
+      setTenantError(null);
+      setSchoolName(tenantRes.schoolName);
+      setSchoolAbbr(tenantRes.schoolAbbr);
+      setSchoolLogo(tenantRes.schoolLogo);
+
       const supabase = createClient();
       const db = supabase as any;
+      const tenantSchoolId = tenantRes.schoolId;
 
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
-          return;
-        }
-
-        setUserEmail(user.email || "lecturer@university.edu.gh");
-        const metaName = user.user_metadata?.full_name || "Faculty Member";
-        setUserName(metaName);
-
-          // Query profile & staff details
-          const { data: profile } = await db
-            .from("profiles")
-            .select("full_name, email")
-            .eq("id", user.id)
-            .maybeSingle();
-
-          if (profile?.full_name) {
-            setUserName(profile.full_name);
-          }
-
-          const { data: staffMember } = await db
-            .from("staff")
-            .select("job_title, department:department_id(name)")
-            .eq("profile_id", user.id)
-            .maybeSingle();
-
-          if (staffMember) {
-            if (staffMember.job_title) setUserTitle(staffMember.job_title);
-            if (staffMember.department?.name) setDepartmentName(staffMember.department.name);
-          } else {
-            setUserTitle(user.user_metadata?.role === "system_admin" ? "System Administrator / Faculty" : "Faculty Lecturer");
-          }
-
-          try {
-            const { count } = await db
-              .from("notifications")
-              .select("*", { count: "exact", head: true })
-              .eq("user_id", user.id)
-              .eq("is_read", false);
-            if (count !== null) setUnreadNotifications(count);
-          } catch {
-            // non-blocking
-          }
-      } catch (err) {
-        console.warn("Could not load lecturer auth details:", err);
-      }
-
-      try {
-        const { data: years } = await db
-          .from("academic_years")
-          .select("code, name, is_current")
-          .order("is_current", { ascending: false })
-          .limit(1);
-
-        if (years && years.length > 0 && years[0]?.code) {
-          setAcademicYear(years[0].code);
-        }
-      } catch {
-        // keep fallback
-      }
-
-      // Fetch School / Institution Info directly from database
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.name) {
-            setSchoolName(data.name);
-            if (data.abbreviation) setSchoolAbbr(data.abbreviation);
-            if (data.logo_url) setSchoolLogo(data.logo_url);
-            return;
-          }
-        }
-      } catch {
-        // Fallback directly to supabase table
-      }
-
-      try {
-        const { data: settingRow } = await db
-          .from("system_settings")
-          .select("setting_value")
-          .eq("setting_key", "institution_info")
+        const { data: profile } = await db
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", activeUser.id)
           .maybeSingle();
 
-        if (settingRow?.setting_value?.name) {
-          setSchoolName(settingRow.setting_value.name);
-          if (settingRow.setting_value.abbreviation) {
-            setSchoolAbbr(settingRow.setting_value.abbreviation);
+        if (profile?.full_name && isMounted) {
+          setUserName(profile.full_name);
+        }
+
+        let staffQuery = db
+          .from("staff")
+          .select("job_title, department:department_id(name)")
+          .eq("profile_id", activeUser.id);
+        if (tenantSchoolId) {
+          staffQuery = staffQuery.eq("school_id", tenantSchoolId);
+        }
+        const { data: staffMember } = await staffQuery.maybeSingle();
+
+        if (staffMember && isMounted) {
+          if (staffMember.job_title) setUserTitle(staffMember.job_title);
+          if (staffMember.department?.name) setDepartmentName(staffMember.department.name);
+        } else if (isMounted) {
+          setUserTitle(
+            activeUser.user_metadata?.role === "system_admin"
+              ? "System Administrator / Faculty"
+              : "Faculty Lecturer"
+          );
+        }
+
+        try {
+          let notifQuery = db
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", activeUser.id)
+            .eq("is_read", false);
+          if (tenantSchoolId) {
+            notifQuery = notifQuery.eq("school_id", tenantSchoolId);
           }
-          if (settingRow.setting_value.logo_url) {
-            setSchoolLogo(settingRow.setting_value.logo_url);
-          }
+          const { count } = await notifQuery;
+          if (count !== null && isMounted) setUnreadNotifications(count);
+        } catch {
+          // non-blocking
         }
       } catch (err) {
-        console.warn("Could not load institution info from DB:", err);
+        console.warn("Could not load lecturer details:", err);
+      }
+
+      if (tenantSchoolId) {
+        try {
+          const { data: years } = await db
+            .from("academic_years")
+            .select("code, name, is_current")
+            .eq("school_id", tenantSchoolId)
+            .order("is_current", { ascending: false })
+            .limit(1);
+
+          if (years && years.length > 0 && years[0]?.code && isMounted) {
+            setAcademicYear(years[0].code);
+          }
+        } catch {
+          // non-blocking
+        }
       }
     }
 
@@ -212,6 +206,7 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
 
     window.addEventListener("institution_updated", handleInstitutionUpdate);
     return () => {
+      isMounted = false;
       window.removeEventListener("institution_updated", handleInstitutionUpdate);
     };
   }, []);
@@ -274,7 +269,7 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
             {schoolLogo ? (
               <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
             ) : (
-              (schoolAbbr || "AIT").slice(0, 4)
+              formatSchoolMonogram(schoolAbbr, schoolName)
             )}
           </div>
           <div className="flex flex-col min-w-0">
@@ -282,7 +277,7 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
               className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
-              {schoolName}
+              {schoolName || "—"}
             </span>
             <span className="text-[11px] font-medium text-emerald-600">
               Lecturer Portal
@@ -458,20 +453,12 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
             {/* Academic Year Badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 font-semibold shadow-2xs">
               <Calendar className="h-3.5 w-3.5 text-slate-500" />
-              <span>Academic Year: {academicYear}</span>
+              <span>Academic Year: {academicYear || "Not Configured"}</span>
               <ChevronDown className="h-3 w-3 text-slate-400" />
             </div>
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
-              {/* Region Flag */}
-              <div
-                className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-sm cursor-default"
-                title="Ghana University Academic Region"
-              >
-                🇬🇭
-              </div>
-
               {/* Notifications */}
               <Link
                 href="/lecturer/notifications"
@@ -573,7 +560,15 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
 
         {/* Page Content Viewport */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          {children}
+          {tenantError ? (
+            <UnlinkedSchoolNotice
+              error={tenantError}
+              onSignOut={handleSignOut}
+              isSigningOut={isSigningOut}
+            />
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

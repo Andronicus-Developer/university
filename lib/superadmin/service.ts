@@ -1,11 +1,568 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, createDirectAdminClient } from "@/lib/supabase/admin";
 import { getVirtualDb, persistVirtualDb } from "@/lib/supabase/virtual-db";
-import { SCHOOL_A_ID, SCHOOL_B_ID, SCHOOL_C_ID } from "@/lib/saas/tenant-context";
 import {
   registerDynamicUser,
   unregisterDynamicUser,
   unregisterDynamicUsersForSchool,
 } from "@/lib/supabase/fetch";
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(val: unknown): val is string {
+  return typeof val === "string" && UUID_REGEX.test(val.trim());
+}
+
+/**
+ * Resolve or provision a live `public.roles` UUID for `public.school_memberships`.
+ */
+async function resolveLiveRoleId(
+  directAdmin: ReturnType<typeof createDirectAdminClient>,
+  schoolId: string | null,
+  roleCode: string
+): Promise<string> {
+  const cleanCode = roleCode.trim().toLowerCase();
+  const candidates =
+    cleanCode === "system_admin"
+      ? ["system_admin", "school_admin"]
+      : [cleanCode];
+
+  const { data: existingRoles } = await (directAdmin as any)
+    .from("roles")
+    .select("id, code, school_id")
+    .in("code", candidates);
+
+  if (Array.isArray(existingRoles) && existingRoles.length > 0) {
+    const schoolExact = schoolId
+      ? existingRoles.find((r: any) => r.code === cleanCode && r.school_id === schoolId)
+      : null;
+    if (schoolExact?.id) return schoolExact.id;
+    const codeExact = existingRoles.find((r: any) => r.code === cleanCode);
+    if (codeExact?.id) return codeExact.id;
+    const fallbackExact = existingRoles.find((r: any) => r.id);
+    if (fallbackExact?.id) return fallbackExact.id;
+  }
+
+  const formattedName =
+    cleanCode === "system_admin"
+      ? "System Administrator"
+      : cleanCode.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  let { data: insertedRole, error: roleInsertErr } = await (directAdmin as any)
+    .from("roles")
+    .insert({
+      school_id: isValidUuid(schoolId) ? schoolId : null,
+      code: cleanCode,
+      name: formattedName,
+      description: `Role for ${formattedName}`,
+      is_system: true,
+      is_system_role: true,
+    })
+    .select("id")
+    .single();
+
+  if (roleInsertErr && (roleInsertErr.code === "42703" || roleInsertErr.code === "PGRST204" || String(roleInsertErr.message || "").includes("column"))) {
+    const retryInsert = await (directAdmin as any)
+      .from("roles")
+      .insert({
+        school_id: isValidUuid(schoolId) ? schoolId : null,
+        code: cleanCode,
+        name: formattedName,
+        description: `Role for ${formattedName}`,
+        is_system: true,
+      })
+      .select("id")
+      .single();
+    insertedRole = retryInsert.data;
+    roleInsertErr = retryInsert.error;
+  }
+
+  if (!roleInsertErr && insertedRole?.id) {
+    return insertedRole.id;
+  }
+
+  // Fallback re-query in case of race or unique constraint
+  const { data: retryRoles } = await (directAdmin as any)
+    .from("roles")
+    .select("id, code")
+    .in("code", [...candidates, "school_admin"])
+    .limit(5);
+
+  if (Array.isArray(retryRoles) && retryRoles.length > 0 && retryRoles[0]?.id) {
+    return retryRoles[0].id;
+  }
+
+  throw new Error(
+    roleInsertErr?.message || `Could not resolve role '${cleanCode}' in live public.roles`
+  );
+}
+
+/**
+ * Syncs a user record to live Supabase `public.profiles` (when present) and `public.school_memberships`
+ * using the privileged service-role client.
+ */
+async function upsertLiveUserSchoolLink(
+  directAdmin: ReturnType<typeof createDirectAdminClient>,
+  params: {
+    userId: string;
+    email: string;
+    fullName: string;
+    phone?: string;
+    role: string;
+    schoolId: string | null;
+    schoolName?: string;
+    schoolCode?: string;
+    accountStatus?: string;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const cleanEmail = params.email.trim().toLowerCase();
+  const accountStatus = params.accountStatus || "active";
+  const validSchoolId = isValidUuid(params.schoolId) ? params.schoolId.trim() : null;
+
+  const metadata = {
+    role: params.role,
+    default_role: params.role,
+    school_id: validSchoolId || params.schoolId || null,
+    university_id: validSchoolId || params.schoolId || null,
+    university_name: params.schoolName || (params.schoolId ? "" : "UMS Central Platform"),
+    university_code: params.schoolCode || "",
+  };
+
+  // 1. Upsert into live public.profiles if table exists
+  const { error: profErr } = await (directAdmin as any)
+    .from("profiles")
+    .upsert(
+      {
+        id: params.userId,
+        email: cleanEmail,
+        full_name: params.fullName,
+        phone: params.phone || null,
+        role: params.role,
+        school_id: validSchoolId,
+        account_status: accountStatus,
+        metadata,
+        updated_at: now,
+      },
+      { onConflict: "id" }
+    );
+
+  if (profErr) {
+    const msg = String(profErr.message || "");
+    const isMissingTable =
+      profErr.code === "PGRST205" ||
+      msg.includes("Could not find the table 'public.profiles'") ||
+      msg.includes('relation "public.profiles" does not exist');
+
+    if (!isMissingTable) {
+      const isMissingCol =
+        profErr.code === "42703" || msg.includes("column") || msg.includes("schema cache");
+      if (isMissingCol) {
+        const { error: retryErr } = await (directAdmin as any)
+          .from("profiles")
+          .upsert(
+            {
+              id: params.userId,
+              email: cleanEmail,
+              full_name: params.fullName,
+              phone: params.phone || null,
+              school_id: validSchoolId,
+              account_status: accountStatus,
+              metadata,
+              updated_at: now,
+            },
+            { onConflict: "id" }
+          );
+        if (retryErr) {
+          throw new Error(`Failed to upsert user into public.profiles: ${retryErr.message}`);
+        }
+      } else {
+        throw new Error(`Failed to upsert user into public.profiles: ${profErr.message}`);
+      }
+    }
+  }
+
+  // 2. Link user -> school -> role in live public.school_memberships
+  if (validSchoolId) {
+    const roleId = await resolveLiveRoleId(directAdmin, validSchoolId, params.role);
+    const membershipStatus = accountStatus === "active" ? "active" : "inactive";
+
+    const { data: existingMem } = await (directAdmin as any)
+      .from("school_memberships")
+      .select("id")
+      .eq("school_id", validSchoolId)
+      .eq("user_id", params.userId)
+      .maybeSingle();
+
+    if (existingMem?.id) {
+      const { error: updErr } = await (directAdmin as any)
+        .from("school_memberships")
+        .update({
+          role_id: roleId,
+          role: params.role,
+          status: membershipStatus,
+          updated_at: now,
+        })
+        .eq("id", existingMem.id);
+      if (updErr) {
+        throw new Error(`Failed to update public.school_memberships: ${updErr.message}`);
+      }
+    } else {
+      const { error: insErr } = await (directAdmin as any)
+        .from("school_memberships")
+        .insert({
+          school_id: validSchoolId,
+          user_id: params.userId,
+          role_id: roleId,
+          role: params.role,
+          status: membershipStatus,
+        });
+      if (insErr) {
+        throw new Error(`Failed to insert into public.school_memberships: ${insErr.message}`);
+      }
+    }
+
+    // Also sync live user_role_assignments if that table is present
+    try {
+      await (directAdmin as any)
+        .from("user_role_assignments")
+        .upsert(
+          {
+            user_id: params.userId,
+            role_id: roleId,
+            school_id: validSchoolId,
+            is_active: accountStatus === "active",
+          },
+          { onConflict: "user_id,role_id" }
+        );
+    } catch {}
+  }
+}
+
+async function clearDeletedUserBlacklist(
+  supabase: ReturnType<typeof createAdminClient>,
+  cleanEmail: string,
+  now: string
+): Promise<void> {
+  try {
+    const { data: delSetting } = await (supabase as any)
+      .from("system_settings")
+      .select("setting_value")
+      .eq("setting_key", "deleted_users")
+      .maybeSingle();
+
+    const currentDel = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
+    const filteredDel = currentDel.filter((u: any) => u?.email?.toLowerCase() !== cleanEmail);
+    if (filteredDel.length !== currentDel.length) {
+      await (supabase as any).from("system_settings").upsert(
+        {
+          setting_key: "deleted_users",
+          setting_value: filteredDel,
+          updated_at: now,
+        },
+        { onConflict: "setting_key" }
+      );
+    }
+  } catch {}
+}
+
+/**
+ * Inserts a new tenant school into live Supabase `public.schools` without passing a client ID
+ * so PostgreSQL generates the canonical UUID `id`.
+ */
+async function insertLiveSchoolRow(
+  directAdmin: ReturnType<typeof createDirectAdminClient>,
+  payload: {
+    name: string;
+    code: string;
+    school_type?: SchoolType;
+    status: UniversityItem["status"];
+    default_currency: string;
+    city?: string;
+    country?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  }
+): Promise<{ id: string }> {
+  const dbStatus = payload.status === "maintenance" ? "active" : payload.status || "active";
+  const slug = payload.code.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+  const addressParts = [payload.address, payload.city, payload.country].map((v) => String(v || "").trim()).filter(Boolean);
+  const fullAddress = addressParts.join(", ") || null;
+
+  const richInsert: Record<string, any> = {
+    name: payload.name.trim(),
+    slug,
+    tenant_slug: slug,
+    school_type: payload.school_type || "university",
+    status: dbStatus,
+    currency: payload.default_currency || "USD",
+    address: fullAddress,
+    phone: payload.phone || null,
+    email: payload.email || null,
+  };
+
+  let { data: liveSchool, error: insErr } = await (directAdmin as any)
+    .from("schools")
+    .insert(richInsert)
+    .select("id")
+    .single();
+
+  if (
+    insErr &&
+    (insErr.code === "42703" ||
+      insErr.code === "PGRST204" ||
+      String(insErr.message || "").includes("column") ||
+      String(insErr.message || "").includes("schema cache"))
+  ) {
+    const baseInsert = {
+      name: payload.name.trim(),
+      slug,
+      status: dbStatus,
+      currency: payload.default_currency || "USD",
+      address: fullAddress,
+      phone: payload.phone || null,
+      email: payload.email || null,
+    };
+    const retry = await (directAdmin as any)
+      .from("schools")
+      .insert(baseInsert)
+      .select("id")
+      .single();
+    liveSchool = retry.data;
+    insErr = retry.error;
+  }
+
+  if (insErr || !liveSchool?.id) {
+    throw new Error(`Failed to create school in live database: ${insErr?.message || "No school id returned"}`);
+  }
+
+  return { id: String(liveSchool.id) };
+}
+
+/**
+ * Ensures an existing university with a valid UUID exists in live `public.schools`
+ * before linking a user membership.
+ */
+async function ensureLiveSchoolRowExists(
+  directAdmin: ReturnType<typeof createDirectAdminClient>,
+  univ: UniversityItem | undefined
+): Promise<string | null> {
+  if (!univ || !isValidUuid(univ.id)) return null;
+
+  const { data: existing } = await (directAdmin as any)
+    .from("schools")
+    .select("id")
+    .eq("id", univ.id)
+    .maybeSingle();
+
+  if (existing?.id) return String(existing.id);
+
+  const dbStatus = univ.status === "maintenance" ? "active" : univ.status || "active";
+  const slug = univ.code.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+  const addressParts = [univ.address, univ.city, univ.country].map((v) => String(v || "").trim()).filter(Boolean);
+  const fullAddress = addressParts.join(", ") || null;
+
+  const { error } = await (directAdmin as any)
+    .from("schools")
+    .upsert(
+      {
+        id: univ.id,
+        name: univ.name,
+        slug,
+        status: dbStatus,
+        currency: univ.default_currency || "USD",
+        address: fullAddress,
+        phone: univ.phone || null,
+        email: univ.email || null,
+      },
+      { onConflict: "id" }
+    );
+
+  if (error) {
+    throw new Error(`School record '${univ.name}' could not be synced to live database: ${error.message}`);
+  }
+  return univ.id;
+}
+
+/**
+ * Atomically provisions an authenticated user via Supabase Auth Admin API (service role)
+ * without switching the caller's session, links them to `public.profiles` + `public.school_memberships`,
+ * and syncs local virtual-DB caches. Rolls back the auth user on linking failures.
+ */
+async function provisionUserAccountAndLinks(params: {
+  email: string;
+  password: string;
+  fullName: string;
+  phone?: string;
+  role: string;
+  schoolId: string | null;
+  schoolName?: string;
+  schoolCode?: string;
+  accountStatus?: "active" | "suspended" | "locked";
+}): Promise<{ id: string; email: string; profileRow: any; roleId: string | null }> {
+  const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
+  const cleanEmail = params.email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const accountStatus = params.accountStatus || "active";
+  const validSchoolId = isValidUuid(params.schoolId) ? params.schoolId.trim() : null;
+
+  await clearDeletedUserBlacklist(supabase, cleanEmail, now);
+
+  const { data: authData, error: authError } = await directAdmin.auth.admin.createUser({
+    email: cleanEmail,
+    password: params.password,
+    email_confirm: true,
+    app_metadata: {
+      role: params.role,
+      school_id: validSchoolId || params.schoolId || null,
+      university_id: validSchoolId || params.schoolId || null,
+    },
+    user_metadata: {
+      full_name: params.fullName.trim(),
+      role: params.role,
+      default_role: params.role,
+      school_id: validSchoolId || params.schoolId || null,
+      university_id: validSchoolId || params.schoolId || null,
+      university_name: params.schoolName || (params.schoolId ? "" : "UMS Central Platform"),
+      university_code: params.schoolCode || "",
+    },
+  });
+
+  if (authError || !authData?.user?.id) {
+    throw new Error(authError?.message || "Failed to create authentication account in Supabase Auth");
+  }
+
+  const createdUserId = authData.user.id;
+
+  try {
+    await upsertLiveUserSchoolLink(directAdmin, {
+      userId: createdUserId,
+      email: cleanEmail,
+      fullName: params.fullName.trim(),
+      phone: params.phone,
+      role: params.role,
+      schoolId: validSchoolId,
+      schoolName: params.schoolName,
+      schoolCode: params.schoolCode,
+      accountStatus,
+    });
+  } catch (linkErr) {
+    try {
+      await directAdmin.auth.admin.deleteUser(createdUserId);
+    } catch {}
+    throw linkErr;
+  }
+
+  const formattedRoleName =
+    params.role === "system_admin"
+      ? "System Administrator"
+      : params.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  registerDynamicUser(cleanEmail, params.password, {
+    id: createdUserId,
+    email: cleanEmail,
+    full_name: params.fullName.trim(),
+    role: params.role,
+    role_name: formattedRoleName,
+    school_id: validSchoolId || params.schoolId || null,
+  });
+
+  const profileRow = {
+    id: createdUserId,
+    email: cleanEmail,
+    full_name: params.fullName.trim(),
+    phone: params.phone || null,
+    role: params.role,
+    account_status: accountStatus,
+    school_id: validSchoolId || params.schoolId || null,
+    university_id: validSchoolId || params.schoolId || null,
+    is_mfa_enabled: false,
+    metadata: {
+      role: params.role,
+      default_role: params.role,
+      school_id: validSchoolId || params.schoolId || null,
+      university_id: validSchoolId || params.schoolId || null,
+      university_name: params.schoolName || (params.schoolId ? "" : "UMS Central Platform"),
+      university_code: params.schoolCode || "",
+      university_status: "active",
+      temp_password: params.password,
+    },
+    created_at: now,
+    updated_at: now,
+  };
+
+  try {
+    await (supabase as any).from("profiles").upsert(profileRow, { onConflict: "id" });
+  } catch {}
+
+  let resolvedRoleId: string | null = null;
+  try {
+    const { data: roleRow } = await (supabase as any)
+      .from("roles")
+      .select("id")
+      .eq("code", params.role)
+      .maybeSingle();
+    resolvedRoleId = roleRow?.id || (params.role === "system_admin" ? "f67d1b87-ec01-41db-b436-1d59c9d3fe25" : null);
+
+    if (resolvedRoleId) {
+      await (supabase as any).from("user_role_assignments").upsert(
+        {
+          user_id: createdUserId,
+          role_id: resolvedRoleId,
+          school_id: validSchoolId || params.schoolId || null,
+          is_active: accountStatus === "active",
+          created_at: now,
+        },
+        { onConflict: "user_id,role_id" }
+      );
+    }
+  } catch {}
+
+  if ((params.role === "system_admin" || params.role === "school_admin") && (validSchoolId || params.schoolId)) {
+    try {
+      await (supabase as any).from("university_system_admins").insert({
+        university_id: validSchoolId || params.schoolId,
+        user_id: createdUserId,
+        is_primary: true,
+      });
+    } catch {}
+  }
+
+  try {
+    const vDb = await getVirtualDb();
+    if (vDb) {
+      if (Array.isArray(vDb.profiles)) {
+        const existIdx = vDb.profiles.findIndex((p: any) => p.id === createdUserId || p.email === cleanEmail);
+        if (existIdx !== -1) {
+          vDb.profiles[existIdx] = { ...vDb.profiles[existIdx], ...profileRow };
+        } else {
+          vDb.profiles.unshift(profileRow);
+        }
+      }
+      if (resolvedRoleId && Array.isArray(vDb.user_role_assignments)) {
+        vDb.user_role_assignments.push({
+          id: `ura-${Date.now()}`,
+          user_id: createdUserId,
+          role_id: resolvedRoleId,
+          school_id: validSchoolId || params.schoolId || null,
+          is_active: accountStatus === "active",
+          created_at: now,
+        });
+      }
+      if ((params.role === "system_admin" || params.role === "school_admin") && (validSchoolId || params.schoolId) && Array.isArray(vDb.university_system_admins)) {
+        vDb.university_system_admins.push({
+          university_id: validSchoolId || params.schoolId,
+          user_id: createdUserId,
+          is_primary: true,
+        });
+      }
+      await persistVirtualDb(vDb);
+    }
+  } catch {}
+
+  return { id: createdUserId, email: cleanEmail, profileRow, roleId: resolvedRoleId };
+}
 
 export type SchoolType = "university" | "high_school" | "vocational_school";
 
@@ -79,11 +636,13 @@ export interface SuperAdminStats {
   activeUniversities: number;
   totalSystemAdmins: number;
   totalCampuses: number;
+  totalUsers: number;
   totalStudents: number;
   totalLecturers: number;
   totalStaff: number;
   systemStatus: "healthy" | "degraded" | "maintenance";
   dbLatencyMs: number;
+  queryErrors?: string[];
 }
 
 const DEFAULT_SIDEBAR_MODULES: SidebarModuleItem[] = [
@@ -394,7 +953,32 @@ export async function updateUniversity(
     console.warn("Could not update universities table:", err);
   }
 
-  // 2b. Try updating 'schools' table in Supabase
+  // 2b. Update live 'schools' table directly in Supabase AND virtual 'schools'
+  const dbSchoolStatus = updatedUniv.status === "maintenance" ? "active" : updatedUniv.status;
+  const schoolAddress = [updatedUniv.address, updatedUniv.city, updatedUniv.country]
+    .filter(Boolean)
+    .join(", ");
+  try {
+    const directAdmin = createDirectAdminClient();
+    await (directAdmin as any)
+      .from("schools")
+      .update({
+        name: updatedUniv.name,
+        slug: updatedUniv.code.toLowerCase(),
+        tenant_slug: updatedUniv.code.toLowerCase(),
+        school_type: targetSchoolType,
+        status: dbSchoolStatus,
+        currency: updatedUniv.default_currency,
+        address: schoolAddress || null,
+        phone: updatedUniv.phone || null,
+        email: updatedUniv.email || null,
+        updated_at: now,
+      })
+      .eq("id", existing.id);
+  } catch (liveErr) {
+    console.warn("Could not update live public.schools table:", liveErr);
+  }
+
   try {
     await (supabase as any)
       .from("schools")
@@ -403,14 +987,13 @@ export async function updateUniversity(
         school_type: targetSchoolType,
         status: updatedUniv.status,
         currency: updatedUniv.default_currency,
-        address: `${updatedUniv.city || ""}, ${updatedUniv.country}`,
+        address: schoolAddress,
         phone: updatedUniv.phone || null,
         email: updatedUniv.email || null,
         updated_at: now,
       })
       .or(`id.eq.${existing.id},slug.eq.${existing.code.toLowerCase()}`);
   } catch (schoolErr) {
-    // If column school_type doesn't exist yet, retry without it
     try {
       await (supabase as any)
         .from("schools")
@@ -418,7 +1001,7 @@ export async function updateUniversity(
           name: updatedUniv.name,
           status: updatedUniv.status,
           currency: updatedUniv.default_currency,
-          address: `${updatedUniv.city || ""}, ${updatedUniv.country}`,
+          address: schoolAddress,
           phone: updatedUniv.phone || null,
           email: updatedUniv.email || null,
           updated_at: now,
@@ -584,33 +1167,40 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     } catch {}
   }
 
-  // Also query 'schools' table if still not located
+  // Also query 'schools' table (live Supabase first, then virtual DB) if still not located
   if (!univ) {
-    try {
-      const { data: schoolRow } = await (supabase as any)
-        .from("schools")
-        .select("*")
-        .or(`id.eq.${cleanId},slug.ilike.${cleanId},name.ilike.${cleanId}`)
-        .maybeSingle();
+    for (const client of [createDirectAdminClient(), supabase] as any[]) {
+      try {
+        const isUuidId = isValidUuid(cleanId);
+        const filterStr = isUuidId
+          ? `id.eq.${cleanId},slug.ilike.${cleanId},name.ilike.${cleanId}`
+          : `slug.ilike.${cleanId},name.ilike.${cleanId}`;
+        const { data: schoolRow } = await client
+          .from("schools")
+          .select("*")
+          .or(filterStr)
+          .maybeSingle();
 
-      if (schoolRow) {
-        univ = {
-          id: schoolRow.id,
-          code: (schoolRow.slug || schoolRow.name?.substring(0, 4) || cleanId).toUpperCase(),
-          name: schoolRow.name,
-          school_type: schoolRow.school_type || "university",
-          institution_type: schoolRow.school_type || "university",
-          country: "Ghana",
-          city: "Accra",
-          default_currency: schoolRow.currency || "GHS",
-          currency_symbol: schoolRow.currency === "USD" ? "$" : "GH₵",
-          status: "active",
-          created_at: schoolRow.created_at || now,
-          updated_at: now,
-          full_access: true,
-        };
-      }
-    } catch {}
+        if (schoolRow) {
+          univ = {
+            id: schoolRow.id,
+            code: (schoolRow.slug || schoolRow.name?.substring(0, 4) || cleanId).toUpperCase(),
+            name: schoolRow.name,
+            school_type: schoolRow.school_type || "university",
+            institution_type: schoolRow.school_type || "university",
+            country: "",
+            city: "",
+            default_currency: schoolRow.currency || "USD",
+            currency_symbol: schoolRow.currency === "GHS" ? "GH₵" : "$",
+            status: "active",
+            created_at: schoolRow.created_at || now,
+            updated_at: now,
+            full_access: true,
+          };
+          break;
+        }
+      } catch {}
+    }
   }
 
   if (!univ) {
@@ -636,30 +1226,33 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     allSchoolNames.add(univ.name.toLowerCase());
   }
 
-  // Correlate with public.schools table
-  try {
-    const { data: dbSchools } = await (supabase as any)
-      .from("schools")
-      .select("id, name, slug");
-    if (Array.isArray(dbSchools)) {
-      for (const s of dbSchools) {
-        const matchesId = allSchoolIds.has(s.id);
-        const matchesSlug = s.slug && allSchoolSlugs.has(s.slug.toLowerCase());
-        const matchesName = s.name && allSchoolNames.has(s.name.toLowerCase());
-        if (matchesId || matchesSlug || matchesName) {
-          if (s.id) allSchoolIds.add(s.id);
-          if (s.slug) {
-            allSchoolSlugs.add(s.slug.toLowerCase());
-            allSchoolCodes.add(s.slug.toUpperCase());
-          }
-          if (s.name) {
-            allSchoolNames.add(s.name);
-            allSchoolNames.add(s.name.toLowerCase());
+  // Correlate with live and virtual public.schools tables
+  const directAdmin = createDirectAdminClient();
+  for (const client of [directAdmin, supabase] as any[]) {
+    try {
+      const { data: dbSchools } = await client
+        .from("schools")
+        .select("id, name, slug");
+      if (Array.isArray(dbSchools)) {
+        for (const s of dbSchools) {
+          const matchesId = allSchoolIds.has(s.id);
+          const matchesSlug = s.slug && allSchoolSlugs.has(s.slug.toLowerCase());
+          const matchesName = s.name && allSchoolNames.has(s.name.toLowerCase());
+          if (matchesId || matchesSlug || matchesName) {
+            if (s.id) allSchoolIds.add(s.id);
+            if (s.slug) {
+              allSchoolSlugs.add(s.slug.toLowerCase());
+              allSchoolCodes.add(s.slug.toUpperCase());
+            }
+            if (s.name) {
+              allSchoolNames.add(s.name);
+              allSchoolNames.add(s.name.toLowerCase());
+            }
           }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Correlate with public.universities table
   try {
@@ -799,9 +1392,46 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     }
   } catch {}
 
-  // E. Also check auth user metadata and email domains for university linkage
+  // E. Also check live school_memberships, live staff_profiles, live profiles, and Supabase Auth users
   try {
-    const { data: authList } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const validUuidIds = Array.from(allSchoolIds).filter(isValidUuid);
+    if (validUuidIds.length > 0) {
+      const { data: liveMembers } = await (directAdmin as any)
+        .from("school_memberships")
+        .select("user_id, school_id, role")
+        .in("school_id", validUuidIds);
+      if (Array.isArray(liveMembers)) {
+        liveMembers.forEach((m: any) => {
+          if (m.user_id) registerUser(m.user_id, undefined, m.role);
+        });
+      }
+
+      const { data: liveStaffProfs } = await (directAdmin as any)
+        .from("staff_profiles")
+        .select("user_id, email, school_id")
+        .in("school_id", validUuidIds);
+      if (Array.isArray(liveStaffProfs)) {
+        liveStaffProfs.forEach((sp: any) => {
+          if (sp.user_id) registerUser(sp.user_id, sp.email, "staff");
+        });
+      }
+
+      try {
+        const { data: liveProfiles } = await (directAdmin as any)
+          .from("profiles")
+          .select("id, email, role, school_id")
+          .in("school_id", validUuidIds);
+        if (Array.isArray(liveProfiles)) {
+          liveProfiles.forEach((p: any) => {
+            if (p.id) registerUser(p.id, p.email, p.role);
+          });
+        }
+      } catch {}
+    }
+  } catch {}
+
+  try {
+    const { data: authList } = await directAdmin.auth.admin.listUsers({ perPage: 1000 });
     if (authList?.users) {
       authList.users.forEach((u) => {
         const uUnivId =
@@ -811,7 +1441,6 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
           (u.app_metadata as any)?.school_id;
         const uUnivCode = (u.user_metadata as any)?.university_code || (u.app_metadata as any)?.university_code;
         const uRole = (u.user_metadata as any)?.role || (u.app_metadata as any)?.role;
-        const uEmail = (u.email || "").toLowerCase();
 
         const isAssociated =
           allSchoolIds.has(uUnivId) ||
@@ -944,7 +1573,12 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
         await (supabase as any).from("teaching_assignments").delete().eq("lecturer_id", uid);
       } catch {}
 
-      // 5. Delete profile record (by ID and by email)
+      // 5. Delete profile record & memberships (live Supabase and virtual)
+      try {
+        await (directAdmin as any).from("school_memberships").delete().eq("user_id", uid);
+        await (directAdmin as any).from("staff_profiles").update({ user_id: null }).eq("user_id", uid);
+        await (directAdmin as any).from("profiles").delete().eq("id", uid);
+      } catch {}
       try {
         await (supabase as any).from("profiles").delete().eq("id", uid);
         if (normEmail) {
@@ -954,11 +1588,11 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
 
       // 6. Delete from Supabase Auth so they can NEVER log in
       try {
-        await supabase.auth.admin.deleteUser(uid);
+        await directAdmin.auth.admin.deleteUser(uid);
       } catch {
         // Fallback: If foreign keys prevent instant hard deletion in auth, ban permanently and revoke credentials
         try {
-          await supabase.auth.admin.updateUserById(uid, {
+          await directAdmin.auth.admin.updateUserById(uid, {
             ban_duration: "876000h",
             user_metadata: { account_status: "deleted", university_status: "deleted" },
             app_metadata: { account_status: "deleted", university_status: "deleted" },
@@ -1129,19 +1763,42 @@ export async function deleteUniversity(id: string): Promise<{ success: boolean; 
     try { await (supabase as any).from("departments").delete().ilike("code", `${sCode}%`); } catch {}
   }
 
-  // 7. Delete university row from 'universities' and 'schools' tables in database
+  // 7. Delete university row from live Supabase 'schools' + virtual 'universities'/'schools' tables
   for (const sId of Array.from(allSchoolIds)) {
+    if (isValidUuid(sId)) {
+      for (const liveTbl of [
+        "school_memberships",
+        "attendance_records",
+        "attendance_sessions",
+        "payments",
+        "invoices",
+        "students",
+        "staff_profiles",
+        "terms",
+        "academic_years",
+        "class_groups",
+        "school_events",
+        "roles",
+        "profiles",
+      ]) {
+        try { await (directAdmin as any).from(liveTbl).delete().eq("school_id", sId); } catch {}
+      }
+      try { await (directAdmin as any).from("schools").delete().eq("id", sId); } catch {}
+    }
     try { await (supabase as any).from("universities").delete().eq("id", sId); } catch {}
     try { await (supabase as any).from("schools").delete().eq("id", sId); } catch {}
   }
   for (const sCode of Array.from(allSchoolCodes)) {
+    try { await (directAdmin as any).from("schools").delete().ilike("slug", sCode.toLowerCase()); } catch {}
     try { await (supabase as any).from("universities").delete().eq("code", sCode); } catch {}
     try { await (supabase as any).from("schools").delete().ilike("slug", sCode.toLowerCase()); } catch {}
   }
   for (const sSlug of Array.from(allSchoolSlugs)) {
+    try { await (directAdmin as any).from("schools").delete().ilike("slug", sSlug); } catch {}
     try { await (supabase as any).from("schools").delete().ilike("slug", sSlug); } catch {}
   }
   for (const sName of Array.from(allSchoolNames)) {
+    try { await (directAdmin as any).from("schools").delete().ilike("name", sName); } catch {}
     try { await (supabase as any).from("universities").delete().ilike("name", sName); } catch {}
     try { await (supabase as any).from("schools").delete().ilike("name", sName); } catch {}
   }
@@ -1247,71 +1904,113 @@ export async function updateSystemAdmin(
   }
 ): Promise<SystemAdminItem> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
   const now = new Date().toISOString();
 
-  // 1. Update Auth user if email, password, or metadata changed
-  const authUpdates: any = {
-    user_metadata: {},
-  };
-  if (payload.email) authUpdates.email = payload.email.trim().toLowerCase();
-  if (payload.password) authUpdates.password = payload.password;
-  if (payload.full_name) authUpdates.user_metadata.full_name = payload.full_name.trim();
-  if (payload.university_id) authUpdates.user_metadata.university_id = payload.university_id;
-  if (payload.university_name) authUpdates.user_metadata.university_name = payload.university_name;
+  const [{ data: authUserRes }, { data: vProfile }] = await Promise.all([
+    directAdmin.auth.admin.getUserById(id).catch(() => ({ data: { user: null } })),
+    (supabase as any).from("profiles").select("*").eq("id", id).maybeSingle(),
+  ]);
 
-  try {
-    await supabase.auth.admin.updateUserById(id, authUpdates);
-  } catch (err: any) {
-    console.warn("Could not update Auth user:", err);
+  const authUser = authUserRes?.user || null;
+  const universities = await getUniversities();
+  const existingSchoolId =
+    payload.university_id ||
+    vProfile?.school_id ||
+    vProfile?.university_id ||
+    vProfile?.metadata?.university_id ||
+    (authUser?.app_metadata?.school_id as string | undefined) ||
+    (authUser?.user_metadata?.school_id as string | undefined) ||
+    null;
+
+  const univ = universities.find((u) => u.id === existingSchoolId);
+  if (payload.university_id && univ && isValidUuid(univ.id)) {
+    await ensureLiveSchoolRowExists(directAdmin, univ);
   }
 
-  // 2. Fetch current profile
-  const { data: profile } = await (supabase as any)
-    .from("profiles")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const nextEmail = payload.email ? payload.email.trim().toLowerCase() : authUser?.email || vProfile?.email || "";
+  const nextFullName = payload.full_name ? payload.full_name.trim() : vProfile?.full_name || authUser?.user_metadata?.full_name || "System Admin";
+  const nextPhone = payload.phone !== undefined ? payload.phone : vProfile?.phone;
+  const nextStatus = payload.account_status || vProfile?.account_status || "active";
+  const nextUnivName = univ ? univ.name : payload.university_name || vProfile?.metadata?.university_name || "";
 
-  const currentMetadata = profile?.metadata || {};
+  const authUpdates: any = {
+    app_metadata: {
+      ...(authUser?.app_metadata || {}),
+      role: (authUser?.app_metadata?.role as string) || vProfile?.role || "system_admin",
+      ...(existingSchoolId ? { school_id: existingSchoolId, university_id: existingSchoolId } : {}),
+    },
+    user_metadata: {
+      ...(authUser?.user_metadata || {}),
+      full_name: nextFullName,
+      role: (authUser?.user_metadata?.role as string) || vProfile?.role || "system_admin",
+      ...(existingSchoolId ? { school_id: existingSchoolId, university_id: existingSchoolId } : {}),
+      ...(nextUnivName ? { university_name: nextUnivName } : {}),
+    },
+  };
+  if (payload.email) authUpdates.email = nextEmail;
+  if (payload.password) authUpdates.password = payload.password;
+  if (payload.account_status) {
+    authUpdates.ban_duration = payload.account_status === "suspended" || payload.account_status === "locked" ? "876000h" : "none";
+  }
+
+  if (authUser) {
+    const { error: authErr } = await directAdmin.auth.admin.updateUserById(id, authUpdates);
+    if (authErr) {
+      throw new Error(`Failed to update admin in Auth: ${authErr.message}`);
+    }
+  }
+
+  await upsertLiveUserSchoolLink(directAdmin, {
+    userId: id,
+    email: nextEmail,
+    fullName: nextFullName,
+    phone: nextPhone || undefined,
+    role: (authUser?.app_metadata?.role as string) || vProfile?.role || "system_admin",
+    schoolId: existingSchoolId,
+    schoolName: nextUnivName || undefined,
+    schoolCode: univ?.code,
+    accountStatus: nextStatus,
+  });
+
+  const currentMetadata = vProfile?.metadata || {};
   const updatedMetadata = {
     ...currentMetadata,
-    university_id: payload.university_id || currentMetadata.university_id,
-    university_name: payload.university_name || currentMetadata.university_name,
+    school_id: existingSchoolId,
+    university_id: existingSchoolId,
+    university_name: nextUnivName,
+    ...(payload.password ? { temp_password: payload.password } : {}),
   };
 
   const profileUpdates: any = {
+    email: nextEmail,
+    full_name: nextFullName,
+    phone: nextPhone || null,
+    account_status: nextStatus,
+    school_id: existingSchoolId,
+    university_id: existingSchoolId,
     updated_at: now,
     metadata: updatedMetadata,
   };
-  if (payload.full_name) profileUpdates.full_name = payload.full_name.trim();
-  if (payload.phone !== undefined) profileUpdates.phone = payload.phone;
-  if (payload.account_status) profileUpdates.account_status = payload.account_status;
 
-  await (supabase as any)
-    .from("profiles")
-    .update(profileUpdates)
-    .eq("id", id);
+  if (vProfile) {
+    await (supabase as any).from("profiles").update(profileUpdates).eq("id", id);
+  } else if (nextEmail) {
+    await (supabase as any).from("profiles").upsert({ id, role: "system_admin", created_at: now, ...profileUpdates }, { onConflict: "id" });
+  }
 
-  // 3. Update university_system_admins mapping if university_id changed
   if (payload.university_id) {
     try {
-      await (supabase as any)
-        .from("university_system_admins")
-        .delete()
-        .eq("user_id", id);
-
-      await (supabase as any)
-        .from("university_system_admins")
-        .insert({
-          university_id: payload.university_id,
-          user_id: id,
-          is_primary: true,
-          created_at: now,
-        });
+      await (supabase as any).from("university_system_admins").delete().eq("user_id", id);
+      await (supabase as any).from("university_system_admins").insert({
+        university_id: payload.university_id,
+        user_id: id,
+        is_primary: true,
+        created_at: now,
+      });
     } catch {}
   }
 
-  // 4. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "update_system_admin",
@@ -1320,75 +2019,34 @@ export async function updateSystemAdmin(
       actor_role: "superadmin",
       outcome: "SUCCESS",
       new_values: {
-        full_name: payload.full_name,
-        email: payload.email,
-        university_id: payload.university_id,
-        account_status: payload.account_status,
+        full_name: nextFullName,
+        email: nextEmail,
+        university_id: existingSchoolId,
+        account_status: nextStatus,
       },
     });
   } catch {}
 
-  const universities = await getUniversities();
-  const univ = universities.find((u) => u.id === (payload.university_id || currentMetadata.university_id));
-
   return {
     id,
-    email: payload.email || profile?.email || "",
-    full_name: payload.full_name || profile?.full_name || "System Admin",
-    phone: payload.phone ?? profile?.phone,
-    account_status: payload.account_status || profile?.account_status || "active",
-    university_id: payload.university_id || currentMetadata.university_id,
-    university_name: univ ? univ.name : payload.university_name || "Primary Institution",
-    created_at: profile?.created_at || now,
-    last_sign_in_at: profile?.last_sign_in_at,
+    email: nextEmail,
+    full_name: nextFullName,
+    phone: nextPhone,
+    account_status: nextStatus,
+    university_id: existingSchoolId || undefined,
+    university_name: univ ? univ.name : nextUnivName || "Unassigned",
+    created_at: vProfile?.created_at || authUser?.created_at || now,
+    last_sign_in_at: vProfile?.last_sign_in_at || authUser?.last_sign_in_at,
   };
 }
 
 /**
- * Delete a System Administrator account.
+ * Delete a System Administrator account across Supabase Auth, live DB tables, and virtual DB.
  */
 export async function deleteSystemAdmin(id: string): Promise<{ success: boolean; deletedId: string }> {
-  const supabase = createAdminClient();
-
-  // 1. Delete mapping in university_system_admins
+  const result = await deleteDirectoryUser(id);
   try {
-    await (supabase as any)
-      .from("university_system_admins")
-      .delete()
-      .eq("user_id", id);
-  } catch {}
-
-  // 2. Remove role assignments
-  try {
-    await (supabase as any)
-      .from("user_role_assignments")
-      .delete()
-      .eq("user_id", id);
-  } catch {}
-
-  // 3. Mark profile suspended/deleted
-  try {
-    await (supabase as any)
-      .from("profiles")
-      .update({
-        account_status: "deleted",
-        metadata: {
-          is_deleted: true,
-          deleted_at: new Date().toISOString(),
-        },
-      })
-      .eq("id", id);
-  } catch {}
-
-  // 4. Delete or disable in Supabase Auth
-  try {
-    await supabase.auth.admin.deleteUser(id);
-  } catch (err) {
-    console.warn("Could not delete user from Auth, updating status instead:", err);
-  }
-
-  // 5. Audit event
-  try {
+    const supabase = createAdminClient();
     await (supabase as any).from("audit_events").insert({
       action: "delete_system_admin",
       entity_type: "user",
@@ -1397,8 +2055,7 @@ export async function deleteSystemAdmin(id: string): Promise<{ success: boolean;
       outcome: "SUCCESS",
     });
   } catch {}
-
-  return { success: true, deletedId: id };
+  return result;
 }
 
 export interface ScopeItem {
@@ -1648,9 +2305,10 @@ export const AVAILABLE_UNIVERSITY_ROLES = [
 
 export async function getUniversities(): Promise<UniversityItem[]> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
   let baseList: UniversityItem[] = [];
 
-  // Try direct universities table
+  // 1. Query virtual universities & system_settings governance store first for governance fields
   try {
     const { data, error } = await (supabase as any)
       .from("universities")
@@ -1660,11 +2318,8 @@ export async function getUniversities(): Promise<UniversityItem[]> {
     if (!error && Array.isArray(data) && data.length > 0) {
       baseList = data;
     }
-  } catch {
-    // Fall back to system_settings
-  }
+  } catch {}
 
-  // Fallback to system_settings
   if (baseList.length === 0) {
     try {
       const { data: settingRow } = await (supabase as any)
@@ -1681,54 +2336,117 @@ export async function getUniversities(): Promise<UniversityItem[]> {
     }
   }
 
-  // Also query 'schools' table from Supabase to integrate with native Supabase schools
+  // 2. Query live Supabase `public.schools` table directly (authoritative source of truth)
   try {
-    const { data: schoolsData } = await (supabase as any)
+    const { data: liveSchools, error: liveErr } = await (directAdmin as any)
       .from("schools")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (Array.isArray(schoolsData) && schoolsData.length > 0) {
+    if (!liveErr && Array.isArray(liveSchools) && liveSchools.length > 0) {
+      const merged: UniversityItem[] = [];
+      const seenLiveIds = new Set<string>();
+      const seenBaseIds = new Set<string>();
+
+      for (const s of liveSchools) {
+        const sId = String(s.id);
+        const sCode = (s.slug || s.tenant_slug || s.name?.substring(0, 6) || "SCH").toUpperCase();
+        const sType = s.school_type || "university";
+        const vMatch = baseList.find(
+          (u) =>
+            String(u.id).toLowerCase() === sId.toLowerCase() ||
+            (u.code && u.code.toLowerCase() === sCode.toLowerCase()) ||
+            (u.name && u.name.toLowerCase() === String(s.name || "").toLowerCase())
+        );
+
+        seenLiveIds.add(sId.toLowerCase());
+        if (vMatch?.id) seenBaseIds.add(String(vMatch.id).toLowerCase());
+
+        merged.push({
+          ...(vMatch || {}),
+          id: s.id,
+          code: vMatch?.code || sCode,
+          name: s.name || vMatch?.name || "",
+          short_name: vMatch?.short_name || s.name || "",
+          school_type: sType,
+          institution_type: sType,
+          country: vMatch?.country || "",
+          city: vMatch?.city || "",
+          address: s.address || vMatch?.address || "",
+          email: s.email || vMatch?.email || "",
+          phone: s.phone || vMatch?.phone || "",
+          default_currency: s.currency || vMatch?.default_currency || "USD",
+          currency_symbol:
+            vMatch?.currency_symbol || ((s.currency || "USD") === "GHS" ? "GH₵" : "$"),
+          status: (s.status || vMatch?.status || "active") as UniversityItem["status"],
+          created_at: s.created_at || vMatch?.created_at || new Date().toISOString(),
+          updated_at: s.updated_at || vMatch?.updated_at,
+          full_access: vMatch?.full_access !== undefined ? Boolean(vMatch.full_access) : true,
+          max_users: vMatch?.max_users ?? null,
+          max_departments: vMatch?.max_departments ?? null,
+          max_roles: vMatch?.max_roles ?? null,
+          allowed_roles:
+            Array.isArray(vMatch?.allowed_roles) && vMatch.allowed_roles.length > 0
+              ? vMatch.allowed_roles
+              : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+        });
+      }
+
+      // Preserve any virtual entries not yet synced to live public.schools
+      for (const u of baseList) {
+        const uId = String(u.id || "").toLowerCase();
+        if (!seenLiveIds.has(uId) && !seenBaseIds.has(uId)) {
+          merged.push(u);
+        }
+      }
+      baseList = merged;
+    }
+  } catch (liveQueryErr) {
+    console.warn("Could not query live public.schools table:", liveQueryErr);
+  }
+
+  // Also check virtual 'schools' fallback if needed
+  try {
+    const { data: vSchoolsData } = await (supabase as any)
+      .from("schools")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (Array.isArray(vSchoolsData) && vSchoolsData.length > 0) {
+      const existingIds = new Set(baseList.map((u) => String(u.id).toLowerCase()));
       const existingCodes = new Set(baseList.map((u) => u.code?.toUpperCase()));
       const existingNames = new Set(baseList.map((u) => u.name?.toLowerCase()));
 
-      for (const s of schoolsData) {
-        const sCode = (s.slug || s.name.substring(0, 4)).toUpperCase();
+      for (const s of vSchoolsData) {
+        const sCode = (s.slug || s.code || s.name?.substring(0, 4) || "SCH").toUpperCase();
         const sType = s.school_type || s.school_Type || "university";
-
-        if (!existingCodes.has(sCode) && !existingNames.has(s.name?.toLowerCase())) {
+        if (
+          !existingIds.has(String(s.id).toLowerCase()) &&
+          !existingCodes.has(sCode) &&
+          !existingNames.has(s.name?.toLowerCase())
+        ) {
           baseList.push({
             id: s.id,
             code: sCode,
             name: s.name,
             school_type: sType,
             institution_type: sType,
-            country: "Ghana",
-            city: "Accra",
+            country: s.country || "",
+            city: s.city || "",
             address: s.address || "",
             email: s.email || "",
             phone: s.phone || "",
-            default_currency: s.currency || "GHS",
-            currency_symbol: s.currency === "USD" ? "$" : "GH₵",
+            default_currency: s.currency || "USD",
+            currency_symbol: s.currency === "GHS" ? "GH₵" : "$",
             status: s.status || "active",
             created_at: s.created_at,
             updated_at: s.updated_at,
             full_access: true,
           });
-        } else {
-          const existing = baseList.find(
-            (u) => u.code?.toUpperCase() === sCode || u.name?.toLowerCase() === s.name?.toLowerCase()
-          );
-          if (existing && (s.school_type || s.school_Type)) {
-            existing.school_type = s.school_type || s.school_Type || existing.school_type;
-            existing.institution_type = s.school_type || s.school_Type || existing.institution_type;
-          }
         }
       }
     }
-  } catch (schoolsErr) {
-    console.warn("Could not query schools table:", schoolsErr);
-  }
+  } catch {}
 
   if (baseList.length === 0) {
     return [];
@@ -1764,17 +2482,28 @@ export async function getUniversities(): Promise<UniversityItem[]> {
 
   // Calculate live telemetry counters (users, departments, distinct roles)
   try {
-    const [profilesRes, deptsRes, userRolesRes, rolesRes] = await Promise.all([
-      (supabase as any).from("profiles").select("id, metadata"),
-      (supabase as any).from("departments").select("id, faculty_id"),
-      (supabase as any).from("user_role_assignments").select("user_id, role_id, is_active"),
-      (supabase as any).from("roles").select("id, code"),
-    ]);
+    const [profilesRes, deptsRes, userRolesRes, rolesRes, liveMemRes, liveAuthRes] =
+      await Promise.all([
+        (supabase as any)
+          .from("profiles")
+          .select("id, role, school_id, university_id, metadata")
+          .neq("account_status", "deleted"),
+        (supabase as any).from("departments").select("id, faculty_id, school_id, university_id"),
+        (supabase as any).from("user_role_assignments").select("user_id, role_id, school_id, is_active"),
+        (supabase as any).from("roles").select("id, code"),
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id, user_id, role, status")
+          .eq("status", "active"),
+        directAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } })),
+      ]);
 
     const profiles = Array.isArray(profilesRes?.data) ? profilesRes.data : [];
     const depts = Array.isArray(deptsRes?.data) ? deptsRes.data : [];
     const assignments = Array.isArray(userRolesRes?.data) ? userRolesRes.data : [];
     const roles = Array.isArray(rolesRes?.data) ? rolesRes.data : [];
+    const liveMemberships = Array.isArray(liveMemRes?.data) ? liveMemRes.data : [];
+    const liveAuthUsers = Array.isArray(liveAuthRes?.data?.users) ? liveAuthRes.data.users : [];
 
     const roleCodeById: Record<string, string> = {};
     roles.forEach((r: any) => {
@@ -1782,25 +2511,61 @@ export async function getUniversities(): Promise<UniversityItem[]> {
     });
 
     return baseList.map((u) => {
-      // Find users belonging to this university
-      const matchingUsers = profiles.filter((p: any) => {
-        const m = p.metadata || {};
-        return m.university_id === u.id || m.university_code === u.code;
-      });
+      const uIdLower = String(u.id).toLowerCase();
+      const uCodeLower = String(u.code || "").toLowerCase();
 
-      const userIds = new Set(matchingUsers.map((p: any) => p.id));
-
+      const matchingUserIds = new Set<string>();
       const distinctRoles = new Set<string>();
-      assignments.forEach((a: any) => {
-        if (userIds.has(a.user_id) && a.is_active !== false) {
-          const code = roleCodeById[a.role_id] || a.role_id;
-          distinctRoles.add(code);
+
+      profiles.forEach((p: any) => {
+        const m = p.metadata || {};
+        const pSchool = String(
+          p.school_id || p.university_id || m.school_id || m.university_id || ""
+        ).toLowerCase();
+        const pCode = String(m.university_code || "").toLowerCase();
+        if ((pSchool && (pSchool === uIdLower || pSchool === uCodeLower)) || (pCode && pCode === uCodeLower)) {
+          matchingUserIds.add(p.id);
+          if (p.role || m.role) distinctRoles.add(String(p.role || m.role));
         }
       });
 
-      const currentUsers = Math.max(matchingUsers.length, u.admins_count || 1);
-      const currentDepts = depts.length > 0 ? Math.min(depts.length, 5) : 3;
-      const currentRoles = Math.max(distinctRoles.size, 2);
+      liveMemberships.forEach((mem: any) => {
+        if (String(mem.school_id || "").toLowerCase() === uIdLower && mem.user_id) {
+          matchingUserIds.add(mem.user_id);
+          if (mem.role) distinctRoles.add(String(mem.role));
+        }
+      });
+
+      liveAuthUsers.forEach((au: any) => {
+        const auSchool = String(
+          au.app_metadata?.school_id ||
+            au.user_metadata?.school_id ||
+            au.app_metadata?.university_id ||
+            au.user_metadata?.university_id ||
+            ""
+        ).toLowerCase();
+        const auCode = String(au.user_metadata?.university_code || "").toLowerCase();
+        if ((auSchool && (auSchool === uIdLower || auSchool === uCodeLower)) || (auCode && auCode === uCodeLower)) {
+          matchingUserIds.add(au.id);
+          const r = au.app_metadata?.role || au.user_metadata?.role;
+          if (r) distinctRoles.add(String(r));
+        }
+      });
+
+      assignments.forEach((a: any) => {
+        const matchesSchool =
+          matchingUserIds.has(a.user_id) ||
+          String(a.school_id || "").toLowerCase() === uIdLower;
+        if (matchesSchool && a.is_active !== false) {
+          const code = roleCodeById[a.role_id] || a.role_id;
+          if (code) distinctRoles.add(String(code));
+        }
+      });
+
+      const schoolDeptsCount = depts.filter((d: any) => {
+        const dSchool = String(d.school_id || d.university_id || "").toLowerCase();
+        return dSchool === uIdLower || (uCodeLower && dSchool === uCodeLower);
+      }).length;
 
       return {
         ...u,
@@ -1808,12 +2573,13 @@ export async function getUniversities(): Promise<UniversityItem[]> {
         max_users: u.max_users !== undefined ? u.max_users : null,
         max_departments: u.max_departments !== undefined ? u.max_departments : null,
         max_roles: u.max_roles !== undefined ? u.max_roles : null,
-        allowed_roles: Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
-          ? u.allowed_roles
-          : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
-        current_users_count: currentUsers,
-        current_departments_count: currentDepts,
-        current_roles_count: currentRoles,
+        allowed_roles:
+          Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
+            ? u.allowed_roles
+            : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+        current_users_count: matchingUserIds.size,
+        current_departments_count: schoolDeptsCount,
+        current_roles_count: distinctRoles.size,
       };
     });
   } catch {
@@ -1823,12 +2589,13 @@ export async function getUniversities(): Promise<UniversityItem[]> {
       max_users: u.max_users !== undefined ? u.max_users : null,
       max_departments: u.max_departments !== undefined ? u.max_departments : null,
       max_roles: u.max_roles !== undefined ? u.max_roles : null,
-      allowed_roles: Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
-        ? u.allowed_roles
-        : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
-      current_users_count: 5,
-      current_departments_count: 3,
-      current_roles_count: 4,
+      allowed_roles:
+        Array.isArray(u.allowed_roles) && u.allowed_roles.length > 0
+          ? u.allowed_roles
+          : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+      current_users_count: 0,
+      current_departments_count: 0,
+      current_roles_count: 0,
     }));
   }
 }
@@ -1934,86 +2701,114 @@ export async function validateUniversityDepartmentQuota(
  * Create a new university in the database.
  */
 export async function createUniversity(
-  payload: Omit<UniversityItem, "id" | "created_at">
-): Promise<UniversityItem> {
+  payload: Omit<UniversityItem, "id" | "created_at"> & {
+    admin?: {
+      full_name: string;
+      email: string;
+      password: string;
+      phone?: string;
+      role?: string;
+    };
+  }
+): Promise<UniversityItem & { admin?: SystemAdminItem }> {
   const supabase = createAdminClient();
-  const newId = crypto.randomUUID();
+  const directAdmin = createDirectAdminClient();
   const now = new Date().toISOString();
-
+  const cleanCode = payload.code.trim().toUpperCase();
   const createdSchoolType = payload.school_type || payload.institution_type || "university";
 
+  if (payload.admin) {
+    if (!payload.admin.email?.trim() || !payload.admin.full_name?.trim()) {
+      throw new Error("School admin full name and email are required.");
+    }
+    if (!payload.admin.password || payload.admin.password.length < 6) {
+      throw new Error("School admin password must be at least 6 characters.");
+    }
+  }
+
+  const current = await getUniversities();
+  if (current.some((u) => u.code?.toLowerCase() === cleanCode.toLowerCase())) {
+    throw new Error(`A school with code '${cleanCode}' already exists.`);
+  }
+
+  // 1. Insert school into live public.schools FIRST and capture DB-generated UUID
+  const liveSchool = await insertLiveSchoolRow(directAdmin, {
+    name: payload.name,
+    code: cleanCode,
+    school_type: createdSchoolType,
+    status: payload.status || "active",
+    default_currency: payload.default_currency || "USD",
+    city: payload.city,
+    country: payload.country,
+    address: payload.address,
+    phone: payload.phone,
+    email: payload.email,
+  });
+  const newId = liveSchool.id;
+
+  let createdAdmin: SystemAdminItem | undefined;
+  if (payload.admin) {
+    try {
+      const adminRole = payload.admin.role?.trim() || "system_admin";
+      const provisioned = await provisionUserAccountAndLinks({
+        email: payload.admin.email,
+        password: payload.admin.password,
+        fullName: payload.admin.full_name,
+        phone: payload.admin.phone,
+        role: adminRole,
+        schoolId: newId,
+        schoolName: payload.name.trim(),
+        schoolCode: cleanCode,
+        accountStatus: "active",
+      });
+
+      createdAdmin = {
+        id: provisioned.id,
+        email: provisioned.email,
+        full_name: payload.admin.full_name.trim(),
+        phone: payload.admin.phone,
+        account_status: "active",
+        university_id: newId,
+        university_name: payload.name.trim(),
+        created_at: now,
+      };
+    } catch (adminErr) {
+      // Atomic rollback of the live school row if admin provisioning fails
+      try {
+        await (directAdmin as any).from("schools").delete().eq("id", newId);
+      } catch {}
+      throw adminErr;
+    }
+  }
+
+  const { admin: _ignoredAdminPayload, ...schoolFields } = payload;
   const newUniv: UniversityItem = {
-    ...payload,
+    ...schoolFields,
     id: newId,
+    code: cleanCode,
     school_type: createdSchoolType,
     institution_type: createdSchoolType,
     full_access: payload.full_access !== undefined ? Boolean(payload.full_access) : true,
     max_users: payload.max_users !== undefined ? payload.max_users : null,
     max_departments: payload.max_departments !== undefined ? payload.max_departments : null,
     max_roles: payload.max_roles !== undefined ? payload.max_roles : null,
-    allowed_roles: Array.isArray(payload.allowed_roles) && payload.allowed_roles.length > 0
-      ? payload.allowed_roles
-      : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
-    current_users_count: 0,
+    allowed_roles:
+      Array.isArray(payload.allowed_roles) && payload.allowed_roles.length > 0
+        ? payload.allowed_roles
+        : AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code),
+    current_users_count: createdAdmin ? 1 : 0,
     current_departments_count: 0,
     current_roles_count: 0,
     created_at: now,
     updated_at: now,
   };
 
-  // 1. Try inserting into 'universities' table
-  let savedToTable = false;
+  // Sync secondary metadata stores (system_settings + virtual DB)
   try {
-    const { data, error } = await (supabase as any)
-      .from("universities")
-      .insert(newUniv)
-      .select()
-      .single();
+    await (supabase as any).from("universities").insert(newUniv);
+  } catch {}
 
-    if (!error && data) {
-      savedToTable = true;
-    }
-  } catch {
-    // Table not available
-  }
-
-  // 1b. Try inserting into 'schools' table (primary table in Supabase schema)
-  try {
-    await (supabase as any)
-      .from("schools")
-      .insert({
-        id: newUniv.id,
-        name: newUniv.name,
-        slug: newUniv.code.toLowerCase(),
-        school_type: createdSchoolType,
-        status: newUniv.status,
-        currency: newUniv.default_currency,
-        address: `${newUniv.city || ""}, ${newUniv.country}`,
-        phone: newUniv.phone || null,
-        email: newUniv.email || null,
-      });
-  } catch {
-    // If school_type column doesn't exist yet, insert without it
-    try {
-      await (supabase as any)
-        .from("schools")
-        .insert({
-          id: newUniv.id,
-          name: newUniv.name,
-          slug: newUniv.code.toLowerCase(),
-          status: newUniv.status,
-          currency: newUniv.default_currency,
-          address: `${newUniv.city || ""}, ${newUniv.country}`,
-          phone: newUniv.phone || null,
-          email: newUniv.email || null,
-        });
-    } catch {}
-  }
-
-  // 2. Always persist in system_settings for redundancy
-  const current = await getUniversities();
-  const updated = [newUniv, ...current.filter((u) => u.code !== newUniv.code)];
-
+  const updated = [newUniv, ...current.filter((u) => u.id !== newId && u.code?.toLowerCase() !== cleanCode.toLowerCase())];
   await (supabase as any).from("system_settings").upsert(
     {
       setting_key: "superadmin_universities",
@@ -2026,7 +2821,7 @@ export async function createUniversity(
     { onConflict: "setting_key" }
   );
 
-  // Clear any previous decommission/deletion record for this university code or ID
+  // Clear any previous decommission/deletion record for this school
   try {
     const { data: delSetting } = await (supabase as any)
       .from("system_settings")
@@ -2053,33 +2848,29 @@ export async function createUniversity(
     }
   } catch {}
 
-  // Update in-memory and disk Virtual DB store
   try {
     const vDb = await getVirtualDb();
     if (vDb) {
       if (Array.isArray(vDb.universities)) {
-        vDb.universities = [newUniv, ...vDb.universities.filter((u: any) => u.code !== newUniv.code)];
+        vDb.universities = [newUniv, ...vDb.universities.filter((u: any) => u.id !== newId && u.code?.toLowerCase() !== cleanCode.toLowerCase())];
       }
       if (Array.isArray(vDb.schools)) {
-        vDb.schools = [newUniv, ...vDb.schools.filter((s: any) => s.code !== newUniv.code)];
+        vDb.schools = [newUniv, ...vDb.schools.filter((s: any) => s.id !== newId && s.code?.toLowerCase() !== cleanCode.toLowerCase())];
       }
       await persistVirtualDb(vDb);
     }
   } catch {}
 
-  // 3. Create initial main campus in 'campuses' table
   try {
     await (supabase as any).from("campuses").insert({
-      code: `${payload.code.toUpperCase()}_MAIN`,
-      name: `${payload.name} Main Campus`,
-      location: `${payload.city || ""}, ${payload.country}`,
+      school_id: newId,
+      code: `${cleanCode}_MAIN`,
+      name: `${newUniv.name} Main Campus`,
+      location: [newUniv.city, newUniv.country].filter(Boolean).join(", "),
       is_active: true,
     });
-  } catch (campErr) {
-    console.warn("Could not auto-create campus:", campErr);
-  }
+  } catch {}
 
-  // 4. Log immutable security audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "create_university",
@@ -2088,107 +2879,166 @@ export async function createUniversity(
       actor_role: "superadmin",
       outcome: "SUCCESS",
       new_values: {
-        code: payload.code,
-        name: payload.name,
-        country: payload.country,
+        code: newUniv.code,
+        name: newUniv.name,
+        country: newUniv.country,
+        admin_email: createdAdmin?.email || null,
       },
     });
-  } catch {
-    // Ignore audit log failure
-  }
+  } catch {}
 
-  return newUniv;
+  return createdAdmin ? { ...newUniv, admin: createdAdmin } : newUniv;
 }
 
 /**
- * Fetch all System Administrators across all universities.
+ * Fetch all System Administrators across live Supabase and virtual stores.
  */
 export async function getSystemAdmins(): Promise<SystemAdminItem[]> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
 
   try {
-    // Find system_admin role id
-    const { data: roleData } = await (supabase as any)
-      .from("roles")
-      .select("id")
-      .eq("code", "system_admin")
-      .maybeSingle();
+    const [
+      universities,
+      delUsersRes,
+      liveUsersRes,
+      liveMembershipsRes,
+      liveProfilesRes,
+      vRolesRes,
+      vProfilesRes,
+      vSysAdminsRes,
+    ] = await Promise.all([
+      getUniversities(),
+      (supabase as any).from("system_settings").select("setting_value").eq("setting_key", "deleted_users").maybeSingle(),
+      directAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }).catch(() => ({ data: { users: [] } })),
+      (directAdmin as any).from("school_memberships").select("user_id, school_id, role, status, roles(code)").then((r: any) => r, () => ({ data: [] })),
+      (directAdmin as any).from("profiles").select("id, email, full_name, phone, role, school_id, university_id, account_status, last_sign_in_at, metadata, created_at").then((r: any) => r, () => ({ data: [] })),
+      (supabase as any).from("roles").select("id, code").in("code", ["system_admin", "school_admin"]),
+      (supabase as any).from("profiles").select("id, email, full_name, phone, role, school_id, university_id, account_status, last_sign_in_at, metadata, created_at"),
+      (supabase as any).from("university_system_admins").select("user_id, university_id"),
+    ]);
 
-    if (!roleData?.id) return [];
-
-    // Query assignments
-    const { data: assignments } = await (supabase as any)
-      .from("user_role_assignments")
-      .select("user_id, is_active, created_at")
-      .eq("role_id", roleData.id);
-
-    const userIds = (assignments || []).map((a: any) => a.user_id);
-    if (userIds.length === 0) return [];
-
-    // Query profiles
-    const { data: profiles } = await (supabase as any)
-      .from("profiles")
-      .select("id, email, full_name, phone, account_status, last_sign_in_at, metadata, created_at")
-      .in("id", userIds);
-
-    const universities = await getUniversities();
-
-    // Query blacklisted deleted users to ensure deleted school admins are never shown
-    let deletedUserIds = new Set<string>();
-    let deletedEmails = new Set<string>();
-    try {
-      const { data: delUsersSetting } = await (supabase as any)
-        .from("system_settings")
-        .select("setting_value")
-        .eq("setting_key", "deleted_users")
-        .maybeSingle();
-
-      const deletedUsers = Array.isArray(delUsersSetting?.setting_value) ? delUsersSetting.setting_value : [];
-      deletedUserIds = new Set(deletedUsers.map((u: any) => String(u.id || "").toLowerCase()).filter(Boolean));
-      deletedEmails = new Set(deletedUsers.map((u: any) => String(u.email || "").toLowerCase()).filter(Boolean));
-    } catch {}
+    const deletedUsers = Array.isArray(delUsersRes?.data?.setting_value) ? delUsersRes.data.setting_value : [];
+    const deletedUserIds = new Set(deletedUsers.map((u: any) => String(u.id || "").toLowerCase()).filter(Boolean));
+    const deletedEmails = new Set(deletedUsers.map((u: any) => String(u.email || "").toLowerCase()).filter(Boolean));
 
     const validUnivIds = new Set(universities.map((u) => String(u.id || "").toLowerCase()));
     const validUnivCodes = new Set(universities.map((u) => String(u.code || "").toLowerCase()));
+    const univById = new Map<string, UniversityItem>();
+    universities.forEach((u) => {
+      if (u.id) univById.set(String(u.id).toLowerCase(), u);
+      if (u.code) univById.set(String(u.code).toLowerCase(), u);
+    });
 
-    return (profiles || [])
-      .filter((p: any) => {
-        if (p.account_status === "deleted") return false;
-        if (p.id && deletedUserIds.has(String(p.id).toLowerCase())) return false;
-        if (p.email && deletedEmails.has(String(p.email).toLowerCase())) return false;
+    const vRoleIds = (vRolesRes?.data || []).map((r: any) => r.id);
+    const vAssignmentsRes =
+      vRoleIds.length > 0
+        ? await (supabase as any).from("user_role_assignments").select("user_id, school_id").in("role_id", vRoleIds)
+        : { data: [] };
 
-        const assignedUnivId = String(p.metadata?.university_id || p.school_id || "").toLowerCase();
-        const assignedUnivCode = String(p.metadata?.university_code || "").toLowerCase();
+    const adminRoleSet = new Set(["system_admin", "school_admin"]);
+    const adminByUserId = new Map<string, any>();
 
-        // If the admin was assigned to a school that was deleted, exclude them
-        if (assignedUnivId && !validUnivIds.has(assignedUnivId) && !validUnivCodes.has(assignedUnivId)) {
-          return false;
-        }
-        if (assignedUnivCode && !validUnivCodes.has(assignedUnivCode)) {
-          return false;
-        }
-        return true;
-      })
-      .map((p: any) => {
-        const assignedUnivId = p.metadata?.university_id || p.school_id;
-        const univ = universities.find(
-          (u) =>
-            u.id === assignedUnivId ||
-            u.code?.toLowerCase() === p.metadata?.university_code?.toLowerCase()
-        );
-
-        return {
-          id: p.id,
-          email: p.email,
-          full_name: p.full_name || "System Admin",
-          phone: p.phone,
-          account_status: p.account_status || "active",
-          university_id: assignedUnivId,
-          university_name: univ ? univ.name : "Primary Institution",
-          created_at: p.created_at,
-          last_sign_in_at: p.last_sign_in_at,
-        };
+    // Seed with live Auth users who hold system_admin / school_admin metadata or membership
+    const authUsers: any[] = liveUsersRes?.data?.users || [];
+    for (const au of authUsers) {
+      const appRole = String(au.app_metadata?.role || au.user_metadata?.role || au.user_metadata?.default_role || "").toLowerCase();
+      if (!adminRoleSet.has(appRole)) continue;
+      const schoolId = au.app_metadata?.school_id || au.user_metadata?.school_id || au.app_metadata?.university_id || au.user_metadata?.university_id || null;
+      adminByUserId.set(au.id, {
+        id: au.id,
+        email: au.email || "",
+        full_name: au.user_metadata?.full_name || au.email || "System Admin",
+        phone: au.phone || null,
+        account_status: au.banned_until ? "suspended" : "active",
+        school_id: schoolId,
+        university_name: au.user_metadata?.university_name || null,
+        created_at: au.created_at,
+        last_sign_in_at: au.last_sign_in_at,
       });
+    }
+
+    // Merge live school_memberships where role is system_admin / school_admin
+    for (const m of liveMembershipsRes?.data || []) {
+      const mRole = String(m.role || m.roles?.code || "").toLowerCase();
+      if (!adminRoleSet.has(mRole)) continue;
+      const authMatch = authUsers.find((u: any) => u.id === m.user_id);
+      const existing = adminByUserId.get(m.user_id) || {};
+      adminByUserId.set(m.user_id, {
+        ...existing,
+        id: m.user_id,
+        email: existing.email || authMatch?.email || "",
+        full_name: existing.full_name || authMatch?.user_metadata?.full_name || "System Admin",
+        school_id: m.school_id || existing.school_id || null,
+        account_status: existing.account_status || (m.status === "active" ? "active" : "suspended"),
+        created_at: existing.created_at || authMatch?.created_at || new Date().toISOString(),
+        last_sign_in_at: existing.last_sign_in_at || authMatch?.last_sign_in_at,
+      });
+    }
+
+    // Merge live profiles + virtual DB profiles + assignment mappings
+    const vAssignedIds = new Set<string>([
+      ...((vAssignmentsRes?.data || []).map((a: any) => a.user_id)),
+      ...((vSysAdminsRes?.data || []).map((s: any) => s.user_id)),
+    ]);
+
+    const allProfiles = [
+      ...(Array.isArray(vProfilesRes?.data) ? vProfilesRes.data : []),
+      ...(Array.isArray(liveProfilesRes?.data) ? liveProfilesRes.data : []),
+    ];
+
+    for (const p of allProfiles) {
+      if (!p?.id) continue;
+      const pRole = String(p.role || p.metadata?.role || p.metadata?.default_role || "").toLowerCase();
+      if (!adminRoleSet.has(pRole) && !vAssignedIds.has(p.id) && !adminByUserId.has(p.id)) {
+        continue;
+      }
+      const existing = adminByUserId.get(p.id) || {};
+      adminByUserId.set(p.id, {
+        ...existing,
+        id: p.id,
+        email: p.email || existing.email || "",
+        full_name: p.full_name || existing.full_name || "System Admin",
+        phone: p.phone ?? existing.phone,
+        account_status: p.account_status || existing.account_status || "active",
+        school_id: p.school_id || p.university_id || p.metadata?.school_id || p.metadata?.university_id || existing.school_id || null,
+        university_code: p.metadata?.university_code,
+        university_name: p.metadata?.university_name || existing.university_name,
+        created_at: p.created_at || existing.created_at || new Date().toISOString(),
+        last_sign_in_at: p.last_sign_in_at || existing.last_sign_in_at,
+      });
+    }
+
+    const result: SystemAdminItem[] = [];
+    for (const item of adminByUserId.values()) {
+      if (item.account_status === "deleted") continue;
+      if (deletedUserIds.has(String(item.id || "").toLowerCase())) continue;
+      if (item.email && deletedEmails.has(String(item.email).toLowerCase())) continue;
+
+      const assignedId = String(item.school_id || "").toLowerCase();
+      const assignedCode = String(item.university_code || "").toLowerCase();
+      if (assignedId && !validUnivIds.has(assignedId) && !validUnivCodes.has(assignedId)) {
+        continue;
+      }
+      if (assignedCode && !validUnivCodes.has(assignedCode)) {
+        continue;
+      }
+
+      const univ = univById.get(assignedId) || univById.get(assignedCode);
+      result.push({
+        id: item.id,
+        email: item.email,
+        full_name: item.full_name || "System Admin",
+        phone: item.phone,
+        account_status: item.account_status || "active",
+        university_id: item.school_id || undefined,
+        university_name: univ ? univ.name : item.university_name || "Unassigned",
+        created_at: item.created_at,
+        last_sign_in_at: item.last_sign_in_at,
+      });
+    }
+
+    return result;
   } catch (err) {
     console.error("Error in getSystemAdmins:", err);
     return [];
@@ -2196,7 +3046,7 @@ export async function getSystemAdmins(): Promise<SystemAdminItem[]> {
 }
 
 /**
- * Create a new System Admin login in Supabase and assign them to a university.
+ * Create a new System Admin login in Supabase Auth (service role) and assign them to a school.
  */
 export async function createSystemAdmin(payload: {
   email: string;
@@ -2207,183 +3057,66 @@ export async function createSystemAdmin(payload: {
   university_name?: string;
 }): Promise<SystemAdminItem> {
   const supabase = createAdminClient();
-  const cleanEmail = payload.email.trim().toLowerCase();
+  const directAdmin = createDirectAdminClient();
   const now = new Date().toISOString();
 
-  // If this email was previously in deleted_users blacklist, remove it
-  try {
-    const { data: delSetting } = await (supabase as any)
-      .from("system_settings")
-      .select("setting_value")
-      .eq("setting_key", "deleted_users")
-      .maybeSingle();
-
-    const currentDel = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
-    const filteredDel = currentDel.filter((u: any) => u?.email?.toLowerCase() !== cleanEmail);
-    if (filteredDel.length !== currentDel.length) {
-      await (supabase as any).from("system_settings").upsert(
-        {
-          setting_key: "deleted_users",
-          setting_value: filteredDel,
-          updated_at: now,
-        },
-        { onConflict: "setting_key" }
-      );
-    }
-  } catch {}
-
-  // 1. Create Auth user with verified email (with local virtual-db fallback)
-  let user: { id: string; email?: string } = {
-    id: crypto.randomUUID(),
-    email: cleanEmail,
-  };
-
-  try {
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: cleanEmail,
-      password: payload.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: payload.full_name.trim(),
-        role: "system_admin",
-        default_role: "system_admin",
-        school_id: payload.university_id,
-        university_id: payload.university_id,
-        university_name: payload.university_name,
-      },
-    });
-
-    if (!authError && authData?.user) {
-      user = authData.user;
-    }
-  } catch {
-    // Fallback to virtual-db profile creation
+  if (!payload.email?.trim() || !payload.full_name?.trim()) {
+    throw new Error("Admin email and full name are required.");
+  }
+  if (!payload.password || payload.password.length < 6) {
+    throw new Error("Password must be at least 6 characters.");
+  }
+  if (!payload.university_id?.trim()) {
+    throw new Error("A school / university assignment is required.");
   }
 
-  // Register in dynamic users for fallback session handling
-  registerDynamicUser(cleanEmail, payload.password, {
-    id: user.id,
-    email: cleanEmail,
-    full_name: payload.full_name.trim(),
+  const universities = await getUniversities();
+  const matchedUniv = universities.find(
+    (u) => u.id === payload.university_id || u.code?.toLowerCase() === payload.university_id.toLowerCase()
+  );
+  const resolvedSchoolId = matchedUniv?.id || payload.university_id;
+  const resolvedSchoolName = matchedUniv?.name || payload.university_name || "";
+
+  if (matchedUniv && isValidUuid(matchedUniv.id)) {
+    await ensureLiveSchoolRowExists(directAdmin, matchedUniv);
+  }
+
+  const provisioned = await provisionUserAccountAndLinks({
+    email: payload.email,
+    password: payload.password,
+    fullName: payload.full_name,
+    phone: payload.phone,
     role: "system_admin",
-    role_name: "System Administrator",
-    school_id: payload.university_id,
+    schoolId: resolvedSchoolId,
+    schoolName: resolvedSchoolName,
+    schoolCode: matchedUniv?.code,
+    accountStatus: "active",
   });
 
-  // 2. Upsert profile scoped to the assigned tenant school
-  const profileRow = {
-    id: user.id,
-    email: user.email || cleanEmail,
-    full_name: payload.full_name.trim(),
-    phone: payload.phone || null,
-    account_status: "active",
-    school_id: payload.university_id,
-    university_id: payload.university_id,
-    metadata: {
-      role: "system_admin",
-      default_role: "system_admin",
-      school_id: payload.university_id,
-      university_id: payload.university_id,
-      university_name: payload.university_name,
-      university_status: "active",
-      temp_password: payload.password,
-    },
-    created_at: now,
-    updated_at: now,
-  };
-
-  await (supabase as any).from("profiles").upsert(profileRow, { onConflict: "id" });
-
-  // 3. Assign system_admin role in user_role_assignments
-  const { data: roleRow } = await (supabase as any)
-    .from("roles")
-    .select("id")
-    .eq("code", "system_admin")
-    .maybeSingle();
-
-  const roleId = roleRow?.id || "f67d1b87-ec01-41db-b436-1d59c9d3fe25";
-  await (supabase as any).from("user_role_assignments").upsert(
-    {
-      user_id: user.id,
-      role_id: roleId,
-      school_id: payload.university_id,
-      is_active: true,
-      created_at: now,
-    },
-    { onConflict: "user_id,role_id" }
-  );
-
-  // 4. Try mapping to university_system_admins table if exists
-  try {
-    await (supabase as any).from("university_system_admins").insert({
-      university_id: payload.university_id,
-      user_id: user.id,
-      is_primary: false,
-    });
-  } catch {
-    // Ignore if table not created
-  }
-
-  // 5. Update Virtual DB in-memory and disk
-  try {
-    const vDb = await getVirtualDb();
-    if (vDb) {
-      if (Array.isArray(vDb.profiles)) {
-        const existIdx = vDb.profiles.findIndex((p: any) => p.id === user.id || p.email === cleanEmail);
-        if (existIdx !== -1) {
-          vDb.profiles[existIdx] = { ...vDb.profiles[existIdx], ...profileRow };
-        } else {
-          vDb.profiles.unshift(profileRow);
-        }
-      }
-      if (Array.isArray(vDb.user_role_assignments)) {
-        vDb.user_role_assignments.push({
-          id: `ura-${Date.now()}`,
-          user_id: user.id,
-          role_id: roleId,
-          school_id: payload.university_id,
-          is_active: true,
-          created_at: now,
-        });
-      }
-      if (Array.isArray(vDb.university_system_admins)) {
-        vDb.university_system_admins.push({
-          university_id: payload.university_id,
-          user_id: user.id,
-          is_primary: false,
-        });
-      }
-      await persistVirtualDb(vDb);
-    }
-  } catch {}
-
-  // 6. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "create_system_admin",
       entity_type: "user",
-      entity_id: user.id,
+      entity_id: provisioned.id,
       actor_role: "superadmin",
       outcome: "SUCCESS",
       new_values: {
-        email: user.email,
-        full_name: payload.full_name,
-        university_id: payload.university_id,
+        email: provisioned.email,
+        full_name: payload.full_name.trim(),
+        university_id: resolvedSchoolId,
       },
     });
-  } catch {
-    // Ignore
-  }
+  } catch {}
 
   return {
-    id: user.id,
-    email: user.email || payload.email,
-    full_name: payload.full_name,
+    id: provisioned.id,
+    email: provisioned.email,
+    full_name: payload.full_name.trim(),
     phone: payload.phone,
     account_status: "active",
-    university_id: payload.university_id,
-    university_name: payload.university_name,
-    created_at: new Date().toISOString(),
+    university_id: resolvedSchoolId,
+    university_name: resolvedSchoolName || "Unassigned",
+    created_at: now,
   };
 }
 
@@ -2391,132 +3124,189 @@ export async function createSystemAdmin(payload: {
  * Fetch high-level platform vitals and KPIs.
  */
 export async function getSuperAdminStats(): Promise<SuperAdminStats> {
-  const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
   const startTime = Date.now();
+  const queryErrors: string[] = [];
 
-  let universitiesCount = 0;
-  let activeUniversitiesCount = 0;
-  let campusesCount = 0;
-  let studentsCount = 0;
-  let lecturersCount = 0;
-  let staffCount = 0;
-  let systemAdminsCount = 0;
+  const isMissingTable = (err: any) => {
+    if (!err) return false;
+    const msg = String(err.message || err || "");
+    return (
+      err.code === "PGRST205" ||
+      msg.includes("Could not find the table") ||
+      msg.includes("does not exist")
+    );
+  };
 
   let univs: UniversityItem[] = [];
   try {
     univs = await getUniversities();
-    universitiesCount = univs.length;
-    activeUniversitiesCount = univs.filter((u) => u.status === "active").length;
-  } catch {}
+  } catch (err: any) {
+    console.error("[getSuperAdminStats] schools fetch failed:", err);
+    queryErrors.push(`schools: ${err?.message || "Failed to load schools"}`);
+  }
 
-  try {
-    if (universitiesCount === 0) {
-      campusesCount = 0;
-    } else {
-      const { data: campusesData } = await (supabase as any)
-        .from("campuses")
-        .select("id, school_id, university_id");
+  const universitiesCount = univs.length;
+  const activeUniversitiesCount = univs.filter((u) => u.status === "active").length;
 
-      if (Array.isArray(campusesData)) {
-        const univIds = new Set(univs.map((u) => String(u.id).toLowerCase()));
-        const univCodes = new Set(univs.map((u) => String(u.code || "").toLowerCase()));
-        campusesCount = campusesData.filter((c: any) => {
-          const sId = String(c.school_id || c.university_id || "").toLowerCase();
-          return sId && (univIds.has(sId) || univCodes.has(sId));
-        }).length;
-      } else {
-        const { count } = await (supabase as any)
-          .from("campuses")
-          .select("*", { count: "exact", head: true });
-        campusesCount = count || 0;
+  const [
+    profilesCountRes,
+    profilesRowsRes,
+    studentsCountRes,
+    staffProfilesRes,
+    membershipsRes,
+    departmentsCountRes,
+    programmesCountRes,
+    sysAdminsResult,
+  ] = await Promise.all([
+    (directAdmin as any)
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .neq("account_status", "deleted"),
+    (directAdmin as any)
+      .from("profiles")
+      .select("id, role, account_status, school_id")
+      .neq("account_status", "deleted"),
+    (directAdmin as any)
+      .from("students")
+      .select("*", { count: "exact", head: true }),
+    (directAdmin as any)
+      .from("staff_profiles")
+      .select("id, user_id, school_id, designation, employment_status"),
+    (directAdmin as any)
+      .from("school_memberships")
+      .select("user_id, school_id, role, status"),
+    (directAdmin as any)
+      .from("departments")
+      .select("*", { count: "exact", head: true }),
+    (directAdmin as any)
+      .from("programmes")
+      .select("*", { count: "exact", head: true }),
+    getSystemAdmins().catch((err: any) => {
+      console.error("[getSuperAdminStats] system admins fetch failed:", err);
+      queryErrors.push(`system_admins: ${err?.message || "Failed to load admins"}`);
+      return [] as SystemAdminItem[];
+    }),
+  ]);
+
+  const checkLiveError = (label: string, res: any) => {
+    if (res?.error && !isMissingTable(res.error)) {
+      console.error(`[getSuperAdminStats] ${label} query error:`, res.error);
+      queryErrors.push(`${label}: ${res.error.message || "Query error"}`);
+    }
+  };
+
+  checkLiveError("profiles(count)", profilesCountRes);
+  checkLiveError("profiles(rows)", profilesRowsRes);
+  checkLiveError("students", studentsCountRes);
+  checkLiveError("staff_profiles", staffProfilesRes);
+  checkLiveError("school_memberships", membershipsRes);
+  checkLiveError("departments", departmentsCountRes);
+  checkLiveError("programmes", programmesCountRes);
+
+  const liveProfiles: any[] = Array.isArray(profilesRowsRes?.data)
+    ? profilesRowsRes.data
+    : [];
+  const totalUsersCount =
+    typeof profilesCountRes?.count === "number"
+      ? profilesCountRes.count
+      : liveProfiles.length;
+
+  const FACULTY_ROLES = new Set([
+    "lecturer",
+    "teacher",
+    "dean",
+    "head_of_department",
+    "academic_advisor",
+  ]);
+  const STAFF_ROLES = new Set([
+    "registrar",
+    "academic_affairs_officer",
+    "admissions_officer",
+    "finance_officer",
+    "bursar",
+    "accountant",
+    "librarian",
+    "hostel_officer",
+    "hr_officer",
+    "auditor",
+    "system_admin",
+    "school_admin",
+    "admin",
+    "administrator",
+    "staff",
+  ]);
+  const FACULTY_TITLE_REGEX =
+    /lecturer|professor|teacher|instructor|faculty|dean|academic advisor|fellow|researcher/i;
+
+  const lecturerUserIds = new Set<string>();
+  const staffUserIds = new Set<string>();
+  const studentProfileIds = new Set<string>();
+  const excludedFromStaffIds = new Set<string>();
+  let adminProfilesFallback = 0;
+
+  for (const p of liveProfiles) {
+    if (!p?.id) continue;
+    const role = String(p.role || "").trim().toLowerCase();
+    if (role === "superadmin" || role === "parent" || role === "parent_sponsor" || role === "guardian" || role === "applicant") {
+      excludedFromStaffIds.add(p.id);
+    } else if (role === "student") {
+      studentProfileIds.add(p.id);
+      excludedFromStaffIds.add(p.id);
+    } else if (FACULTY_ROLES.has(role)) {
+      lecturerUserIds.add(p.id);
+      excludedFromStaffIds.add(p.id);
+    } else if (STAFF_ROLES.has(role)) {
+      staffUserIds.add(p.id);
+      if (role === "system_admin" || role === "school_admin") {
+        adminProfilesFallback += 1;
       }
     }
-  } catch {}
+  }
 
-  try {
-    if (universitiesCount === 0) {
-      studentsCount = 0;
-    } else {
-      const { data: studentsData } = await (supabase as any)
-        .from("students")
-        .select("id, school_id, university_id");
-
-      if (Array.isArray(studentsData)) {
-        const univIds = new Set(univs.map((u) => String(u.id).toLowerCase()));
-        const univCodes = new Set(univs.map((u) => String(u.code || "").toLowerCase()));
-        studentsCount = studentsData.filter((s: any) => {
-          const sId = String(s.school_id || s.university_id || "").toLowerCase();
-          return sId && (univIds.has(sId) || univCodes.has(sId));
-        }).length;
-      } else {
-        const { count } = await (supabase as any)
-          .from("students")
-          .select("*", { count: "exact", head: true });
-        studentsCount = count || 0;
-      }
+  for (const m of membershipsRes?.data || []) {
+    if (!m?.user_id) continue;
+    const status = String(m.status || "active").toLowerCase();
+    if (status === "deleted" || status === "inactive") continue;
+    const role = String(m.role || "").trim().toLowerCase();
+    if (role === "student") {
+      studentProfileIds.add(m.user_id);
+      excludedFromStaffIds.add(m.user_id);
+    } else if (FACULTY_ROLES.has(role)) {
+      lecturerUserIds.add(m.user_id);
+      excludedFromStaffIds.add(m.user_id);
+      staffUserIds.delete(m.user_id);
+    } else if (STAFF_ROLES.has(role) && !excludedFromStaffIds.has(m.user_id)) {
+      staffUserIds.add(m.user_id);
     }
-  } catch {}
+  }
 
-  try {
-    if (universitiesCount === 0) {
-      staffCount = 0;
-    } else {
-      const { data: staffData } = await (supabase as any)
-        .from("staff")
-        .select("id, school_id, university_id");
-
-      if (Array.isArray(staffData)) {
-        const univIds = new Set(univs.map((u) => String(u.id).toLowerCase()));
-        const univCodes = new Set(univs.map((u) => String(u.code || "").toLowerCase()));
-        staffCount = staffData.filter((s: any) => {
-          const sId = String(s.school_id || s.university_id || "").toLowerCase();
-          return sId && (univIds.has(sId) || univCodes.has(sId));
-        }).length;
-      } else {
-        const { count } = await (supabase as any)
-          .from("staff")
-          .select("*", { count: "exact", head: true });
-        staffCount = count || 0;
-      }
+  for (const sp of staffProfilesRes?.data || []) {
+    const key = String(sp?.user_id || sp?.id || "");
+    if (!key) continue;
+    if (FACULTY_TITLE_REGEX.test(sp.designation || "") || lecturerUserIds.has(key)) {
+      lecturerUserIds.add(key);
+      staffUserIds.delete(key);
+    } else if (!excludedFromStaffIds.has(key)) {
+      staffUserIds.add(key);
     }
-  } catch {}
+  }
 
-  try {
-    if (universitiesCount === 0) {
-      lecturersCount = 0;
-    } else {
-      const { data: profilesData } = await (supabase as any)
-        .from("profiles")
-        .select("id, role, school_id, university_id, metadata")
-        .eq("role", "lecturer");
+  const liveStudentsCount =
+    typeof studentsCountRes?.count === "number" ? studentsCountRes.count : 0;
+  const studentsCount = Math.max(liveStudentsCount, studentProfileIds.size);
+  const lecturersCount = lecturerUserIds.size;
+  const staffCount = staffUserIds.size;
 
-      if (Array.isArray(profilesData)) {
-        const univIds = new Set(univs.map((u) => String(u.id).toLowerCase()));
-        const univCodes = new Set(univs.map((u) => String(u.code || "").toLowerCase()));
-        lecturersCount = profilesData.filter((p: any) => {
-          const meta = p.metadata || {};
-          const sId = String(p.school_id || p.university_id || meta.school_id || meta.university_id || "").toLowerCase();
-          const sCode = String(meta.university_code || "").toLowerCase();
-          return (sId && (univIds.has(sId) || univCodes.has(sId))) || (sCode && univCodes.has(sCode));
-        }).length;
-      } else {
-        const { count } = await (supabase as any)
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("role", "lecturer");
-        lecturersCount = count || 0;
-      }
-    }
-  } catch {}
+  const systemAdminsCount =
+    sysAdminsResult.length > 0 ? sysAdminsResult.length : adminProfilesFallback;
 
-  try {
-    if (universitiesCount === 0) {
-      systemAdminsCount = 0;
-    } else {
-      const sysAdmins = await getSystemAdmins();
-      systemAdminsCount = sysAdmins.length;
-    }
-  } catch {}
+  const deptsCount =
+    typeof departmentsCountRes?.count === "number" ? departmentsCountRes.count : 0;
+  const progsCount =
+    typeof programmesCountRes?.count === "number" ? programmesCountRes.count : 0;
+  const campusesCount =
+    deptsCount + progsCount > 0 ? deptsCount + progsCount : universitiesCount;
 
   const dbLatencyMs = Math.max(1, Date.now() - startTime);
 
@@ -2525,11 +3315,13 @@ export async function getSuperAdminStats(): Promise<SuperAdminStats> {
     activeUniversities: activeUniversitiesCount,
     totalSystemAdmins: systemAdminsCount,
     totalCampuses: campusesCount,
+    totalUsers: totalUsersCount,
     totalStudents: studentsCount,
     totalLecturers: lecturersCount,
     totalStaff: staffCount,
-    systemStatus: "healthy",
+    systemStatus: queryErrors.length > 0 ? "degraded" : "healthy",
     dbLatencyMs,
+    ...(queryErrors.length > 0 ? { queryErrors } : {}),
   };
 }
 
@@ -3164,19 +3956,28 @@ export interface DirectoryUserItem {
 
 export async function getDirectoryUsers(): Promise<DirectoryUserItem[]> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
 
-  // 1. Fetch active profiles
-  const { data: profiles } = await (supabase as any)
-    .from("profiles")
-    .select("id, full_name, email, phone, role, school_id, university_id, account_status, is_mfa_enabled, metadata, created_at")
-    .neq("account_status", "deleted")
-    .order("created_at", { ascending: false });
-
-  // 2. Query deleted users blacklist and active universities
-  const [{ data: delUsersRow }, { data: delUnivsRow }, universities] = await Promise.all([
+  const [
+    { data: vProfiles },
+    { data: delUsersRow },
+    { data: delUnivsRow },
+    universities,
+    liveUsersRes,
+    liveMembershipsRes,
+    liveProfilesRes,
+  ] = await Promise.all([
+    (supabase as any)
+      .from("profiles")
+      .select("id, full_name, email, phone, role, school_id, university_id, account_status, is_mfa_enabled, metadata, created_at")
+      .neq("account_status", "deleted")
+      .order("created_at", { ascending: false }),
     (supabase as any).from("system_settings").select("setting_value").eq("setting_key", "deleted_users").maybeSingle(),
     (supabase as any).from("system_settings").select("setting_value").eq("setting_key", "deleted_universities").maybeSingle(),
     getUniversities(),
+    directAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }).catch(() => ({ data: { users: [] } })),
+    (directAdmin as any).from("school_memberships").select("user_id, school_id, role, status, roles(code)").then((r: any) => r, () => ({ data: [] })),
+    (directAdmin as any).from("profiles").select("id, full_name, email, phone, role, school_id, university_id, account_status, is_mfa_enabled, metadata, created_at").then((r: any) => r, () => ({ data: [] })),
   ]);
 
   const deletedUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
@@ -3193,7 +3994,57 @@ export async function getDirectoryUsers(): Promise<DirectoryUserItem[]> {
     if (u.code) univNameMap.set(String(u.code).toLowerCase(), u.name);
   });
 
-  const validProfiles = (profiles || []).filter((u: any) => {
+  const liveMembershipMap = new Map<string, any>();
+  for (const m of liveMembershipsRes?.data || []) {
+    if (m?.user_id && !liveMembershipMap.has(m.user_id)) {
+      liveMembershipMap.set(m.user_id, m);
+    }
+  }
+
+  const byId = new Map<string, any>();
+  for (const vp of vProfiles || []) {
+    if (vp?.id) byId.set(vp.id, vp);
+  }
+  for (const au of liveUsersRes?.data?.users || []) {
+    if (!au?.id) continue;
+    const prev = byId.get(au.id) || {};
+    const m = liveMembershipMap.get(au.id);
+    const appMeta = au.app_metadata || {};
+    const userMeta = au.user_metadata || {};
+    byId.set(au.id, {
+      ...prev,
+      id: au.id,
+      email: au.email || prev.email || "",
+      full_name: userMeta.full_name || prev.full_name || au.email || "User",
+      phone: prev.phone || au.phone || null,
+      role: m?.role || m?.roles?.code || appMeta.role || userMeta.role || userMeta.default_role || prev.role || "user",
+      school_id: m?.school_id || appMeta.school_id || userMeta.school_id || prev.school_id || prev.university_id || null,
+      account_status: au.banned_until ? "suspended" : prev.account_status || (m?.status === "inactive" ? "suspended" : "active"),
+      is_mfa_enabled: Boolean(prev.is_mfa_enabled || (Array.isArray(au.factors) && au.factors.length > 0)),
+      metadata: {
+        ...(prev.metadata || {}),
+        ...userMeta,
+        role: m?.role || m?.roles?.code || appMeta.role || userMeta.role || prev.metadata?.role,
+        school_id: m?.school_id || appMeta.school_id || userMeta.school_id || prev.metadata?.school_id,
+      },
+      created_at: au.created_at || prev.created_at || new Date().toISOString(),
+    });
+  }
+  for (const lp of liveProfilesRes?.data || []) {
+    if (!lp?.id) continue;
+    const prev = byId.get(lp.id) || {};
+    byId.set(lp.id, {
+      ...prev,
+      ...lp,
+      metadata: { ...(prev.metadata || {}), ...(lp.metadata || {}) },
+    });
+  }
+
+  const mergedProfiles = Array.from(byId.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+
+  const validProfiles = mergedProfiles.filter((u: any) => {
     if (u.account_status === "deleted") return false;
     if (u.id && delUserIds.has(String(u.id).toLowerCase())) return false;
     if (u.email && delUserEmails.has(String(u.email).toLowerCase())) return false;
@@ -3257,71 +4108,123 @@ export async function updateDirectoryUser(
   }
 ): Promise<{ success: boolean; user: any }> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
   const now = new Date().toISOString();
 
-  // 1. Fetch current profile
-  const { data: profile } = await (supabase as any)
-    .from("profiles")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data: authRes }, { data: vProfile }] = await Promise.all([
+    directAdmin.auth.admin.getUserById(id).catch(() => ({ data: { user: null } })),
+    (supabase as any).from("profiles").select("*").eq("id", id).maybeSingle(),
+  ]);
 
-  if (!profile) {
+  const authUser = authRes?.user || null;
+  if (!authUser && !vProfile) {
     throw new Error("User not found");
   }
 
+  const profileEmail = vProfile?.email || authUser?.email || "";
+  const profileRole = vProfile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || "user";
   const isSuperAdmin =
-    profile.email === "superadmin@university.edu.gh" ||
-    profile.id === "1440ed7e-cb23-4248-a372-f38b20d01554" ||
-    profile.role === "superadmin" ||
-    profile.metadata?.role === "superadmin";
+    profileEmail === "superadmin@university.edu.gh" ||
+    id === "1440ed7e-cb23-4248-a372-f38b20d01554" ||
+    profileRole === "superadmin" ||
+    vProfile?.metadata?.role === "superadmin";
 
   if (isSuperAdmin && payload.account_status && payload.account_status !== "active") {
     throw new Error("Master Super Administrator cannot be suspended or locked.");
   }
 
-  // 2. Auth updates
-  const authUpdates: any = { user_metadata: {} };
-  if (payload.email) authUpdates.email = payload.email.trim().toLowerCase();
-  if (payload.password) authUpdates.password = payload.password;
-  if (payload.full_name) authUpdates.user_metadata.full_name = payload.full_name.trim();
-  if (payload.role && !isSuperAdmin) authUpdates.user_metadata.role = payload.role;
-  if (payload.school_id !== undefined) authUpdates.user_metadata.school_id = payload.school_id;
+  const universities = await getUniversities();
+  const currentSchoolId =
+    payload.school_id !== undefined
+      ? payload.school_id
+      : vProfile?.school_id || vProfile?.university_id || (authUser?.app_metadata?.school_id as string | undefined) || null;
+  const matchedUniv = currentSchoolId
+    ? universities.find((u) => u.id === currentSchoolId || u.code?.toLowerCase() === currentSchoolId.toLowerCase())
+    : undefined;
+  const resolvedSchoolId = matchedUniv?.id || currentSchoolId || null;
 
-  try {
-    await supabase.auth.admin.updateUserById(id, authUpdates);
-  } catch {}
+  if (matchedUniv && isValidUuid(matchedUniv.id)) {
+    await ensureLiveSchoolRowExists(directAdmin, matchedUniv);
+  }
 
-  // 3. Profile updates
-  const currentMetadata = profile.metadata || {};
+  const nextEmail = payload.email ? payload.email.trim().toLowerCase() : profileEmail;
+  const nextFullName = payload.full_name ? payload.full_name.trim() : vProfile?.full_name || authUser?.user_metadata?.full_name || "User";
+  const nextRole = isSuperAdmin ? "superadmin" : payload.role || profileRole;
+  const nextStatus = payload.account_status || vProfile?.account_status || "active";
+  const nextPhone = payload.phone !== undefined ? payload.phone : vProfile?.phone;
+
+  if (authUser) {
+    const authUpdates: any = {
+      app_metadata: {
+        ...(authUser.app_metadata || {}),
+        role: nextRole,
+        school_id: resolvedSchoolId,
+        university_id: resolvedSchoolId,
+      },
+      user_metadata: {
+        ...(authUser.user_metadata || {}),
+        full_name: nextFullName,
+        role: nextRole,
+        default_role: nextRole,
+        school_id: resolvedSchoolId,
+        university_id: resolvedSchoolId,
+        university_name: matchedUniv?.name || "",
+      },
+    };
+    if (payload.email) authUpdates.email = nextEmail;
+    if (payload.password) authUpdates.password = payload.password;
+    if (payload.account_status) {
+      authUpdates.ban_duration =
+        payload.account_status === "suspended" || payload.account_status === "locked" ? "876000h" : "none";
+    }
+
+    const { error: authErr } = await directAdmin.auth.admin.updateUserById(id, authUpdates);
+    if (authErr) {
+      throw new Error(`Failed to update user in Supabase Auth: ${authErr.message}`);
+    }
+  }
+
+  await upsertLiveUserSchoolLink(directAdmin, {
+    userId: id,
+    email: nextEmail,
+    fullName: nextFullName,
+    phone: nextPhone || undefined,
+    role: nextRole,
+    schoolId: resolvedSchoolId,
+    schoolName: matchedUniv?.name,
+    schoolCode: matchedUniv?.code,
+    accountStatus: nextStatus,
+  });
+
+  const currentMetadata = vProfile?.metadata || {};
   const updatedMetadata = {
     ...currentMetadata,
-    full_name: payload.full_name?.trim() || profile.full_name,
-    role: isSuperAdmin ? "superadmin" : (payload.role || currentMetadata.role || profile.role),
-    school_id: payload.school_id !== undefined ? payload.school_id : (profile.school_id || currentMetadata.school_id),
+    full_name: nextFullName,
+    role: nextRole,
+    school_id: resolvedSchoolId,
+    university_id: resolvedSchoolId,
+    university_name: matchedUniv?.name || currentMetadata.university_name,
     temp_password: payload.password || currentMetadata.temp_password,
   };
 
   const profileUpdates: any = {
+    email: nextEmail,
+    full_name: nextFullName,
+    phone: nextPhone || null,
+    account_status: nextStatus,
+    role: nextRole,
+    school_id: resolvedSchoolId,
+    university_id: resolvedSchoolId,
     updated_at: now,
     metadata: updatedMetadata,
   };
-  if (payload.full_name) profileUpdates.full_name = payload.full_name.trim();
-  if (payload.email) profileUpdates.email = payload.email.trim().toLowerCase();
-  if (payload.phone !== undefined) profileUpdates.phone = payload.phone;
-  if (payload.account_status) profileUpdates.account_status = payload.account_status;
-  if (payload.role && !isSuperAdmin) profileUpdates.role = payload.role;
-  if (payload.school_id !== undefined) {
-    profileUpdates.school_id = payload.school_id;
-    profileUpdates.university_id = payload.school_id;
+
+  if (vProfile) {
+    await (supabase as any).from("profiles").update(profileUpdates).eq("id", id);
+  } else if (nextEmail) {
+    await (supabase as any).from("profiles").upsert({ id, created_at: now, ...profileUpdates }, { onConflict: "id" });
   }
 
-  await (supabase as any)
-    .from("profiles")
-    .update(profileUpdates)
-    .eq("id", id);
-
-  // 4. Update role assignment if role changed
   if (payload.role && !isSuperAdmin) {
     try {
       const { data: roleRow } = await (supabase as any)
@@ -3335,8 +4238,8 @@ export async function updateDirectoryUser(
           {
             user_id: id,
             role_id: roleRow.id,
-            school_id: payload.school_id !== undefined ? payload.school_id : profile.school_id,
-            is_active: payload.account_status !== "suspended",
+            school_id: resolvedSchoolId,
+            is_active: nextStatus === "active",
             created_at: now,
           },
           { onConflict: "user_id,role_id" }
@@ -3345,13 +4248,14 @@ export async function updateDirectoryUser(
     } catch {}
   }
 
-  // 5. Update in Virtual DB in-memory & disk
   try {
     const vDb = await getVirtualDb();
     if (vDb && Array.isArray(vDb.profiles)) {
       const idx = vDb.profiles.findIndex((p: any) => p.id === id);
       if (idx !== -1) {
         vDb.profiles[idx] = { ...vDb.profiles[idx], ...profileUpdates };
+      } else {
+        vDb.profiles.unshift({ id, created_at: now, ...profileUpdates });
       }
       if (payload.account_status && Array.isArray(vDb.user_role_assignments)) {
         vDb.user_role_assignments.forEach((ura: any) => {
@@ -3364,20 +4268,17 @@ export async function updateDirectoryUser(
     }
   } catch {}
 
-  // 6. Update dynamic user cache
-  if (payload.password || payload.email || payload.full_name || payload.role || payload.account_status) {
-    const activeEmail = (payload.email || profile.email).trim().toLowerCase();
-    registerDynamicUser(activeEmail, payload.password || currentMetadata.temp_password || "User@123456", {
+  if (payload.password || payload.email || payload.full_name || payload.role || payload.account_status || payload.school_id !== undefined) {
+    registerDynamicUser(nextEmail, payload.password || currentMetadata.temp_password || "User@123456", {
       id,
-      email: activeEmail,
-      full_name: payload.full_name?.trim() || profile.full_name,
-      role: isSuperAdmin ? "superadmin" : (payload.role || profile.role || "student"),
-      role_name: payload.role || profile.role || "User",
-      school_id: payload.school_id !== undefined ? payload.school_id : (profile.school_id || null),
+      email: nextEmail,
+      full_name: nextFullName,
+      role: nextRole,
+      role_name: nextRole,
+      school_id: resolvedSchoolId,
     });
   }
 
-  // 7. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: payload.account_status ? `user_${payload.account_status}` : "update_user",
@@ -3393,68 +4294,63 @@ export async function updateDirectoryUser(
     success: true,
     user: {
       id,
-      email: profileUpdates.email || profile.email,
-      full_name: profileUpdates.full_name || profile.full_name,
-      role: profileUpdates.role || profile.role,
-      account_status: profileUpdates.account_status || profile.account_status,
-      phone: profileUpdates.phone !== undefined ? profileUpdates.phone : profile.phone,
-      school_id: profileUpdates.school_id !== undefined ? profileUpdates.school_id : profile.school_id,
+      email: nextEmail,
+      full_name: nextFullName,
+      role: nextRole,
+      account_status: nextStatus,
+      phone: nextPhone,
+      school_id: resolvedSchoolId,
     },
   };
 }
 
 export async function deleteDirectoryUser(id: string): Promise<{ success: boolean; deletedId: string }> {
   const supabase = createAdminClient();
+  const directAdmin = createDirectAdminClient();
 
-  // 1. Fetch profile to check if superadmin
-  const { data: profile } = await (supabase as any)
-    .from("profiles")
-    .select("id, email, full_name, metadata")
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data: authRes }, { data: profile }] = await Promise.all([
+    directAdmin.auth.admin.getUserById(id).catch(() => ({ data: { user: null } })),
+    (supabase as any).from("profiles").select("id, email, full_name, role, metadata").eq("id", id).maybeSingle(),
+  ]);
 
-  if (profile) {
-    const isSuperAdmin =
-      profile.email === "superadmin@university.edu.gh" ||
-      profile.id === "1440ed7e-cb23-4248-a372-f38b20d01554" ||
-      profile.role === "superadmin" ||
-      profile.metadata?.role === "superadmin";
+  const authUser = authRes?.user || null;
+  const email = profile?.email || authUser?.email || "";
+  const role = profile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || profile?.metadata?.role;
 
-    if (isSuperAdmin) {
-      throw new Error("Master Super Administrator cannot be deleted.");
+  const isSuperAdmin =
+    email === "superadmin@university.edu.gh" ||
+    id === "1440ed7e-cb23-4248-a372-f38b20d01554" ||
+    role === "superadmin";
+
+  if (isSuperAdmin) {
+    throw new Error("Master Super Administrator cannot be deleted.");
+  }
+
+  // Delete from live Supabase tables first (ignore missing tables like profiles/user_role_assignments if not yet migrated)
+  for (const tbl of ["school_memberships", "staff_profiles", "user_role_assignments", "profiles"]) {
+    try {
+      await (directAdmin as any).from(tbl).delete().eq(tbl === "profiles" ? "id" : "user_id", id);
+    } catch {}
+  }
+
+  try {
+    const { error: authDelErr } = await directAdmin.auth.admin.deleteUser(id);
+    if (authDelErr && !String(authDelErr.message || "").toLowerCase().includes("not found")) {
+      console.warn("Auth deleteUser error:", authDelErr.message);
     }
-  }
-
-  // 2. Remove role assignments
-  try {
-    await (supabase as any)
-      .from("user_role_assignments")
-      .delete()
-      .eq("user_id", id);
   } catch {}
 
-  // 3. Remove university_system_admins if applicable
-  try {
-    await (supabase as any)
-      .from("university_system_admins")
-      .delete()
-      .eq("user_id", id);
-  } catch {}
-
-  // 4. Mark profile as deleted or remove from profiles
-  try {
-    await (supabase as any)
-      .from("profiles")
-      .delete()
-      .eq("id", id);
-  } catch {
-    await (supabase as any)
-      .from("profiles")
-      .update({ account_status: "deleted" })
-      .eq("id", id);
+  // Remove from secondary/virtual tables
+  for (const [tbl, col] of [
+    ["user_role_assignments", "user_id"],
+    ["university_system_admins", "user_id"],
+    ["profiles", "id"],
+  ] as const) {
+    try {
+      await (supabase as any).from(tbl).delete().eq(col, id);
+    } catch {}
   }
 
-  // 5. Delete in Virtual DB
   try {
     const vDb = await getVirtualDb();
     if (vDb) {
@@ -3471,16 +4367,11 @@ export async function deleteDirectoryUser(id: string): Promise<{ success: boolea
     }
   } catch {}
 
-  // 6. Delete in Auth & dynamic user store
-  try {
-    await supabase.auth.admin.deleteUser(id);
-  } catch {}
   unregisterDynamicUser(id);
-  if (profile?.email) {
-    unregisterDynamicUser(profile.email);
+  if (email) {
+    unregisterDynamicUser(email);
   }
 
-  // 7. Add to deleted_users blacklist in system_settings
   try {
     const { data: delRow } = await (supabase as any)
       .from("system_settings")
@@ -3489,23 +4380,23 @@ export async function deleteDirectoryUser(id: string): Promise<{ success: boolea
       .maybeSingle();
 
     const currentList = Array.isArray(delRow?.setting_value) ? delRow.setting_value : [];
-    currentList.push({
+    const deduped = currentList.filter((u: any) => u.id !== id && (!email || u.email?.toLowerCase() !== email.toLowerCase()));
+    deduped.push({
       id,
-      email: profile?.email || "",
+      email,
       deleted_at: new Date().toISOString(),
     });
 
     await (supabase as any).from("system_settings").upsert(
       {
         setting_key: "deleted_users",
-        setting_value: currentList,
+        setting_value: deduped,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "setting_key" }
     );
   } catch {}
 
-  // 8. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "delete_user",
@@ -3532,177 +4423,69 @@ export async function createDirectoryUser(payload: {
   account_status?: "active" | "suspended" | "locked";
 }): Promise<DirectoryUserItem> {
   const supabase = createAdminClient();
-  const cleanEmail = payload.email.trim().toLowerCase();
+  const directAdmin = createDirectAdminClient();
   const now = new Date().toISOString();
   const defaultPassword = payload.password?.trim() || "Pass@123456";
 
-  // 0. Remove from deleted_users blacklist if present
-  try {
-    const { data: delSetting } = await (supabase as any)
-      .from("system_settings")
-      .select("setting_value")
-      .eq("setting_key", "deleted_users")
-      .maybeSingle();
+  if (!payload.email?.trim() || !payload.full_name?.trim()) {
+    throw new Error("Full name and email are required.");
+  }
 
-    const currentDel = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
-    const filteredDel = currentDel.filter((u: any) => u?.email?.toLowerCase() !== cleanEmail);
-    if (filteredDel.length !== currentDel.length) {
-      await (supabase as any).from("system_settings").upsert(
-        {
-          setting_key: "deleted_users",
-          setting_value: filteredDel,
-          updated_at: now,
-        },
-        { onConflict: "setting_key" }
-      );
-    }
-  } catch {}
-
-  // 1. Resolve university name
+  let matchedUniv: UniversityItem | undefined;
   let universityName = "UMS Central Platform";
+  let resolvedSchoolId: string | null = payload.school_id || null;
+
   if (payload.school_id) {
     const universities = await getUniversities();
-    const found = universities.find(
+    matchedUniv = universities.find(
       (u) => u.id === payload.school_id || u.code.toLowerCase() === payload.school_id?.toLowerCase()
     );
-    if (found) {
-      universityName = found.name;
+    if (matchedUniv) {
+      universityName = matchedUniv.name;
+      resolvedSchoolId = matchedUniv.id;
+      if (isValidUuid(matchedUniv.id)) {
+        await ensureLiveSchoolRowExists(directAdmin, matchedUniv);
+      }
     }
   }
 
-  // 2. Create Auth user
-  let user: { id: string; email?: string } = {
-    id: crypto.randomUUID(),
-    email: cleanEmail,
-  };
-
-  try {
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: cleanEmail,
-      password: defaultPassword,
-      email_confirm: true,
-      user_metadata: {
-        full_name: payload.full_name.trim(),
-        role: payload.role,
-        default_role: payload.role,
-        school_id: payload.school_id || null,
-        university_id: payload.school_id || null,
-        university_name: universityName,
-      },
-    });
-
-    if (!authError && authData?.user) {
-      user = authData.user;
-    }
-  } catch (err) {
-    console.warn("Could not create user via Supabase admin auth, using virtual profile:", err);
-  }
-
-  // 3. Register in dynamic users for fallback session handling
-  registerDynamicUser(cleanEmail, defaultPassword, {
-    id: user.id,
-    email: cleanEmail,
-    full_name: payload.full_name.trim(),
+  const provisioned = await provisionUserAccountAndLinks({
+    email: payload.email,
+    password: defaultPassword,
+    fullName: payload.full_name,
+    phone: payload.phone,
     role: payload.role,
-    role_name: payload.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    school_id: payload.school_id || null,
+    schoolId: resolvedSchoolId,
+    schoolName: matchedUniv?.name || (resolvedSchoolId ? "" : "UMS Central Platform"),
+    schoolCode: matchedUniv?.code,
+    accountStatus: payload.account_status || "active",
   });
 
-  // 4. Upsert profile
-  const profileRow = {
-    id: user.id,
-    email: cleanEmail,
-    full_name: payload.full_name.trim(),
-    phone: payload.phone || null,
-    role: payload.role,
-    account_status: payload.account_status || "active",
-    school_id: payload.school_id || null,
-    university_id: payload.school_id || null,
-    is_mfa_enabled: false,
-    metadata: {
-      role: payload.role,
-      default_role: payload.role,
-      school_id: payload.school_id || null,
-      university_id: payload.school_id || null,
-      university_name: universityName,
-      temp_password: defaultPassword,
-    },
-    created_at: now,
-    updated_at: now,
-  };
-
-  await (supabase as any).from("profiles").upsert(profileRow, { onConflict: "id" });
-
-  // 5. User role assignment
-  try {
-    const { data: roleRow } = await (supabase as any)
-      .from("roles")
-      .select("id")
-      .eq("code", payload.role)
-      .maybeSingle();
-
-    if (roleRow?.id) {
-      await (supabase as any).from("user_role_assignments").upsert(
-        {
-          user_id: user.id,
-          role_id: roleRow.id,
-          school_id: payload.school_id || null,
-          is_active: true,
-          created_at: now,
-        },
-        { onConflict: "user_id,role_id" }
-      );
-    }
-  } catch {}
-
-  // 6. If role is system_admin and school_id is provided, also insert into university_system_admins
-  if (payload.role === "system_admin" && payload.school_id) {
-    try {
-      await (supabase as any).from("university_system_admins").insert({
-        university_id: payload.school_id,
-        user_id: user.id,
-        is_primary: false,
-      });
-    } catch {}
-  }
-
-  // 7. Update Virtual DB
-  try {
-    const vDb = await getVirtualDb();
-    if (vDb) {
-      if (Array.isArray(vDb.profiles)) {
-        const existIdx = vDb.profiles.findIndex((p: any) => p.id === user.id || p.email === cleanEmail);
-        if (existIdx !== -1) {
-          vDb.profiles[existIdx] = { ...vDb.profiles[existIdx], ...profileRow };
-        } else {
-          vDb.profiles.unshift(profileRow);
-        }
-      }
-      await persistVirtualDb(vDb);
-    }
-  } catch {}
-
-  // 8. Audit event
   try {
     await (supabase as any).from("audit_events").insert({
       action: "provision_user",
       entity_type: "user",
-      entity_id: user.id,
+      entity_id: provisioned.id,
       actor_role: "superadmin",
       outcome: "SUCCESS",
-      new_values: profileRow,
+      new_values: {
+        email: provisioned.email,
+        full_name: payload.full_name.trim(),
+        role: payload.role,
+        school_id: resolvedSchoolId,
+      },
     });
   } catch {}
 
   return {
-    id: user.id,
-    email: cleanEmail,
+    id: provisioned.id,
+    email: provisioned.email,
     full_name: payload.full_name.trim(),
     phone: payload.phone,
     role: payload.role,
     account_status: (payload.account_status || "active") as any,
-    school_id: payload.school_id || null,
-    institution: universityName,
+    school_id: resolvedSchoolId,
+    institution: matchedUniv ? matchedUniv.name : payload.school_id ? "Unassigned" : "UMS Central Platform",
     mfa_enabled: false,
     created_at: now,
   };

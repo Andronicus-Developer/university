@@ -447,7 +447,11 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set("Expires", "0");
 
   // 4.5. Super Admin Exclusive Barrier (ONLY superadmin can access /superadmin)
-  if (pathname.startsWith("/superadmin") || pathname.startsWith("/api/superadmin")) {
+  if (
+    pathname.startsWith("/superadmin") ||
+    pathname.startsWith("/super-admin") ||
+    pathname.startsWith("/api/superadmin")
+  ) {
     if (!isSuperAdmin) {
       return respondNotFound(request, supabaseResponse);
     }

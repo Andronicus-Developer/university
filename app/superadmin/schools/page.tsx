@@ -37,6 +37,7 @@ import {
   type UniversityItem,
   AVAILABLE_UNIVERSITY_ROLES,
 } from "@/lib/superadmin/service";
+import { InitialSchoolAdminFields } from "@/components/superadmin/InitialSchoolAdminFields";
 
 export default function SchoolsPage() {
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
@@ -59,15 +60,22 @@ export default function SchoolsPage() {
   const [code, setCode] = useState("");
   const [shortName, setShortName] = useState("");
   const [schoolType, setSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
-  const [country, setCountry] = useState("Ghana");
-  const [city, setCity] = useState("Accra");
+  const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
-  const [currency, setCurrency] = useState("GHS");
+  const [currency, setCurrency] = useState("USD");
   const [establishedYear, setEstablishedYear] = useState("");
   const [status, setStatus] = useState<"active" | "inactive" | "maintenance" | "suspended" | "deleted">("active");
+
+  // Initial School System Admin fields (Create mode)
+  const [createInitialAdmin, setCreateInitialAdmin] = useState(true);
+  const [initAdminFullName, setInitAdminFullName] = useState("");
+  const [initAdminEmail, setInitAdminEmail] = useState("");
+  const [initAdminPassword, setInitAdminPassword] = useState("");
+  const [initAdminPhone, setInitAdminPhone] = useState("");
 
   // Governance & Quota fields
   const [fullAccess, setFullAccess] = useState(true);
@@ -134,15 +142,21 @@ export default function SchoolsPage() {
     setCode("");
     setShortName("");
     setSchoolType("university");
-    setCountry("Ghana");
-    setCity("Accra");
+    setCountry("");
+    setCity("");
     setAddress("");
     setEmail("");
     setPhone("");
     setWebsite("");
-    setCurrency("GHS");
+    setCurrency("USD");
     setEstablishedYear("");
     setStatus("active");
+
+    setCreateInitialAdmin(true);
+    setInitAdminFullName("");
+    setInitAdminEmail("");
+    setInitAdminPassword("");
+    setInitAdminPhone("");
 
     // Default governance: Full Access
     setFullAccess(true);
@@ -161,17 +175,22 @@ export default function SchoolsPage() {
   const openEditModal = (u: UniversityItem) => {
     setEditingId(u.id);
     setModalTab("general");
+    setCreateInitialAdmin(false);
+    setInitAdminFullName("");
+    setInitAdminEmail("");
+    setInitAdminPassword("");
+    setInitAdminPhone("");
     setName(u.name);
     setCode(u.code);
     setShortName(u.short_name || "");
     setSchoolType(u.school_type || u.institution_type || "university");
-    setCountry(u.country || "Ghana");
-    setCity(u.city || "Accra");
+    setCountry(u.country || "");
+    setCity(u.city || "");
     setAddress(u.address || "");
     setEmail(u.email || "");
     setPhone(u.phone || "");
     setWebsite(u.website || "");
-    setCurrency(u.default_currency || "GHS");
+    setCurrency(u.default_currency || "USD");
     setEstablishedYear(u.established_year ? String(u.established_year) : "");
     setStatus(u.status || "active");
 
@@ -236,6 +255,17 @@ export default function SchoolsPage() {
       return;
     }
 
+    if (!editingId && createInitialAdmin) {
+      if (!initAdminFullName.trim() || !initAdminEmail.trim()) {
+        setErrorMsg("Please provide the initial School System Admin full name and email.");
+        return;
+      }
+      if (!initAdminPassword || initAdminPassword.length < 6) {
+        setErrorMsg("School System Admin password must be at least 6 characters.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
@@ -260,6 +290,17 @@ export default function SchoolsPage() {
         max_departments: !fullAccess && hasDeptLimit && maxDepartments ? Number(maxDepartments) : null,
         max_roles: !fullAccess && hasRoleLimit && maxRoles ? Number(maxRoles) : null,
         allowed_roles: fullAccess ? AVAILABLE_UNIVERSITY_ROLES.map((r) => r.code) : allowedRoles,
+        ...(!editingId && createInitialAdmin
+          ? {
+              admin: {
+                full_name: initAdminFullName.trim(),
+                email: initAdminEmail.trim().toLowerCase(),
+                password: initAdminPassword,
+                phone: initAdminPhone.trim() || undefined,
+                role: "system_admin",
+              },
+            }
+          : {}),
       };
 
       const res = await fetch("/api/superadmin/schools", {
@@ -1218,10 +1259,25 @@ export default function SchoolsPage() {
                       type="text"
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Main Campus Boulevard, Cantonments, Accra"
+                      placeholder="Main Campus Boulevard"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
                     />
                   </div>
+
+                  {!editingId && (
+                    <InitialSchoolAdminFields
+                      enabled={createInitialAdmin}
+                      onToggleEnabled={setCreateInitialAdmin}
+                      fullName={initAdminFullName}
+                      onFullNameChange={setInitAdminFullName}
+                      email={initAdminEmail}
+                      onEmailChange={setInitAdminEmail}
+                      password={initAdminPassword}
+                      onPasswordChange={setInitAdminPassword}
+                      phone={initAdminPhone}
+                      onPhoneChange={setInitAdminPhone}
+                    />
+                  )}
                 </div>
               )}
 

@@ -5,6 +5,11 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
+import {
+  formatSchoolMonogram,
+  resolveClientTenantContext,
+} from "@/lib/saas/useTenantInstitution";
+import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import GlobalSearchBar from "@/app/components/GlobalSearchBar";
 import {
   LayoutGrid,
@@ -59,14 +64,17 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   const [userName, setUserName] = useState<string>("Bursar / Finance Officer");
-  const [userEmail, setUserEmail] = useState<string>("bursar@university.edu.gh");
-  const [userRole, setUserRole] = useState<string>("Chief Financial Officer");
-  const [academicYear, setAcademicYear] = useState<string>("2026 / 2027");
-  const [schoolName, setSchoolName] = useState<string>("University Management");
-  const [schoolAbbr, setSchoolAbbr] = useState<string>("UMS");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [userRole, setUserRole] = useState<string>("Finance Officer / Bursar");
+  const [academicYear, setAcademicYear] = useState<string>("");
+  const [schoolName, setSchoolName] = useState<string>("");
+  const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [currencyCode, setCurrencyCode] = useState<string>("");
+  const [currencySymbol, setCurrencySymbol] = useState<string>("");
+  const [tenantError, setTenantError] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(1);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -97,94 +105,84 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Load user data, academic year, and school settings from Supabase
+  // Load user data, strict tenant school info, and scoped metrics
   useEffect(() => {
+    let isMounted = true;
     async function loadFinanceData() {
-      const supabase = createClient();
+      const tenantRes = await resolveClientTenantContext();
+      if (!isMounted) return;
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
+      if (tenantRes.status === "unauthenticated") {
         window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
-      setUserEmail(user.email || "bursar@university.edu.gh");
-      const metaName = user.user_metadata?.full_name || "Bursar Officer";
-      setUserName(metaName);
-      setUserRole(user.user_metadata?.role || "Finance Officer / Bursar");
+      const activeUser = tenantRes.user;
+      setUserEmail(activeUser.email || "");
+      setUserName(activeUser.user_metadata?.full_name || "Bursar / Finance Officer");
+      const rawRole = String(activeUser.user_metadata?.role || "finance_officer");
+      setUserRole(
+        rawRole
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c: string) => c.toUpperCase())
+      );
+
+      if (tenantRes.status === "unlinked") {
+        setTenantError(tenantRes.error);
+        return;
+      }
+
+      setTenantError(null);
+      setSchoolName(tenantRes.schoolName);
+      setSchoolAbbr(tenantRes.schoolAbbr);
+      setSchoolLogo(tenantRes.schoolLogo);
+      setCurrencyCode(tenantRes.currency);
+      setCurrencySymbol(tenantRes.currencySymbol);
+
+      const supabase = createClient();
+      const tenantSchoolId = tenantRes.schoolId;
 
       try {
-        const { count } = await (supabase as any)
+        let notifQuery = (supabase as any)
           .from("notifications")
           .select("*", { count: "exact", head: true })
-          .eq("user_id", user.id)
+          .eq("user_id", activeUser.id)
           .eq("is_read", false);
-        if (count !== null) setUnreadNotifications(count);
+        if (tenantSchoolId) {
+          notifQuery = notifQuery.eq("school_id", tenantSchoolId);
+        }
+        const { count } = await notifQuery;
+        if (count !== null && isMounted) setUnreadNotifications(count);
       } catch {
         // non-blocking
       }
 
-      // Academic Year
-      try {
-        const { data: years } = await (supabase as any)
-          .from("academic_years")
-          .select("code, name, is_current")
-          .order("is_current", { ascending: false })
-          .limit(1);
-
-        if (years && years.length > 0 && (years[0] as any)?.code) {
-          setAcademicYear((years[0] as any).code);
-        }
-      } catch {
-        // Fallback default
-      }
-
-      // Institution Settings
-      try {
-        const res = await fetch("/api/settings/institution");
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.name) {
-            setSchoolName(data.name);
-            if (data.abbreviation) setSchoolAbbr(data.abbreviation);
-            if (data.logo_url) setSchoolLogo(data.logo_url);
-          }
-        }
-      } catch {
-        // Fallback directly to supabase table
+      if (tenantSchoolId) {
         try {
-          const { data: settingRow } = await (supabase as any)
-            .from("system_settings")
-            .select("setting_value")
-            .eq("setting_key", "institution_info")
-            .maybeSingle();
+          const { data: years } = await (supabase as any)
+            .from("academic_years")
+            .select("code, name, is_current")
+            .eq("school_id", tenantSchoolId)
+            .order("is_current", { ascending: false })
+            .limit(1);
 
-          if (settingRow?.setting_value?.name) {
-            setSchoolName(settingRow.setting_value.name);
-            if (settingRow.setting_value.abbreviation) {
-              setSchoolAbbr(settingRow.setting_value.abbreviation);
-            }
-            if (settingRow.setting_value.logo_url) {
-              setSchoolLogo(settingRow.setting_value.logo_url);
-            }
+          if (years && years.length > 0 && (years[0] as any)?.code && isMounted) {
+            setAcademicYear((years[0] as any).code);
           }
+        } catch {
+          // non-blocking
+        }
+
+        try {
+          const { count } = await (supabase as any)
+            .from("refund_requests")
+            .select("*", { count: "exact", head: true })
+            .eq("school_id", tenantSchoolId)
+            .eq("status", "pending");
+          if (count !== null && isMounted) setPendingApprovalsCount(count);
         } catch {
           // ignore
         }
-      }
-
-      // Check pending refunds for approval badge
-      try {
-        const { count } = await (supabase as any)
-          .from("refund_requests")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "pending");
-        if (count !== null) setPendingApprovalsCount(count);
-      } catch {
-        // ignore
       }
     }
 
@@ -199,6 +197,7 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
 
     window.addEventListener("institution_updated", handleInstitutionUpdate);
     return () => {
+      isMounted = false;
       window.removeEventListener("institution_updated", handleInstitutionUpdate);
     };
   }, []);
@@ -273,7 +272,7 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
             {schoolLogo ? (
               <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
             ) : (
-              (schoolAbbr || "UMS").slice(0, 4)
+              formatSchoolMonogram(schoolAbbr, schoolName)
             )}
           </div>
           <div className="flex flex-col min-w-0">
@@ -281,7 +280,7 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
               className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
-              {schoolName}
+              {schoolName || "—"}
             </span>
             <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -444,19 +443,21 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
             {/* Academic Year Badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 font-semibold shadow-2xs">
               <Calendar className="h-3.5 w-3.5 text-slate-500" />
-              <span>Fiscal Year: {academicYear}</span>
+              <span>Fiscal Year: {academicYear || "Not Configured"}</span>
               <ChevronDown className="h-3 w-3 text-slate-400" />
             </div>
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
               {/* Currency Badge */}
-              <div
-                className="h-8 px-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center cursor-default"
-                title="Ghanaian Cedi (GHS)"
-              >
-                GHS ₵
-              </div>
+              {(currencyCode || currencySymbol) && (
+                <div
+                  className="h-8 px-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center cursor-default"
+                  title={currencyCode || "School Currency"}
+                >
+                  {[currencyCode, currencySymbol].filter(Boolean).join(" ")}
+                </div>
+              )}
 
               {/* Notifications */}
               <Link
@@ -549,7 +550,15 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
 
         {/* Page Content Viewport */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          {children}
+          {tenantError ? (
+            <UnlinkedSchoolNotice
+              error={tenantError}
+              onSignOut={handleSignOut}
+              isSigningOut={isSigningOut}
+            />
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

@@ -1,74 +1,140 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
+import { createAdminClient, createDirectAdminClient } from "@/lib/supabase/admin";
+import {
+  deleteLiveTenantUser,
+  provisionLiveTenantUser,
+  resolveAdminTenantRequest,
+  resolveTargetSchoolForMutation,
+  scopeQueryBySchool,
+  syncVirtualProfileAndRole,
+} from "@/lib/admin/tenant-provisioning";
 
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(supabaseUrl, serviceRoleKey, {
-    global: {
-      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 8000),
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
-
-// GET: Fetch all users, profiles, and their assigned roles
-export async function GET() {
+// GET: Fetch users, profiles, and their assigned roles strictly scoped to caller's school_id
+export async function GET(req: NextRequest) {
   try {
-    const supabase = getAdminClient();
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
 
-    // 1. Fetch profiles
-    const { data: profiles, error: profileErr } = await supabase
-      .from("profiles")
-      .select("id, email, full_name, phone, avatar_url, account_status, created_at, updated_at")
-      .order("created_at", { ascending: false });
+    const supabase = createAdminClient();
+    const directAdmin = createDirectAdminClient();
+
+    const [
+      { data: vProfiles, error: profileErr },
+      { data: vAssignments },
+      { data: vRoles },
+      liveProfilesRes,
+      liveMembershipsRes,
+    ] = await Promise.all([
+      scopeQueryBySchool(
+        (supabase as any)
+          .from("profiles")
+          .select("id, email, full_name, phone, avatar_url, role, school_id, university_id, account_status, created_at, updated_at")
+          .order("created_at", { ascending: false }),
+        tenant.schoolId
+      ),
+      scopeQueryBySchool(
+        (supabase as any)
+          .from("user_role_assignments")
+          .select("user_id, school_id, role:role_id(id, code, name, description)")
+          .eq("is_active", true),
+        tenant.schoolId
+      ),
+      (supabase as any)
+        .from("roles")
+        .select("id, code, name, description")
+        .order("name", { ascending: true }),
+      scopeQueryBySchool(
+        (directAdmin as any)
+          .from("profiles")
+          .select("id, email, full_name, phone, role, school_id, university_id, account_status, created_at, updated_at")
+          .order("created_at", { ascending: false }),
+        tenant.schoolId
+      ).then((r: any) => r, () => ({ data: [] })),
+      scopeQueryBySchool(
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("user_id, school_id, role, status, created_at, roles(id, code, name, description)"),
+        tenant.schoolId
+      ).then((r: any) => r, () => ({ data: [] })),
+    ]);
 
     if (profileErr) {
       console.error("Error fetching profiles:", profileErr);
       return NextResponse.json({ error: profileErr.message }, { status: 500 });
     }
 
-    // 2. Fetch active role assignments with role details
-    const { data: assignments, error: assignErr } = await supabase
-      .from("user_role_assignments")
-      .select("user_id, role:role_id(id, code, name, description)")
-      .eq("is_active", true);
-
-    if (assignErr) {
-      console.warn("Warning fetching assignments:", assignErr.message);
+    const roleDefByCode = new Map<string, any>();
+    for (const r of vRoles || []) {
+      if (r?.code) roleDefByCode.set(String(r.code).toLowerCase(), r);
     }
 
-    // 3. Fetch all documented roles for selection dropdowns
-    const { data: roles } = await supabase
-      .from("roles")
-      .select("id, code, name, description")
-      .order("name", { ascending: true });
-
-    // 4. Combine in memory to eliminate foreign key ambiguity
-    const roleMap = new Map();
-    (assignments || []).forEach((a: any) => {
+    const roleMap = new Map<string, any>();
+    for (const a of vAssignments || []) {
       if (a.user_id && a.role) {
         roleMap.set(a.user_id, a.role);
       }
-    });
+    }
+    for (const m of liveMembershipsRes?.data || []) {
+      if (!m?.user_id) continue;
+      const roleObj = m.roles?.code
+        ? m.roles
+        : roleDefByCode.get(String(m.role || "").toLowerCase()) || {
+            id: m.role_id || m.role,
+            code: m.role,
+            name: String(m.role || "User")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase()),
+          };
+      if (roleObj?.code) {
+        roleMap.set(m.user_id, roleObj);
+      }
+    }
 
-    const combinedUsers = (profiles || []).map((p: any) => {
-      const assignedRole = roleMap.get(p.id);
-      return {
-        ...p,
-        user_role_assignments: assignedRole ? [{ role: assignedRole }] : [],
-        role_code: assignedRole?.code || "student",
-        role_name: assignedRole?.name || "Student",
-      };
-    });
+    const mergedById = new Map<string, any>();
+    for (const p of vProfiles || []) {
+      if (p?.id) mergedById.set(p.id, p);
+    }
+    for (const lp of liveProfilesRes?.data || []) {
+      if (!lp?.id) continue;
+      const prev = mergedById.get(lp.id) || {};
+      mergedById.set(lp.id, { ...prev, ...lp });
+    }
+
+    const combinedUsers = Array.from(mergedById.values())
+      .filter((p: any) => {
+        if (p.account_status === "deleted") return false;
+        if (tenant.schoolId) {
+          const pSchool = p.school_id || p.university_id || null;
+          return pSchool && String(pSchool).toLowerCase() === tenant.schoolId.toLowerCase();
+        }
+        return true;
+      })
+      .map((p: any) => {
+        const fallbackRoleCode = String(p.role || "student").toLowerCase();
+        const assignedRole =
+          roleMap.get(p.id) ||
+          roleDefByCode.get(fallbackRoleCode) ||
+          (p.role
+            ? {
+                id: fallbackRoleCode,
+                code: fallbackRoleCode,
+                name: fallbackRoleCode
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase()),
+              }
+            : null);
+
+        return {
+          ...p,
+          user_role_assignments: assignedRole ? [{ role: assignedRole }] : [],
+          role_code: assignedRole?.code || "student",
+          role_name: assignedRole?.name || "Student",
+        };
+      });
 
     return NextResponse.json({
       users: combinedUsers,
-      roles: roles || [],
+      roles: vRoles || [],
     });
   } catch (err: any) {
     console.error("GET /api/admin/users error:", err);
@@ -76,11 +142,14 @@ export async function GET() {
   }
 }
 
-// POST: Create a new user with Auth, Profile, and Role assignment
+// POST: Create a new user via SUPABASE_SERVICE_ROLE_KEY and stamp creating admin's school_id
 export async function POST(req: NextRequest) {
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const body = await req.json();
-    const { email, password, full_name, phone, role_code, account_status } = body;
+    const { email, password, full_name, phone, role_code, account_status, school_id } = body;
 
     if (!email || !password || !full_name) {
       return NextResponse.json(
@@ -89,80 +158,52 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = getAdminClient();
+    const targetSchool = await resolveTargetSchoolForMutation(tenant, school_id);
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
 
-    // 1. Create User in Supabase Auth
-    const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
+    const cleanRole = String(role_code || "student").trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanName = String(full_name).trim();
+    const cleanPhone = phone ? String(phone).trim() : null;
+    const cleanStatus = String(account_status || "active").trim();
+
+    const { userId } = await provisionLiveTenantUser({
+      email: cleanEmail,
       password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: full_name.trim(),
-        role: role_code || "student",
-      },
+      fullName: cleanName,
+      phone: cleanPhone,
+      roleCode: cleanRole,
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus: cleanStatus,
     });
 
-    if (authErr) {
-      console.error("Auth createUser error:", authErr);
-      return NextResponse.json({ error: authErr.message }, { status: 400 });
-    }
+    const supabase = createAdminClient();
+    await syncVirtualProfileAndRole(supabase, {
+      userId,
+      email: cleanEmail,
+      fullName: cleanName,
+      phone: cleanPhone,
+      roleCode: cleanRole,
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus: cleanStatus,
+    });
 
-    const newUserId = authData.user.id;
-
-    // 2. Ensure Profile Record in public.profiles
-    const { error: profileErr } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: newUserId,
-          email: email.trim().toLowerCase(),
-          full_name: full_name.trim(),
-          phone: phone ? phone.trim() : null,
-          account_status: account_status || "active",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      );
-
-    if (profileErr) {
-      console.error("Profile upsert error:", profileErr);
-    }
-
-    // 3. Assign Role in user_role_assignments
-    if (role_code) {
-      const { data: roleRow } = await supabase
-        .from("roles")
-        .select("id")
-        .eq("code", role_code)
-        .single();
-
-      if (roleRow?.id) {
-        // Remove any existing active assignments
-        await supabase
-          .from("user_role_assignments")
-          .delete()
-          .eq("user_id", newUserId);
-
-        // Insert new assignment
-        await supabase.from("user_role_assignments").insert({
-          user_id: newUserId,
-          role_id: roleRow.id,
-          is_active: true,
-        });
-      }
-    }
-
-    // 4. Log Audit Event
     try {
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "USER_PROVISIONED",
         entity_type: "auth_user",
-        entity_id: newUserId,
+        entity_id: userId,
+        school_id: targetSchool.schoolId,
         outcome: "SUCCESS",
         new_values: {
-          email,
-          full_name,
-          role: role_code,
+          email: cleanEmail,
+          full_name: cleanName,
+          role: cleanRole,
+          school_id: targetSchool.schoolId,
         },
       });
     } catch {
@@ -172,21 +213,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       user: {
-        id: newUserId,
-        email,
-        full_name,
-        role_code,
+        id: userId,
+        email: cleanEmail,
+        full_name: cleanName,
+        role_code: cleanRole,
+        school_id: targetSchool.schoolId,
       },
     });
   } catch (err: any) {
     console.error("POST /api/admin/users error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message },
+      { status: err.statusCode || 500 }
+    );
   }
 }
 
-// PUT: Update an existing user (Profile, Role, and optional Password)
+// PUT: Update an existing user (Auth, Live Profile/Membership, Virtual Profile, Role assignment)
 export async function PUT(req: NextRequest) {
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const body = await req.json();
     const { id, email, full_name, phone, role_code, account_status, password } = body;
 
@@ -194,79 +242,88 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "User ID is required." }, { status: 400 });
     }
 
-    const supabase = getAdminClient();
+    const supabase = createAdminClient();
+    const directAdmin = createDirectAdminClient();
 
-    // 1. Update Auth if password or email changed
-    const authUpdates: any = {
-      user_metadata: {
-        full_name,
-        role: role_code,
-      },
-    };
+    const [{ data: vProfile }, { data: liveProfile }] = await Promise.all([
+      (supabase as any)
+        .from("profiles")
+        .select("id, email, full_name, role, school_id, university_id, account_status")
+        .eq("id", id)
+        .maybeSingle(),
+      (directAdmin as any)
+        .from("profiles")
+        .select("id, email, full_name, role, school_id, university_id, account_status")
+        .eq("id", id)
+        .maybeSingle()
+        .then((r: any) => r, () => ({ data: null })),
+    ]);
 
-    if (password && password.trim().length >= 8) {
-      authUpdates.password = password.trim();
-    }
-    if (email && email.trim()) {
-      authUpdates.email = email.trim().toLowerCase();
-    }
+    const existing = liveProfile || vProfile;
+    const existingSchoolId =
+      existing?.school_id || existing?.university_id || null;
 
-    const { error: authErr } = await supabase.auth.admin.updateUserById(id, authUpdates);
-    if (authErr) {
-      console.warn("Auth update warning:", authErr.message);
-    }
-
-    // 2. Update Profile in public.profiles
-    const { error: profileErr } = await supabase
-      .from("profiles")
-      .update({
-        full_name: full_name?.trim(),
-        phone: phone ? phone.trim() : null,
-        account_status: account_status || "active",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (profileErr) {
-      console.error("Profile update error:", profileErr);
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    if (
+      !tenant.isSuperAdmin &&
+      existingSchoolId &&
+      tenant.schoolId &&
+      String(existingSchoolId).toLowerCase() !== tenant.schoolId.toLowerCase()
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden: Cannot update a user from another school." },
+        { status: 403 }
+      );
     }
 
-    // 3. Update Role Assignment
-    if (role_code) {
-      const { data: roleRow } = await supabase
-        .from("roles")
-        .select("id")
-        .eq("code", role_code)
-        .single();
+    const targetSchool = await resolveTargetSchoolForMutation(
+      tenant,
+      existingSchoolId || body.school_id
+    );
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
 
-      if (roleRow?.id) {
-        // Clear old assignments for this user
-        await supabase
-          .from("user_role_assignments")
-          .delete()
-          .eq("user_id", id);
+    const nextEmail = email ? String(email).trim().toLowerCase() : existing?.email || "";
+    const nextName = full_name ? String(full_name).trim() : existing?.full_name || "User";
+    const nextPhone = phone !== undefined ? (phone ? String(phone).trim() : null) : existing?.phone || null;
+    const nextRole = role_code ? String(role_code).trim().toLowerCase() : existing?.role || "student";
+    const nextStatus = account_status || existing?.account_status || "active";
 
-        // Insert new assignment
-        await supabase.from("user_role_assignments").insert({
-          user_id: id,
-          role_id: roleRow.id,
-          is_active: true,
-        });
-      }
-    }
+    await provisionLiveTenantUser({
+      existingUserId: id,
+      email: nextEmail,
+      password: password && String(password).trim().length >= 8 ? String(password).trim() : undefined,
+      fullName: nextName,
+      phone: nextPhone,
+      roleCode: nextRole,
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus: nextStatus,
+    });
 
-    // 4. Log Audit Event
+    await syncVirtualProfileAndRole(supabase, {
+      userId: id,
+      email: nextEmail,
+      fullName: nextName,
+      phone: nextPhone,
+      roleCode: nextRole,
+      schoolId: targetSchool.schoolId,
+      schoolName: targetSchool.schoolName,
+      schoolCode: targetSchool.schoolCode,
+      accountStatus: nextStatus,
+    });
+
     try {
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "USER_MODIFIED",
         entity_type: "auth_user",
         entity_id: id,
+        school_id: targetSchool.schoolId,
         outcome: "SUCCESS",
         new_values: {
-          email,
-          full_name,
-          role: role_code,
+          email: nextEmail,
+          full_name: nextName,
+          role: nextRole,
+          school_id: targetSchool.schoolId,
         },
       });
     } catch {
@@ -276,13 +333,19 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("PUT /api/admin/users error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message },
+      { status: err.statusCode || 500 }
+    );
   }
 }
 
-// DELETE: Delete a user from Auth, Profiles, and Role assignments
+// DELETE: Delete a user from Live DB, Auth, and Virtual DB (with tenant ownership guard)
 export async function DELETE(req: NextRequest) {
   try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -290,32 +353,18 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "User ID is required." }, { status: 400 });
     }
 
-    const supabase = getAdminClient();
+    await deleteLiveTenantUser(id, tenant.isSuperAdmin ? null : tenant.schoolId);
 
-    // 1. Delete user role assignments
-    await supabase
-      .from("user_role_assignments")
-      .delete()
-      .eq("user_id", id);
+    const supabase = createAdminClient();
+    await (supabase as any).from("user_role_assignments").delete().eq("user_id", id);
+    await (supabase as any).from("profiles").delete().eq("id", id);
 
-    // 2. Delete from profiles
-    await supabase
-      .from("profiles")
-      .delete()
-      .eq("id", id);
-
-    // 3. Delete from Supabase Auth
-    const { error: authErr } = await supabase.auth.admin.deleteUser(id);
-    if (authErr) {
-      console.warn("Auth delete warning (might be non-auth user):", authErr.message);
-    }
-
-    // 4. Log Audit Event
     try {
-      await supabase.from("audit_events").insert({
+      await (supabase as any).from("audit_events").insert({
         action: "USER_DELETED",
         entity_type: "auth_user",
         entity_id: id,
+        school_id: tenant.schoolId,
         outcome: "success",
       });
     } catch {
@@ -325,6 +374,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("DELETE /api/admin/users error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message },
+      { status: err.statusCode || 500 }
+    );
   }
 }
