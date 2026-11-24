@@ -8,13 +8,32 @@ import {
   type FeatureFlagDefinition,
 } from "@/lib/superadmin/feature-flags-catalog";
 
-export function useFeatureFlags(schoolId?: string | null) {
-  const [flags, setFlags] = useState<Record<string, boolean>>(() =>
-    buildDefaultEnabledMap()
-  );
-  const [loaded, setLoaded] = useState<boolean>(false);
+const FLAGS_CACHE_TTL_MS = 30_000;
+const flagsCacheMap = new Map<string, { flags: Record<string, boolean>; fetchedAt: number }>();
+const inFlightFlagsMap = new Map<string, Promise<Record<string, boolean> | null>>();
 
-  const loadFlags = useCallback(async () => {
+export function clearFeatureFlagsCache() {
+  flagsCacheMap.clear();
+  inFlightFlagsMap.clear();
+}
+
+async function fetchSharedFeatureFlags(
+  schoolId?: string | null,
+  force = false
+): Promise<Record<string, boolean> | null> {
+  const cacheKey = schoolId ? String(schoolId) : "__global__";
+  const now = Date.now();
+  const cached = flagsCacheMap.get(cacheKey);
+  if (!force && cached && now - cached.fetchedAt < FLAGS_CACHE_TTL_MS) {
+    return cached.flags;
+  }
+
+  const existing = inFlightFlagsMap.get(cacheKey);
+  if (!force && existing) {
+    return existing;
+  }
+
+  const promise = (async () => {
     try {
       const qs = schoolId
         ? `?schoolId=${encodeURIComponent(schoolId)}`
@@ -22,33 +41,66 @@ export function useFeatureFlags(schoolId?: string | null) {
       const res = await fetch(`/api/public/feature-flags${qs}`, {
         cache: "no-store",
       });
-      if (res.ok) {
-        const body = await res.json();
-        if (body?.flags && typeof body.flags === "object") {
-          setFlags({
-            ...buildDefaultEnabledMap(),
-            ...body.flags,
-          });
-        }
+      if (!res.ok) return null;
+      const body = await res.json();
+      if (body?.flags && typeof body.flags === "object") {
+        const merged = {
+          ...buildDefaultEnabledMap(),
+          ...body.flags,
+        };
+        flagsCacheMap.set(cacheKey, { flags: merged, fetchedAt: Date.now() });
+        return merged;
       }
+      return null;
     } catch {
-      // Keep default flags on transient network interruption
-    } finally {
-      setLoaded(true);
+      return null;
     }
-  }, [schoolId]);
+  })().finally(() => {
+    if (inFlightFlagsMap.get(cacheKey) === promise) {
+      inFlightFlagsMap.delete(cacheKey);
+    }
+  });
+
+  inFlightFlagsMap.set(cacheKey, promise);
+  return promise;
+}
+
+export function useFeatureFlags(schoolId?: string | null) {
+  const cacheKey = schoolId ? String(schoolId) : "__global__";
+  const [flags, setFlags] = useState<Record<string, boolean>>(() => {
+    const cached = flagsCacheMap.get(cacheKey);
+    return cached ? cached.flags : buildDefaultEnabledMap();
+  });
+  const [loaded, setLoaded] = useState<boolean>(false);
+
+  const loadFlags = useCallback(
+    async (force = false) => {
+      try {
+        const nextFlags = await fetchSharedFeatureFlags(schoolId, force);
+        if (nextFlags) {
+          setFlags(nextFlags);
+        }
+      } finally {
+        setLoaded(true);
+      }
+    },
+    [schoolId]
+  );
 
   useEffect(() => {
-    loadFlags();
+    loadFlags(false);
 
     const handleUpdated = () => {
-      loadFlags();
+      clearFeatureFlagsCache();
+      loadFlags(true);
     };
     window.addEventListener("feature_flags_updated", handleUpdated);
     return () => {
       window.removeEventListener("feature_flags_updated", handleUpdated);
     };
   }, [loadFlags]);
+
+  const refresh = useCallback(() => loadFlags(true), [loadFlags]);
 
   const isEnabled = useCallback(
     (portalKey: string) => {
@@ -77,6 +129,6 @@ export function useFeatureFlags(schoolId?: string | null) {
     isEnabled,
     isHrefEnabled,
     findDisabledForPath,
-    refresh: loadFlags,
+    refresh,
   };
 }

@@ -53,96 +53,69 @@ export async function GET(request: NextRequest) {
     if (!isSuperAdmin && activeUserId) {
       const directAdmin = createDirectAdminClient();
 
-      // 1a. Live public.profiles
-      try {
-        const { data: liveProf } = await (directAdmin as any)
+      // Parallelize all authoritative school_id lookups instead of running 5 sequential round-trips
+      const [profRes, memRes, staffRes, studentRes, parentRes] = await Promise.all([
+        (directAdmin as any)
           .from("profiles")
           .select("school_id, university_id")
           .eq("id", activeUserId)
-          .maybeSingle();
-        if (liveProf?.school_id || liveProf?.university_id) {
-          resolvedSchoolId = String(liveProf.school_id || liveProf.university_id);
-        }
-      } catch {}
-
-      // 1b. Live public.school_memberships
-      if (!resolvedSchoolId) {
-        try {
-          const { data: liveMem } = await (directAdmin as any)
-            .from("school_memberships")
-            .select("school_id")
-            .eq("user_id", activeUserId)
-            .eq("status", "active")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (liveMem?.school_id) {
-            resolvedSchoolId = String(liveMem.school_id);
-          }
-        } catch {}
-      }
-
-      // 1c. Live public.staff_profiles
-      if (!resolvedSchoolId) {
-        try {
-          const { data: liveStaffProf } = await (directAdmin as any)
-            .from("staff_profiles")
-            .select("school_id")
-            .eq("user_id", activeUserId)
-            .limit(1)
-            .maybeSingle();
-          if (liveStaffProf?.school_id) {
-            resolvedSchoolId = String(liveStaffProf.school_id);
-          }
-        } catch {}
-      }
-
-      // 1d. Live public.students
-      if (!resolvedSchoolId) {
-        try {
-          const { data: liveStudentRow } = await (directAdmin as any)
-            .from("students")
-            .select("school_id")
-            .or(`profile_id.eq.${activeUserId},id.eq.${activeUserId}`)
-            .limit(1)
-            .maybeSingle();
-          if (liveStudentRow?.school_id) {
-            resolvedSchoolId = String(liveStudentRow.school_id);
-          }
-        } catch {}
-      }
-
-      // 1e. Live public.parent_guardians
-      if (!resolvedSchoolId) {
-        try {
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (directAdmin as any)
+          .from("staff_profiles")
+          .select("school_id")
+          .eq("user_id", activeUserId)
+          .limit(1)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (directAdmin as any)
+          .from("students")
+          .select("school_id")
+          .or(`profile_id.eq.${activeUserId},id.eq.${activeUserId}`)
+          .limit(1)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (() => {
           let parentQuery = (directAdmin as any)
             .from("parent_guardians")
             .select("school_id");
-          if (activeEmail) {
-            parentQuery = parentQuery.or(`user_id.eq.${activeUserId},email.eq.${activeEmail}`);
-          } else {
-            parentQuery = parentQuery.eq("user_id", activeUserId);
-          }
-          const { data: liveParentRow } = await parentQuery.limit(1).maybeSingle();
-          if (liveParentRow?.school_id) {
-            resolvedSchoolId = String(liveParentRow.school_id);
-          }
-        } catch {}
-      }
+          parentQuery = activeEmail
+            ? parentQuery.or(`user_id.eq.${activeUserId},email.eq.${activeEmail}`)
+            : parentQuery.eq("user_id", activeUserId);
+          return parentQuery
+            .limit(1)
+            .maybeSingle()
+            .then((r: any) => r, () => ({ data: null }));
+        })(),
+      ]);
 
-      // 1c. Authenticated user metadata / JWT claims
-      if (!resolvedSchoolId) {
-        resolvedSchoolId =
-          user?.app_metadata?.school_id ||
-          user?.app_metadata?.university_id ||
-          user?.user_metadata?.school_id ||
-          user?.user_metadata?.university_id ||
-          tenantCtx.schoolId ||
-          null;
-      }
+      resolvedSchoolId =
+        profRes?.data?.school_id ||
+        profRes?.data?.university_id ||
+        memRes?.data?.school_id ||
+        staffRes?.data?.school_id ||
+        studentRes?.data?.school_id ||
+        parentRes?.data?.school_id ||
+        user?.app_metadata?.school_id ||
+        user?.app_metadata?.university_id ||
+        user?.user_metadata?.school_id ||
+        user?.user_metadata?.university_id ||
+        tenantCtx.schoolId ||
+        null;
 
-      // 1d. Virtual DB profiles / university_system_admins fallback
-      if (!resolvedSchoolId) {
+      if (resolvedSchoolId) {
+        resolvedSchoolId = String(resolvedSchoolId);
+      } else {
+        // Virtual DB profiles fallback only when live tables had no match
         try {
           const adminClient = createAdminClient();
           const { data: vProf } = await (adminClient as any)
@@ -187,18 +160,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Lookup strictly by resolvedSchoolId in merged schools + live public.schools
-    const allSchools = await getUniversities();
-    let matchedSchool = allSchools.find(
-      (u) => String(u.id).toLowerCase() === String(resolvedSchoolId).toLowerCase()
-    );
-
-    if (!matchedSchool && UUID_REGEX.test(resolvedSchoolId)) {
+    // Lookup target school directly by ID first (avoid scanning all tenants on every portal load)
+    let matchedSchool: any = null;
+    if (UUID_REGEX.test(resolvedSchoolId)) {
       try {
         const directAdmin = createDirectAdminClient();
         const { data: liveSchool } = await (directAdmin as any)
           .from("schools")
-          .select("*")
+          .select(
+            "id, name, short_name, slug, tenant_slug, school_type, country, city, address, email, phone, website, logo_url, motto, currency, status, academic_settings, created_at, updated_at"
+          )
           .eq("id", resolvedSchoolId)
           .maybeSingle();
 
@@ -215,14 +186,26 @@ export async function GET(request: NextRequest) {
             address: liveSchool.address || "",
             email: liveSchool.email || "",
             phone: liveSchool.phone || "",
+            website: liveSchool.website || "",
+            logo_url: liveSchool.logo_url || "",
+            motto: liveSchool.motto || "",
             default_currency: liveSchool.currency || "",
-            currency_symbol: liveSchool.currency === "GHS" ? "GH₵" : liveSchool.currency ? "$" : "",
+            currency_symbol:
+              liveSchool.currency === "GHS" ? "GH₵" : liveSchool.currency ? "$" : "",
             status: liveSchool.status || "active",
+            academic_settings: liveSchool.academic_settings || {},
             created_at: liveSchool.created_at || new Date().toISOString(),
             updated_at: liveSchool.updated_at || liveSchool.created_at,
           };
         }
       } catch {}
+    }
+
+    if (!matchedSchool) {
+      const allSchools = await getUniversities();
+      matchedSchool = allSchools.find(
+        (u) => String(u.id).toLowerCase() === String(resolvedSchoolId).toLowerCase()
+      );
     }
 
     if (!matchedSchool) {

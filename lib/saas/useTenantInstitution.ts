@@ -18,87 +18,127 @@ export type ClientTenantResolution =
       isSuperAdmin: boolean;
     };
 
+const TENANT_CONTEXT_CACHE_TTL_MS = 30_000;
+let cachedTenantResolution: ClientTenantResolution | null = null;
+let cachedTenantAt = 0;
+let inFlightTenantPromise: Promise<ClientTenantResolution> | null = null;
+
+export function clearClientTenantContextCache() {
+  cachedTenantResolution = null;
+  cachedTenantAt = 0;
+  inFlightTenantPromise = null;
+}
+
 /**
  * Resolves the authenticated user (with `/api/auth/me` fallback) and then
  * resolves their strict multi-tenant school info from `/api/settings/institution`.
  * Never falls back to legacy `institution_info` or hardcoded default school names.
+ * Deduplicates simultaneous layout/page calls via in-flight promise sharing and a short 30s TTL.
  */
-export async function resolveClientTenantContext(): Promise<ClientTenantResolution> {
-  const supabase = createClient();
-
-  let currentUser: any = null;
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    currentUser = user;
-  } catch {
-    // fallback handled below
+export async function resolveClientTenantContext(
+  forceRefresh = false
+): Promise<ClientTenantResolution> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cachedTenantResolution &&
+    cachedTenantResolution.status === "ok" &&
+    now - cachedTenantAt < TENANT_CONTEXT_CACHE_TTL_MS
+  ) {
+    return cachedTenantResolution;
   }
 
-  if (!currentUser) {
+  if (!forceRefresh && inFlightTenantPromise) {
+    return inFlightTenantPromise;
+  }
+
+  const promise = (async (): Promise<ClientTenantResolution> => {
+    const supabase = createClient();
+
+    let currentUser: any = null;
     try {
-      const meRes = await fetch("/api/auth/me");
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        if (meData?.authenticated && meData?.user) {
-          currentUser = meData.user;
-        }
-      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      currentUser = user;
     } catch {
-      // ignore
+      // fallback handled below
     }
-  }
 
-  if (!currentUser) {
-    return { status: "unauthenticated" };
-  }
+    if (!currentUser) {
+      try {
+        const meRes = await fetch("/api/auth/me");
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (meData?.authenticated && meData?.user) {
+            currentUser = meData.user;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
 
-  try {
-    const res = await fetch("/api/settings/institution", { cache: "no-store" });
-    const data = await res.json().catch(() => ({}));
+    if (!currentUser) {
+      return { status: "unauthenticated" };
+    }
 
-    if (!res.ok) {
+    try {
+      const res = await fetch("/api/settings/institution", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        return {
+          status: "unlinked",
+          user: currentUser,
+          error:
+            data?.error ||
+            "Your account is not linked to a registered school. Contact your Super Administrator.",
+        };
+      }
+
+      const schoolId = String(data?.school_id || data?.id || "");
+      const isSuperAdmin = Boolean(data?.is_super_admin);
+
+      if (!schoolId && !isSuperAdmin) {
+        return {
+          status: "unlinked",
+          user: currentUser,
+          error:
+            "Your account is not linked to a registered school. Contact your Super Administrator.",
+        };
+      }
+
+      const okResult: ClientTenantResolution = {
+        status: "ok",
+        user: currentUser,
+        schoolId,
+        schoolName: String(data?.name || ""),
+        schoolAbbr: String(data?.abbreviation || data?.code || ""),
+        schoolLogo: String(data?.logo_url || ""),
+        schoolType: String(data?.school_type || data?.institution_type || ""),
+        currency: String(data?.currency || ""),
+        currencySymbol: String(data?.currency_symbol || ""),
+        isSuperAdmin,
+      };
+      cachedTenantResolution = okResult;
+      cachedTenantAt = Date.now();
+      return okResult;
+    } catch {
       return {
         status: "unlinked",
         user: currentUser,
-        error:
-          data?.error ||
-          "Your account is not linked to a registered school. Contact your Super Administrator.",
+        error: "Unable to verify your school assignment. Please refresh or sign out and retry.",
       };
     }
-
-    const schoolId = String(data?.school_id || data?.id || "");
-    const isSuperAdmin = Boolean(data?.is_super_admin);
-
-    if (!schoolId && !isSuperAdmin) {
-      return {
-        status: "unlinked",
-        user: currentUser,
-        error:
-          "Your account is not linked to a registered school. Contact your Super Administrator.",
-      };
+  })().finally(() => {
+    if (inFlightTenantPromise === promise) {
+      inFlightTenantPromise = null;
     }
+  });
 
-    return {
-      status: "ok",
-      user: currentUser,
-      schoolId,
-      schoolName: String(data?.name || ""),
-      schoolAbbr: String(data?.abbreviation || data?.code || ""),
-      schoolLogo: String(data?.logo_url || ""),
-      schoolType: String(data?.school_type || data?.institution_type || ""),
-      currency: String(data?.currency || ""),
-      currencySymbol: String(data?.currency_symbol || ""),
-      isSuperAdmin,
-    };
-  } catch {
-    return {
-      status: "unlinked",
-      user: currentUser,
-      error: "Unable to verify your school assignment. Please refresh or sign out and retry.",
-    };
-  }
+  inFlightTenantPromise = promise;
+  return promise;
 }
 
 export function formatSchoolMonogram(schoolAbbr: string, schoolName: string): string {

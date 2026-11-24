@@ -28,33 +28,36 @@ export async function GET(request: NextRequest) {
     const [coursesRes, enrolsRes, gradesRes, invoicesRes, paymentsRes] =
       await Promise.all([
         safeStudentQuery<any[]>(
-          (db as any).from("courses").select("*").eq("school_id", schoolId)
+          (db as any)
+            .from("courses")
+            .select("id, school_id, department_id, programme_id, code, name, credits, contact_hours, course_type, semester_number, is_active")
+            .eq("school_id", schoolId)
         ),
         safeStudentQuery<any[]>(
           (db as any)
             .from("course_enrolments")
-            .select("*")
+            .select("id, school_id, student_id, course_id, academic_year_id, term_id, status, registered_at, created_at")
             .eq("school_id", schoolId)
             .eq("student_id", studentId)
         ),
         safeStudentQuery<any[]>(
           (db as any)
             .from("exam_grades")
-            .select("*")
+            .select("id, school_id, student_id, course_id, term_id, ca_score, exam_score, total_score, grade_letter, grade_point, remarks, status, created_at")
             .eq("school_id", schoolId)
             .eq("student_id", studentId)
         ),
         safeStudentQuery<any[]>(
           (db as any)
             .from("invoices")
-            .select("*")
+            .select("id, school_id, student_id, invoice_number, description, total_amount, paid_amount, balance, currency, status, due_date, created_at")
             .eq("school_id", schoolId)
             .eq("student_id", studentId)
         ),
         safeStudentQuery<any[]>(
           (db as any)
             .from("payments")
-            .select("*")
+            .select("id, school_id, student_id, invoice_id, amount, currency, payment_method, provider_reference, receipt_number, payment_date, status, created_at")
             .eq("school_id", schoolId)
             .eq("student_id", studentId)
         ),

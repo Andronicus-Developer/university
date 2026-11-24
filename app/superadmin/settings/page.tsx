@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   Sliders,
   Check,
@@ -55,8 +56,22 @@ import {
   Hammer,
 } from "lucide-react";
 import type { SchoolSidebarMenuItem, SchoolType } from "@/lib/superadmin/school-menu-service";
-import { LandingPageEditor } from "@/components/superadmin/LandingPageEditor";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
+
+const LandingPageEditor = dynamic(
+  () =>
+    import("@/components/superadmin/LandingPageEditor").then(
+      (m) => m.LandingPageEditor
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="p-8 text-sm text-slate-500">
+        Loading Landing Page Editor...
+      </div>
+    ),
+  }
+);
 
 const ICON_COMPONENTS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutGrid,

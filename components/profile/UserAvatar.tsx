@@ -66,36 +66,87 @@ export function UserAvatar({
   );
 }
 
+let cachedAvatarUrl: string | null = null;
+let avatarCachedAt = 0;
+let inFlightAvatarPromise: Promise<string | null> | null = null;
+const AVATAR_CACHE_TTL_MS = 60_000;
+
+export function clearCurrentUserAvatarCache() {
+  cachedAvatarUrl = null;
+  avatarCachedAt = 0;
+  inFlightAvatarPromise = null;
+}
+
+async function fetchSharedAvatar(force = false): Promise<string | null> {
+  const now = Date.now();
+  if (
+    !force &&
+    cachedAvatarUrl !== null &&
+    now - avatarCachedAt < AVATAR_CACHE_TTL_MS
+  ) {
+    return cachedAvatarUrl;
+  }
+  if (!force && inFlightAvatarPromise) {
+    return inFlightAvatarPromise;
+  }
+
+  const p = (async () => {
+    try {
+      const res = await fetch("/api/profile/avatar", { cache: "no-store" });
+      if (!res.ok) return null;
+      const json = await res.json().catch(() => ({}));
+      if (json?.avatarUrl !== undefined) {
+        cachedAvatarUrl = json.avatarUrl || "";
+        avatarCachedAt = Date.now();
+        return cachedAvatarUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  })().finally(() => {
+    if (inFlightAvatarPromise === p) {
+      inFlightAvatarPromise = null;
+    }
+  });
+
+  inFlightAvatarPromise = p;
+  return p;
+}
+
 export function useCurrentUserAvatar(initialUrl?: string | null): string {
-  const [avatarUrl, setAvatarUrl] = useState<string>(initialUrl || "");
+  const [avatarUrl, setAvatarUrl] = useState<string>(
+    initialUrl || cachedAvatarUrl || ""
+  );
 
   useEffect(() => {
-    if (initialUrl) setAvatarUrl(initialUrl);
+    if (initialUrl) {
+      setAvatarUrl(initialUrl);
+      cachedAvatarUrl = initialUrl;
+      avatarCachedAt = Date.now();
+    }
   }, [initialUrl]);
 
   useEffect(() => {
     let active = true;
-    async function loadAvatar() {
-      try {
-        const res = await fetch("/api/profile/avatar", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = await res.json().catch(() => ({}));
-        if (active && json?.avatarUrl !== undefined) {
-          setAvatarUrl(json.avatarUrl || "");
-        }
-      } catch {
-        // ignore
-      }
-    }
 
-    loadAvatar();
+    fetchSharedAvatar(false).then((url) => {
+      if (active && url !== null) {
+        setAvatarUrl(url);
+      }
+    });
 
     const onUpdated = (ev: Event) => {
       const custom = ev as CustomEvent<{ avatarUrl?: string | null }>;
       if (custom?.detail && "avatarUrl" in custom.detail) {
-        setAvatarUrl(custom.detail.avatarUrl || "");
+        const nextUrl = custom.detail.avatarUrl || "";
+        cachedAvatarUrl = nextUrl;
+        avatarCachedAt = Date.now();
+        setAvatarUrl(nextUrl);
       } else {
-        loadAvatar();
+        fetchSharedAvatar(true).then((url) => {
+          if (active && url !== null) setAvatarUrl(url);
+        });
       }
     };
 

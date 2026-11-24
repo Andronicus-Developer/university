@@ -42,14 +42,16 @@ export async function GET(req: NextRequest) {
         safeRegistrarQuery(
           db
             .from("academic_years")
-            .select("*")
+            .select("id, code, name, start_date, end_date, is_current")
             .eq("school_id", schoolId)
             .order("start_date", { ascending: false })
         ),
         safeRegistrarQuery(
           db
             .from("terms")
-            .select("*")
+            .select(
+              "id, academic_year_id, term_number, name, code, start_date, end_date, is_active, is_current, registration_open_date, registration_deadline, exam_start_date, exam_end_date"
+            )
             .eq("school_id", schoolId)
             .order("term_number", { ascending: true })
         ),
@@ -63,7 +65,11 @@ export async function GET(req: NextRequest) {
           db.from("class_groups").select("id, name, grade_level, academic_year_id").eq("school_id", schoolId).order("name")
         ),
         safeRegistrarQuery(
-          db.from("vocational_intakes").select("*").eq("school_id", schoolId).order("start_date", { ascending: false })
+          db
+            .from("vocational_intakes")
+            .select("id, department_id, name, code, start_date, end_date, capacity, status")
+            .eq("school_id", schoolId)
+            .order("start_date", { ascending: false })
         ),
       ]);
 
@@ -90,7 +96,9 @@ export async function GET(req: NextRequest) {
         safeRegistrarQuery(
           db
             .from("admissions_applications")
-            .select("*")
+            .select(
+              "id, application_number, first_name, last_name, email, phone, gender, programme_id, department_id, class_group_id, intake_id, target_level, entry_term_id, status, created_at"
+            )
             .eq("school_id", schoolId)
             .order("created_at", { ascending: false })
         ),

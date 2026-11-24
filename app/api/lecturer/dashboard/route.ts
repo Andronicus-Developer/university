@@ -14,11 +14,30 @@ export async function GET(request: NextRequest) {
     const db = createDirectAdminClient() as any;
     const [coursesRes, enrRes, gradesRes, ttRes] = await Promise.all([
       safeStaffQuery<any[]>(
-        db.from("courses").select("*").eq("school_id", ctx.schoolId).order("code", { ascending: true })
+        db
+          .from("courses")
+          .select("id, code, name, credits, department_id, programme_id, lecturer_id, semester_number, is_active")
+          .eq("school_id", ctx.schoolId)
+          .order("code", { ascending: true })
       ),
-      safeStaffQuery<any[]>(db.from("course_enrolments").select("*").eq("school_id", ctx.schoolId)),
-      safeStaffQuery<any[]>(db.from("exam_grades").select("*").eq("school_id", ctx.schoolId)),
-      safeStaffQuery<any[]>(db.from("timetable_entries").select("*").eq("school_id", ctx.schoolId)),
+      safeStaffQuery<any[]>(
+        db
+          .from("course_enrolments")
+          .select("id, student_id, course_id, status")
+          .eq("school_id", ctx.schoolId)
+      ),
+      safeStaffQuery<any[]>(
+        db
+          .from("exam_grades")
+          .select("id, student_id, course_id, term_id, status")
+          .eq("school_id", ctx.schoolId)
+      ),
+      safeStaffQuery<any[]>(
+        db
+          .from("timetable_entries")
+          .select("id, programme_id, subject_id, teacher_id, day_of_week, start_time, end_time, room, term_id, course_id")
+          .eq("school_id", ctx.schoolId)
+      ),
     ]);
 
     const explicitSet = new Set(ctx.assignedCourseIds.map(String));

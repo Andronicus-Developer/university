@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   ArrowRight,
   Award,
@@ -30,9 +31,23 @@ import {
   X,
 } from "lucide-react";
 import { ErudianLogo } from "@/components/brand/ErudianLogo";
-import { RequestDemoModal } from "@/components/landing/RequestDemoModal";
-import { ChatWithSalesModal } from "@/components/landing/ChatWithSalesModal";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+
+const RequestDemoModal = dynamic(
+  () =>
+    import("@/components/landing/RequestDemoModal").then(
+      (m) => m.RequestDemoModal
+    ),
+  { ssr: false }
+);
+
+const ChatWithSalesModal = dynamic(
+  () =>
+    import("@/components/landing/ChatWithSalesModal").then(
+      (m) => m.ChatWithSalesModal
+    ),
+  { ssr: false }
+);
 import {
   DEFAULT_LANDING_PAGE_CONTENT,
   type FeatureCardItem,
@@ -1666,18 +1681,22 @@ export function ErudianLandingPage({
       {/* ===================================================================== */}
       {/* INTERACTIVE REQUEST DEMO & CHAT WITH SALES MODALS                      */}
       {/* ===================================================================== */}
-      <RequestDemoModal
-        open={demoModalOpen}
-        onClose={() => setDemoModalOpen(false)}
-        defaultModule={demoModule}
-        defaultPlan={demoPlan}
-      />
+      {demoModalOpen && (
+        <RequestDemoModal
+          open={demoModalOpen}
+          onClose={() => setDemoModalOpen(false)}
+          defaultModule={demoModule}
+          defaultPlan={demoPlan}
+        />
+      )}
 
-      <ChatWithSalesModal
-        open={salesModalOpen}
-        onClose={() => setSalesModalOpen(false)}
-        onSwitchToDemo={() => openDemo()}
-      />
+      {salesModalOpen && (
+        <ChatWithSalesModal
+          open={salesModalOpen}
+          onClose={() => setSalesModalOpen(false)}
+          onSwitchToDemo={() => openDemo()}
+        />
+      )}
     </div>
   );
 }

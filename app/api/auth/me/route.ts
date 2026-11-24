@@ -14,56 +14,10 @@ export async function GET(request: NextRequest) {
       normalizedEmail === "superadmin@university.edu.gh" ||
       user.app_metadata?.role === "superadmin";
 
-    // Deletion check
-    if (!isRootSuperAdmin) {
-      try {
-        const adminClient = getAdminClient();
-        const { data: delSetting } = await (adminClient as any)
-          .from("system_settings")
-          .select("setting_value")
-          .eq("setting_key", "deleted_users")
-          .maybeSingle();
-
-        const delList = Array.isArray(delSetting?.setting_value) ? delSetting.setting_value : [];
-        const isDeleted = delList.some(
-          (d: any) => d?.id === user.id || (d?.email && d.email.toLowerCase() === normalizedEmail)
-        );
-
-        if (isDeleted) {
-          return NextResponse.json(
-            { authenticated: false, isDeleted: true, error: "Account deleted" },
-            { status: 200 }
-          );
-        }
-
-        let { data: profile } = await (adminClient as any)
-          .from("profiles")
-          .select("account_status, metadata, school_id, university_id")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (!profile && normalizedEmail) {
-          try {
-            const { data: profByEmail } = await (adminClient as any)
-              .from("profiles")
-              .select("account_status, metadata, school_id, university_id")
-              .ilike("email", normalizedEmail)
-              .maybeSingle();
-            if (profByEmail) profile = profByEmail;
-          } catch {}
-        }
-
-        if (profile && profile.account_status === "deleted") {
-          return NextResponse.json(
-            { authenticated: false, isDeleted: true, error: "Account deleted" },
-            { status: 200 }
-          );
-        }
-      } catch {}
-    }
+    const adminClient = getAdminClient();
+    const directAdmin = createDirectAdminClient();
 
     let roles: string[] = [];
-
     const metaRole =
       user.user_metadata?.role ||
       user.user_metadata?.default_role ||
@@ -75,20 +29,6 @@ export async function GET(request: NextRequest) {
       roles.push("system_admin");
     }
 
-    // Try service client or session client to resolve roles
-    try {
-      const adminClient = getAdminClient();
-      const { data: dbRoles } = await adminClient.rpc("get_user_roles", {
-        p_user_id: user.id,
-      });
-      if (Array.isArray(dbRoles)) {
-        const mapped = dbRoles.map((r: { role_code: string }) => r.role_code);
-        roles = Array.from(new Set([...roles, ...mapped]));
-      }
-    } catch {
-      // fallback to metadata roles
-    }
-
     let resolvedSchoolId: string | null =
       user.app_metadata?.school_id ||
       user.app_metadata?.university_id ||
@@ -96,63 +36,117 @@ export async function GET(request: NextRequest) {
       user.user_metadata?.university_id ||
       null;
 
+    // Parallelize deletion checks, role RPC, profile, school_memberships, and staff_profiles
+    const [delSettingRes, vProfRes, rpcRolesRes, liveProfRes, liveMemRes, liveStaffRes] =
+      await Promise.all([
+        !isRootSuperAdmin
+          ? (adminClient as any)
+              .from("system_settings")
+              .select("setting_value")
+              .eq("setting_key", "deleted_users")
+              .maybeSingle()
+              .then((r: any) => r, () => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        !isRootSuperAdmin
+          ? (adminClient as any)
+              .from("profiles")
+              .select("account_status, metadata, school_id, university_id")
+              .eq("id", user.id)
+              .maybeSingle()
+              .then((r: any) => r, () => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        adminClient
+          .rpc("get_user_roles", { p_user_id: user.id })
+          .then((r: any) => r, () => ({ data: null })),
+        !isRootSuperAdmin
+          ? (directAdmin as any)
+              .from("profiles")
+              .select("school_id, university_id, role, account_status")
+              .eq("id", user.id)
+              .maybeSingle()
+              .then((r: any) => r, () => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        !isRootSuperAdmin
+          ? (directAdmin as any)
+              .from("school_memberships")
+              .select("school_id, role")
+              .eq("user_id", user.id)
+              .eq("status", "active")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+              .then((r: any) => r, () => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        !isRootSuperAdmin
+          ? (directAdmin as any)
+              .from("staff_profiles")
+              .select("school_id")
+              .eq("user_id", user.id)
+              .limit(1)
+              .maybeSingle()
+              .then((r: any) => r, () => ({ data: null }))
+          : Promise.resolve({ data: null }),
+      ]);
+
     if (!isRootSuperAdmin) {
-      try {
-        const directAdmin = createDirectAdminClient();
-        const { data: liveProf } = await (directAdmin as any)
-          .from("profiles")
-          .select("school_id, university_id, role")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (liveProf?.school_id || liveProf?.university_id) {
-          resolvedSchoolId = String(liveProf.school_id || liveProf.university_id);
-        }
-        if (liveProf?.role) roles.push(liveProf.role);
+      const delList = Array.isArray(delSettingRes?.data?.setting_value)
+        ? delSettingRes.data.setting_value
+        : [];
+      const isDeleted = delList.some(
+        (d: any) => d?.id === user.id || (d?.email && d.email.toLowerCase() === normalizedEmail)
+      );
+      if (isDeleted) {
+        return NextResponse.json(
+          { authenticated: false, isDeleted: true, error: "Account deleted" },
+          { status: 200 }
+        );
+      }
 
-        if (!resolvedSchoolId) {
-          const { data: liveMem } = await (directAdmin as any)
-            .from("school_memberships")
-            .select("school_id, role")
-            .eq("user_id", user.id)
-            .eq("status", "active")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (liveMem?.school_id) {
-            resolvedSchoolId = String(liveMem.school_id);
-          }
-          if (liveMem?.role) roles.push(liveMem.role);
-        }
-
-        if (!resolvedSchoolId) {
-          const { data: liveStaffProf } = await (directAdmin as any)
-            .from("staff_profiles")
-            .select("school_id")
-            .eq("user_id", user.id)
-            .limit(1)
-            .maybeSingle();
-          if (liveStaffProf?.school_id) {
-            resolvedSchoolId = String(liveStaffProf.school_id);
-          }
-        }
-      } catch {}
-
-      if (!resolvedSchoolId) {
+      let profile = vProfRes?.data || null;
+      if (!profile && normalizedEmail) {
         try {
-          const adminClient = getAdminClient();
-          const { data: vProf } = await (adminClient as any)
+          const { data: profByEmail } = await (adminClient as any)
             .from("profiles")
-            .select("school_id, university_id, metadata")
-            .eq("id", user.id)
+            .select("account_status, metadata, school_id, university_id")
+            .ilike("email", normalizedEmail)
             .maybeSingle();
-          const candidate =
-            vProf?.school_id ||
-            vProf?.university_id ||
-            vProf?.metadata?.school_id ||
-            vProf?.metadata?.university_id;
-          if (candidate) resolvedSchoolId = String(candidate);
+          if (profByEmail) profile = profByEmail;
         } catch {}
       }
+
+      const liveProf = liveProfRes?.data || null;
+      if (
+        (profile && profile.account_status === "deleted") ||
+        liveProf?.account_status === "deleted"
+      ) {
+        return NextResponse.json(
+          { authenticated: false, isDeleted: true, error: "Account deleted" },
+          { status: 200 }
+        );
+      }
+
+      if (liveProf?.role) roles.push(liveProf.role);
+      if (liveMemRes?.data?.role) roles.push(liveMemRes.data.role);
+
+      const candidateSchoolId =
+        liveProf?.school_id ||
+        liveProf?.university_id ||
+        liveMemRes?.data?.school_id ||
+        liveStaffRes?.data?.school_id ||
+        resolvedSchoolId ||
+        profile?.school_id ||
+        profile?.university_id ||
+        profile?.metadata?.school_id ||
+        profile?.metadata?.university_id ||
+        null;
+      if (candidateSchoolId) {
+        resolvedSchoolId = String(candidateSchoolId);
+      }
+    }
+
+    if (Array.isArray(rpcRolesRes?.data)) {
+      const mapped = rpcRolesRes.data.map((r: { role_code: string }) => r.role_code);
+      roles = Array.from(new Set([...roles, ...mapped]));
     }
 
     roles = Array.from(new Set(roles.filter(Boolean)));

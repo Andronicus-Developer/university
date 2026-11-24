@@ -222,22 +222,60 @@ export async function middleware(request: NextRequest) {
   }
 
   let dbVerifiedSuperAdmin = false;
+  let prefetchedProfile: any = null;
+  let prefetchedSchoolRow: any = null;
+
+  const initialJwtSchoolId: string | null =
+    (user.app_metadata as any)?.school_id ||
+    (user.app_metadata as any)?.university_id ||
+    (user.user_metadata as any)?.school_id ||
+    (user.user_metadata as any)?.university_id ||
+    null;
+
   if (supabase) {
-    try {
-      const { data: userRoles } = await supabase.rpc("get_user_roles", {
-        p_user_id: user.id,
+    const rpcPromise = supabase
+      .rpc("get_user_roles", { p_user_id: user.id })
+      .then((res) => res, (rpcErr) => {
+        console.warn("Could not query get_user_roles RPC in middleware:", rpcErr);
+        return { data: null };
       });
 
-      if (userRoles && Array.isArray(userRoles)) {
-        const rpcRoles = userRoles.map((r: { role_code: string }) => r.role_code);
-        if (rpcRoles.includes("superadmin")) {
-          dbVerifiedSuperAdmin = true;
-        }
-        roles = Array.from(new Set([...roles, ...rpcRoles]));
+    const profPromise = !isRootSuperAdminIdentity
+      ? (supabase as any)
+          .from("profiles")
+          .select("account_status, metadata, school_id, university_id")
+          .eq("id", user.id)
+          .maybeSingle()
+          .then((res: any) => res, () => ({ data: null }))
+      : Promise.resolve({ data: null });
+
+    const schoolPromise =
+      !isRootSuperAdminIdentity && initialJwtSchoolId
+        ? (supabase as any)
+            .from("schools")
+            .select("id, status")
+            .eq("id", String(initialJwtSchoolId))
+            .maybeSingle()
+            .then((res: any) => res, () => ({ data: null }))
+        : Promise.resolve({ data: null });
+
+    const [rpcRes, profRes, schoolRes] = await Promise.all([
+      rpcPromise,
+      profPromise,
+      schoolPromise,
+    ]);
+
+    const userRoles = (rpcRes as any)?.data;
+    if (userRoles && Array.isArray(userRoles)) {
+      const rpcRoles = userRoles.map((r: { role_code: string }) => r.role_code);
+      if (rpcRoles.includes("superadmin")) {
+        dbVerifiedSuperAdmin = true;
       }
-    } catch (rpcErr) {
-      console.warn("Could not query get_user_roles RPC in middleware:", rpcErr);
+      roles = Array.from(new Set([...roles, ...rpcRoles]));
     }
+
+    prefetchedProfile = (profRes as any)?.data || null;
+    prefetchedSchoolRow = (schoolRes as any)?.data || null;
   }
 
   const isSuperAdmin =
@@ -267,22 +305,13 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  let resolvedSchoolId: string | null =
-    (user.app_metadata as any)?.school_id ||
-    (user.app_metadata as any)?.university_id ||
-    (user.user_metadata as any)?.school_id ||
-    (user.user_metadata as any)?.university_id ||
-    null;
+  let resolvedSchoolId: string | null = initialJwtSchoolId;
 
   // 4.2. Live School & Account Status Barrier (Must run BEFORE login page redirect)
   // Exempt superadmin; block suspended/deleted accounts and suspended/inactive/deleted schools.
   if (!isSuperAdmin && supabase) {
     try {
-      let { data: profile } = await (supabase as any)
-        .from("profiles")
-        .select("account_status, metadata, school_id, university_id")
-        .eq("id", user.id)
-        .maybeSingle();
+      let profile = prefetchedProfile;
 
       if (!profile && normalizedEmail) {
         try {
@@ -323,11 +352,20 @@ export async function middleware(request: NextRequest) {
 
       if (userSchoolId) {
         resolvedSchoolId = String(userSchoolId);
-        const { data: schoolRow } = await (supabase as any)
-          .from("schools")
-          .select("id, status")
-          .eq("id", resolvedSchoolId)
-          .maybeSingle();
+        let schoolRow =
+          prefetchedSchoolRow &&
+          String(prefetchedSchoolRow.id || "") === resolvedSchoolId
+            ? prefetchedSchoolRow
+            : null;
+
+        if (!schoolRow) {
+          const { data: fetchedSchoolRow } = await (supabase as any)
+            .from("schools")
+            .select("id, status")
+            .eq("id", resolvedSchoolId)
+            .maybeSingle();
+          schoolRow = fetchedSchoolRow;
+        }
 
         const schoolStatus = String(schoolRow?.status || "").toLowerCase();
         if (["suspended", "inactive", "deleted"].includes(schoolStatus)) {

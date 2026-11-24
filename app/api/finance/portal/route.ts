@@ -78,14 +78,16 @@ export async function GET(req: NextRequest) {
         safeFinanceQuery(
           db
             .from("invoices")
-            .select("*")
+            .select("id, student_id, total_amount, paid_amount, balance, status, created_at")
             .eq("school_id", schoolId)
             .order("created_at", { ascending: false })
         ),
         safeFinanceQuery(
           db
             .from("payments")
-            .select("*")
+            .select(
+              "id, invoice_id, student_id, amount, currency, payment_method, receipt_number, provider_reference, payment_date, status, created_at"
+            )
             .eq("school_id", schoolId)
             .order("created_at", { ascending: false })
             .limit(30)

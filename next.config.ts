@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
     agentUpgrade: false,
+    optimizePackageImports: [
+      "lucide-react",
+      "@supabase/supabase-js",
+      "zod",
+      "react-hook-form",
+    ],
   },
   cacheComponents: true,
   partialPrefetching: true,

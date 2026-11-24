@@ -3138,18 +3138,8 @@ export async function getSuperAdminStats(): Promise<SuperAdminStats> {
     );
   };
 
-  let univs: UniversityItem[] = [];
-  try {
-    univs = await getUniversities();
-  } catch (err: any) {
-    console.error("[getSuperAdminStats] schools fetch failed:", err);
-    queryErrors.push(`schools: ${err?.message || "Failed to load schools"}`);
-  }
-
-  const universitiesCount = univs.length;
-  const activeUniversitiesCount = univs.filter((u) => u.status === "active").length;
-
   const [
+    univsResult,
     profilesCountRes,
     profilesRowsRes,
     studentsCountRes,
@@ -3159,6 +3149,11 @@ export async function getSuperAdminStats(): Promise<SuperAdminStats> {
     programmesCountRes,
     sysAdminsResult,
   ] = await Promise.all([
+    getUniversities().catch((err: any) => {
+      console.error("[getSuperAdminStats] schools fetch failed:", err);
+      queryErrors.push(`schools: ${err?.message || "Failed to load schools"}`);
+      return [] as UniversityItem[];
+    }),
     (directAdmin as any)
       .from("profiles")
       .select("*", { count: "exact", head: true })
@@ -3188,6 +3183,10 @@ export async function getSuperAdminStats(): Promise<SuperAdminStats> {
       return [] as SystemAdminItem[];
     }),
   ]);
+
+  const univs = Array.isArray(univsResult) ? univsResult : [];
+  const universitiesCount = univs.length;
+  const activeUniversitiesCount = univs.filter((u) => u.status === "active").length;
 
   const checkLiveError = (label: string, res: any) => {
     if (res?.error && !isMissingTable(res.error)) {

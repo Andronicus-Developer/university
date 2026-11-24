@@ -107,54 +107,52 @@ export async function resolveStudentRequestContext(
     activeEmail === "superadmin@university.edu.gh" ||
     metaRole === "superadmin";
 
-  // 1. Strictly resolve authoritative school_id
+  // 1. Strictly resolve authoritative school_id (parallelize independent lookups)
   let schoolId: string | null = isSuperAdmin
     ? req.nextUrl.searchParams.get("school_id") ||
       req.headers.get("x-tenant-school-id") ||
       null
     : null;
 
-  if (!schoolId && activeUserId) {
-    const { data: prof } = await safeStudentQuery<any>(
-      (directAdmin as any)
-        .from("profiles")
-        .select("id, school_id, university_id, full_name, email, phone, metadata")
-        .eq("id", activeUserId)
-        .maybeSingle()
-    );
-    if (prof?.school_id || prof?.university_id) {
-      schoolId = String(prof.school_id || prof.university_id);
-    }
-  }
+  let prefetchedProfile: any = null;
 
   if (!schoolId && activeUserId) {
-    const { data: mem } = await safeStudentQuery<any>(
-      (directAdmin as any)
-        .from("school_memberships")
-        .select("school_id")
-        .eq("user_id", activeUserId)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    );
-    if (mem?.school_id) {
-      schoolId = String(mem.school_id);
-    }
-  }
+    const [profRes, memRes, stuRes] = await Promise.all([
+      safeStudentQuery<any>(
+        (directAdmin as any)
+          .from("profiles")
+          .select("id, school_id, university_id, full_name, email, phone, avatar_url, metadata")
+          .eq("id", activeUserId)
+          .maybeSingle()
+      ),
+      safeStudentQuery<any>(
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ),
+      safeStudentQuery<any>(
+        (directAdmin as any)
+          .from("students")
+          .select("school_id")
+          .or(`profile_id.eq.${activeUserId},id.eq.${activeUserId}`)
+          .limit(1)
+          .maybeSingle()
+      ),
+    ]);
 
-  if (!schoolId && activeUserId) {
-    const { data: stuSchool } = await safeStudentQuery<any>(
-      (directAdmin as any)
-        .from("students")
-        .select("school_id")
-        .or(`profile_id.eq.${activeUserId},id.eq.${activeUserId}`)
-        .limit(1)
-        .maybeSingle()
-    );
-    if (stuSchool?.school_id) {
-      schoolId = String(stuSchool.school_id);
-    }
+    prefetchedProfile = profRes.data || null;
+    schoolId =
+      prefetchedProfile?.school_id ||
+      prefetchedProfile?.university_id ||
+      memRes.data?.school_id ||
+      stuRes.data?.school_id ||
+      null;
+    if (schoolId) schoolId = String(schoolId);
   }
 
   if (!schoolId && !isSuperAdmin) {
@@ -180,21 +178,23 @@ export async function resolveStudentRequestContext(
     };
   }
 
-  // 2. Load authoritative school details
-  const [{ data: liveSchool }, allSchools] = await Promise.all([
-    safeStudentQuery<any>(
-      (directAdmin as any)
-        .from("schools")
-        .select("*")
-        .eq("id", schoolId)
-        .maybeSingle()
-    ),
-    getUniversities().catch(() => []),
-  ]);
-
-  const fallbackSchool = allSchools.find(
-    (s) => String(s.id).toLowerCase() === String(schoolId).toLowerCase()
+  // 2. Load authoritative school details directly by ID (fallback to getUniversities only if missing)
+  const { data: liveSchool } = await safeStudentQuery<any>(
+    (directAdmin as any)
+      .from("schools")
+      .select("id, name, short_name, slug, tenant_slug, school_type, currency, logo_url, academic_settings")
+      .eq("id", schoolId)
+      .maybeSingle()
   );
+
+  let fallbackSchool: any = null;
+  if (!liveSchool) {
+    const allSchools = await getUniversities().catch(() => []);
+    fallbackSchool =
+      allSchools.find(
+        (s) => String(s.id).toLowerCase() === String(schoolId).toLowerCase()
+      ) || null;
+  }
 
   if (!liveSchool && !fallbackSchool) {
     return {
@@ -287,16 +287,22 @@ export async function resolveStudentRequestContext(
     }
   }
 
-  // Load user's profile row
-  const { data: profileRow } = activeUserId
-    ? await safeStudentQuery<any>(
-        (directAdmin as any)
-          .from("profiles")
-          .select("*")
-          .eq("id", student?.profile_id || activeUserId)
-          .maybeSingle()
-      )
-    : { data: null };
+  // Load user's profile row (reuse prefetched row when IDs match)
+  const targetProfileId = String(student?.profile_id || activeUserId || "");
+  const profileRow =
+    prefetchedProfile && String(prefetchedProfile.id || "") === targetProfileId
+      ? prefetchedProfile
+      : activeUserId
+      ? (
+          await safeStudentQuery<any>(
+            (directAdmin as any)
+              .from("profiles")
+              .select("id, school_id, university_id, full_name, email, phone, avatar_url, metadata")
+              .eq("id", targetProfileId)
+              .maybeSingle()
+          )
+        ).data
+      : null;
 
   const metaFallback =
     profileRow?.metadata?.student_profile &&
@@ -338,7 +344,7 @@ export async function resolveStudentRequestContext(
       ? safeStudentQuery<any>(
           (directAdmin as any)
             .from("programmes")
-            .select("*")
+            .select("id, code, name, degree_level, department_id")
             .eq("school_id", schoolId)
             .eq("id", student.programme_id)
             .maybeSingle()
@@ -348,7 +354,7 @@ export async function resolveStudentRequestContext(
       ? safeStudentQuery<any>(
           (directAdmin as any)
             .from("departments")
-            .select("*")
+            .select("id, code, name")
             .eq("school_id", schoolId)
             .eq("id", student.department_id)
             .maybeSingle()
@@ -358,7 +364,7 @@ export async function resolveStudentRequestContext(
       ? safeStudentQuery<any>(
           (directAdmin as any)
             .from("vocational_intakes")
-            .select("*")
+            .select("id, code, name, start_date, end_date, status")
             .eq("school_id", schoolId)
             .eq("id", student.intake_id)
             .maybeSingle()
@@ -367,7 +373,7 @@ export async function resolveStudentRequestContext(
     safeStudentQuery<any[]>(
       (directAdmin as any)
         .from("academic_years")
-        .select("*")
+        .select("id, code, name, start_date, end_date, is_current")
         .eq("school_id", schoolId)
         .order("is_current", { ascending: false })
         .order("start_date", { ascending: false })
@@ -375,7 +381,7 @@ export async function resolveStudentRequestContext(
     safeStudentQuery<any[]>(
       (directAdmin as any)
         .from("terms")
-        .select("*")
+        .select("id, academic_year_id, term_number, name, code, start_date, end_date, is_active, is_current")
         .eq("school_id", schoolId)
         .order("is_current", { ascending: false })
         .order("term_number", { ascending: true })

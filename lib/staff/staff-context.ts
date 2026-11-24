@@ -160,67 +160,67 @@ export async function resolveAcademicStaffContext(
 
   let schoolId: string | null = null;
   let profileRow: any = null;
+  let ownStaffRow: any = null;
 
-  // 1. Resolve authoritative profile & school_id
+  // 1-3. Resolve authoritative profile, school_memberships, and own staff_profiles in parallel
   if (activeUserId) {
-    let { data: prof, missing: profMissing } = await safeStaffQuery<any>(
-      (directAdmin as any)
-        .from("profiles")
-        .select("id, school_id, university_id, full_name, email, phone, role, avatar_url, metadata")
-        .eq("id", activeUserId)
-        .maybeSingle()
-    );
-    if (!prof && profMissing) {
-      const fb = await safeStaffQuery<any>(
+    const [profRes, memsRes, spRes] = await Promise.all([
+      (async () => {
+        let res = await safeStaffQuery<any>(
+          (directAdmin as any)
+            .from("profiles")
+            .select("id, school_id, university_id, full_name, email, phone, role, avatar_url, metadata")
+            .eq("id", activeUserId)
+            .maybeSingle()
+        );
+        if (!res.data && res.missing) {
+          res = await safeStaffQuery<any>(
+            (directAdmin as any)
+              .from("profiles")
+              .select("id, school_id, university_id, full_name, email, phone, role, metadata")
+              .eq("id", activeUserId)
+              .maybeSingle()
+          );
+        }
+        return res;
+      })(),
+      safeStaffQuery<any[]>(
         (directAdmin as any)
-          .from("profiles")
-          .select("id, school_id, university_id, full_name, email, phone, role, metadata")
-          .eq("id", activeUserId)
+          .from("school_memberships")
+          .select("school_id, role, status, roles(code)")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+      ),
+      safeStaffQuery<any>(
+        (directAdmin as any)
+          .from("staff_profiles")
+          .select("*")
+          .eq("user_id", activeUserId)
           .maybeSingle()
-      );
-      prof = fb.data;
-    }
-    if (prof) {
-      profileRow = prof;
-      pushRole(prof.role);
-      if (prof.school_id || prof.university_id) {
-        schoolId = String(prof.school_id || prof.university_id);
+      ),
+    ]);
+
+    if (profRes.data) {
+      profileRow = profRes.data;
+      pushRole(profRes.data.role);
+      if (profRes.data.school_id || profRes.data.university_id) {
+        schoolId = String(profRes.data.school_id || profRes.data.university_id);
       }
     }
-  }
 
-  // 2. Check school_memberships
-  if (activeUserId) {
-    const { data: mems } = await safeStaffQuery<any[]>(
-      (directAdmin as any)
-        .from("school_memberships")
-        .select("school_id, role, status, roles(code)")
-        .eq("user_id", activeUserId)
-        .eq("status", "active")
-    );
-    for (const m of mems || []) {
+    for (const m of memsRes.data || []) {
       if (!schoolId && m?.school_id) schoolId = String(m.school_id);
       pushRole(m?.role);
       pushRole(m?.roles?.code);
     }
-  }
 
-  // 3. Check own staff_profiles row (never unscoped .limit(1))
-  let ownStaffRow: any = null;
-  if (activeUserId) {
-    const { data: spByUser } = await safeStaffQuery<any>(
-      (directAdmin as any)
-        .from("staff_profiles")
-        .select("*")
-        .eq("user_id", activeUserId)
-        .maybeSingle()
-    );
-    if (spByUser) {
-      ownStaffRow = spByUser;
-      if (!schoolId && spByUser.school_id) schoolId = String(spByUser.school_id);
-      pushRole(spByUser.role_code);
+    if (spRes.data) {
+      ownStaffRow = spRes.data;
+      if (!schoolId && spRes.data.school_id) schoolId = String(spRes.data.school_id);
+      pushRole(spRes.data.role_code);
     }
   }
+
   if (!ownStaffRow && activeEmail) {
     const { data: spByEmail } = await safeStaffQuery<any>(
       (directAdmin as any)
@@ -314,21 +314,23 @@ export async function resolveAcademicStaffContext(
     ownStaffRow = scopedSp || null;
   }
 
-  // Load authoritative school details
-  const [{ data: liveSchool }, allSchools] = await Promise.all([
-    safeStaffQuery<any>(
-      (directAdmin as any)
-        .from("schools")
-        .select("*")
-        .eq("id", schoolId)
-        .maybeSingle()
-    ),
-    getUniversities().catch(() => []),
-  ]);
-
-  const fallbackSchool = allSchools.find(
-    (s) => String(s.id).toLowerCase() === String(schoolId).toLowerCase()
+  // Load authoritative school details directly by ID (fallback to getUniversities only if missing)
+  const { data: liveSchool } = await safeStaffQuery<any>(
+    (directAdmin as any)
+      .from("schools")
+      .select("id, name, short_name, slug, tenant_slug, school_type, currency, logo_url")
+      .eq("id", schoolId)
+      .maybeSingle()
   );
+
+  let fallbackSchool: any = null;
+  if (!liveSchool) {
+    const allSchools = await getUniversities().catch(() => []);
+    fallbackSchool =
+      allSchools.find(
+        (s) => String(s.id).toLowerCase() === String(schoolId).toLowerCase()
+      ) || null;
+  }
 
   if (!liveSchool && !fallbackSchool) {
     return {
@@ -363,7 +365,7 @@ export async function resolveAcademicStaffContext(
         ? safeStaffQuery<any>(
             (directAdmin as any)
               .from("departments")
-              .select("*")
+              .select("id, code, name")
               .eq("school_id", schoolId)
               .eq("id", ownStaffRow.department_id)
               .maybeSingle()
@@ -372,7 +374,7 @@ export async function resolveAcademicStaffContext(
       safeStaffQuery<any[]>(
         (directAdmin as any)
           .from("academic_years")
-          .select("*")
+          .select("id, code, name, start_date, end_date, is_current")
           .eq("school_id", schoolId)
           .order("is_current", { ascending: false })
           .order("start_date", { ascending: false })
@@ -380,7 +382,7 @@ export async function resolveAcademicStaffContext(
       safeStaffQuery<any[]>(
         (directAdmin as any)
           .from("terms")
-          .select("*")
+          .select("id, academic_year_id, term_number, name, code, start_date, end_date, is_active, is_current")
           .eq("school_id", schoolId)
           .order("is_current", { ascending: false })
           .order("term_number", { ascending: true })

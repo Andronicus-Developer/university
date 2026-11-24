@@ -120,43 +120,54 @@ export async function resolveParentPortalContext(
 
   let profileRow: any = null;
   let schoolId: string | null = tenantCtx.schoolId || null;
+  let parentRows: any[] = [];
 
   if (activeUserId) {
-    const { data: prof } = await (directAdmin as any)
-      .from("profiles")
-      .select("id, email, full_name, phone, role, school_id, university_id")
-      .eq("id", activeUserId)
-      .maybeSingle();
-    if (prof) {
-      profileRow = prof;
-      pushRole(prof.role);
-      schoolId = schoolId || prof.school_id || prof.university_id || null;
+    let pgQuery = (directAdmin as any)
+      .from("parent_guardians")
+      .select("id, school_id, user_id, student_id, full_name, email, phone, relationship, occupation, address");
+    pgQuery = activeEmail
+      ? pgQuery.or(`user_id.eq.${activeUserId},email.eq.${activeEmail}`)
+      : pgQuery.eq("user_id", activeUserId);
+
+    const [profRes, memsRes, pgsRes] = await Promise.all([
+      safeParentQuery<any>(
+        (directAdmin as any)
+          .from("profiles")
+          .select("id, email, full_name, phone, role, school_id, university_id")
+          .eq("id", activeUserId)
+          .maybeSingle()
+      ),
+      safeParentQuery<any[]>(
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id, role, status")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+      ),
+      safeParentQuery<any[]>(pgQuery),
+    ]);
+
+    if (profRes.data) {
+      profileRow = profRes.data;
+      pushRole(profRes.data.role);
+      schoolId = schoolId || profRes.data.school_id || profRes.data.university_id || null;
     }
 
-    const { data: mems } = await (directAdmin as any)
-      .from("school_memberships")
-      .select("school_id, role, status")
-      .eq("user_id", activeUserId)
-      .eq("status", "active");
-    for (const m of mems || []) {
+    for (const m of memsRes.data || []) {
       pushRole(m.role);
       if (!schoolId && m.school_id) schoolId = String(m.school_id);
     }
-  }
 
-  // Locate matching parent_guardians rows
-  let parentRows: any[] = [];
-  try {
-    let pgQuery = (directAdmin as any).from("parent_guardians").select("*");
-    if (activeEmail) {
-      pgQuery = pgQuery.or(`user_id.eq.${activeUserId},email.eq.${activeEmail}`);
-    } else {
-      pgQuery = pgQuery.eq("user_id", activeUserId);
-    }
-    const { data: pgs } = await pgQuery;
+    parentRows = pgsRes.data || [];
+  } else if (activeEmail) {
+    const { data: pgs } = await safeParentQuery<any[]>(
+      (directAdmin as any)
+        .from("parent_guardians")
+        .select("id, school_id, user_id, student_id, full_name, email, phone, relationship, occupation, address")
+        .eq("email", activeEmail)
+    );
     parentRows = pgs || [];
-  } catch {
-    parentRows = [];
   }
 
   if (!schoolId && parentRows.length > 0 && parentRows[0]?.school_id) {
@@ -193,14 +204,27 @@ export async function resolveParentPortalContext(
   const scopedParentRows = parentRows.filter((p) => String(p.school_id) === String(schoolId));
   const parentGuardianIds = scopedParentRows.map((p) => String(p.id));
 
-  // Fetch school record
-  const { data: schoolRow } = await (directAdmin as any)
-    .from("schools")
-    .select("id, name, school_type, currency, logo_url, academic_settings")
-    .eq("id", schoolId)
-    .maybeSingle();
+  // Fetch school record and linked ward mappings in parallel
+  const [schoolRes, linksRes] = await Promise.all([
+    safeParentQuery<any>(
+      (directAdmin as any)
+        .from("schools")
+        .select("id, name, school_type, currency, logo_url, academic_settings")
+        .eq("id", schoolId)
+        .maybeSingle()
+    ),
+    parentGuardianIds.length > 0
+      ? safeParentQuery<any[]>(
+          (directAdmin as any)
+            .from("parent_guardian_students")
+            .select("student_id, relationship, is_primary_contact")
+            .eq("school_id", schoolId)
+            .in("parent_guardian_id", parentGuardianIds)
+        )
+      : Promise.resolve({ data: [], missing: false, error: null }),
+  ]);
 
-  let resolvedSchool = schoolRow;
+  let resolvedSchool = schoolRes.data;
   if (!resolvedSchool) {
     const { data: vSchool } = await (virtualAdmin as any)
       .from("schools")
@@ -217,17 +241,9 @@ export async function resolveParentPortalContext(
       studentRelMap.set(String(p.student_id), p.relationship || "Parent/Guardian");
     }
   }
-
-  if (parentGuardianIds.length > 0) {
-    const { data: links } = await (directAdmin as any)
-      .from("parent_guardian_students")
-      .select("student_id, relationship, is_primary_contact")
-      .eq("school_id", schoolId)
-      .in("parent_guardian_id", parentGuardianIds);
-    for (const l of links || []) {
-      if (l.student_id && !studentRelMap.has(String(l.student_id))) {
-        studentRelMap.set(String(l.student_id), l.relationship || "Parent/Guardian");
-      }
+  for (const l of linksRes.data || []) {
+    if (l.student_id && !studentRelMap.has(String(l.student_id))) {
+      studentRelMap.set(String(l.student_id), l.relationship || "Parent/Guardian");
     }
   }
 
@@ -238,7 +254,9 @@ export async function resolveParentPortalContext(
     const [studentsRes, progsRes, deptsRes, classesRes, intakesRes] = await Promise.all([
       (directAdmin as any)
         .from("students")
-        .select("*")
+        .select(
+          "id, student_number, first_name, last_name, email, phone, gender, status, current_level, programme_id, department_id, class_group_id, intake_id"
+        )
         .eq("school_id", schoolId)
         .in("id", wardIds)
         .order("first_name", { ascending: true }),

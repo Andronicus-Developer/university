@@ -151,56 +151,84 @@ export async function resolveAdminTenantRequest(
 
   let resolvedSchoolId: string | null = null;
 
-  // 1. Live public.profiles
   if (activeUserId) {
-    try {
-      const { data: liveProf } = await (directAdmin as any)
-        .from("profiles")
-        .select("school_id, university_id, role")
-        .eq("id", activeUserId)
-        .maybeSingle();
-      if (liveProf?.school_id || liveProf?.university_id) {
-        resolvedSchoolId = String(liveProf.school_id || liveProf.university_id);
-      }
-      pushRole(liveProf?.role);
-    } catch {}
-  }
+    const [liveProfRes, liveMemsRes, liveStaffRes, vProfRes, dbRolesRes] =
+      await Promise.all([
+        (directAdmin as any)
+          .from("profiles")
+          .select("school_id, university_id, role")
+          .eq("id", activeUserId)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id, role, status, roles(code)")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+          .then((r: any) => r, () => ({ data: [] })),
+        (directAdmin as any)
+          .from("staff_profiles")
+          .select("school_id")
+          .eq("user_id", activeUserId)
+          .limit(1)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        (virtualAdmin as any)
+          .from("profiles")
+          .select("school_id, university_id, role, metadata")
+          .eq("id", activeUserId)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+        virtualAdmin
+          .rpc("get_user_roles", { p_user_id: activeUserId })
+          .then((r: any) => r, () => ({ data: [] })),
+      ]);
 
-  // 2. Live public.school_memberships
-  if (activeUserId) {
-    try {
-      const { data: liveMems } = await (directAdmin as any)
-        .from("school_memberships")
-        .select("school_id, role, status, roles(code)")
-        .eq("user_id", activeUserId)
-        .eq("status", "active");
-      for (const m of liveMems || []) {
-        if (!resolvedSchoolId && m?.school_id) {
-          resolvedSchoolId = String(m.school_id);
-        }
-        pushRole(m?.role);
-        pushRole(m?.roles?.code);
-      }
-    } catch {}
-  }
+    const liveProf = liveProfRes?.data;
+    if (liveProf?.school_id || liveProf?.university_id) {
+      resolvedSchoolId = String(liveProf.school_id || liveProf.university_id);
+    }
+    pushRole(liveProf?.role);
 
-  // 3. Live public.staff_profiles
-  if (!resolvedSchoolId && activeUserId) {
-    try {
-      const { data: liveStaffProf } = await (directAdmin as any)
-        .from("staff_profiles")
-        .select("school_id")
-        .eq("user_id", activeUserId)
-        .limit(1)
-        .maybeSingle();
-      if (liveStaffProf?.school_id) {
-        resolvedSchoolId = String(liveStaffProf.school_id);
+    for (const m of liveMemsRes?.data || []) {
+      if (!resolvedSchoolId && m?.school_id) {
+        resolvedSchoolId = String(m.school_id);
       }
-    } catch {}
-  }
+      pushRole(m?.role);
+      pushRole(m?.roles?.code);
+    }
 
-  // 4. JWT / Metadata claims
-  if (!resolvedSchoolId) {
+    if (!resolvedSchoolId && liveStaffRes?.data?.school_id) {
+      resolvedSchoolId = String(liveStaffRes.data.school_id);
+    }
+
+    if (!resolvedSchoolId) {
+      const metaSchool =
+        user?.app_metadata?.school_id ||
+        user?.app_metadata?.university_id ||
+        user?.user_metadata?.school_id ||
+        user?.user_metadata?.university_id ||
+        tenantCtx.schoolId ||
+        null;
+      if (metaSchool) resolvedSchoolId = String(metaSchool);
+    }
+
+    const vProf = vProfRes?.data;
+    if (!resolvedSchoolId && vProf) {
+      const candidate =
+        vProf.school_id ||
+        vProf.university_id ||
+        vProf.metadata?.school_id ||
+        vProf.metadata?.university_id;
+      if (candidate) resolvedSchoolId = String(candidate);
+    }
+    pushRole(vProf?.role);
+    pushRole(vProf?.metadata?.role);
+
+    if (Array.isArray(dbRolesRes?.data)) {
+      for (const r of dbRolesRes.data) pushRole(r?.role_code);
+    }
+  } else {
     const metaSchool =
       user?.app_metadata?.school_id ||
       user?.app_metadata?.university_id ||
@@ -209,36 +237,6 @@ export async function resolveAdminTenantRequest(
       tenantCtx.schoolId ||
       null;
     if (metaSchool) resolvedSchoolId = String(metaSchool);
-  }
-
-  // 5. Virtual DB fallback (profiles / university_system_admins / roles RPC)
-  if (activeUserId) {
-    try {
-      const { data: vProf } = await (virtualAdmin as any)
-        .from("profiles")
-        .select("school_id, university_id, role, metadata")
-        .eq("id", activeUserId)
-        .maybeSingle();
-      if (!resolvedSchoolId) {
-        const candidate =
-          vProf?.school_id ||
-          vProf?.university_id ||
-          vProf?.metadata?.school_id ||
-          vProf?.metadata?.university_id;
-        if (candidate) resolvedSchoolId = String(candidate);
-      }
-      pushRole(vProf?.role);
-      pushRole(vProf?.metadata?.role);
-    } catch {}
-
-    try {
-      const { data: dbRoles } = await virtualAdmin.rpc("get_user_roles", {
-        p_user_id: activeUserId,
-      });
-      if (Array.isArray(dbRoles)) {
-        for (const r of dbRoles) pushRole(r?.role_code);
-      }
-    } catch {}
   }
 
   const isSuperAdmin =

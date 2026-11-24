@@ -115,37 +115,48 @@ export async function resolveFinancePortalContext(
   let staffProfile: any = null;
 
   if (activeUserId) {
-    const { data: prof } = await (directAdmin as any)
-      .from("profiles")
-      .select("id, email, full_name, phone, role, school_id, university_id")
-      .eq("id", activeUserId)
-      .maybeSingle();
-    if (prof) {
-      profileRow = prof;
-      pushRole(prof.role);
-      schoolId = schoolId || prof.school_id || prof.university_id || null;
+    const [profRes, memsRes, spRes] = await Promise.all([
+      safeFinanceQuery<any>(
+        (directAdmin as any)
+          .from("profiles")
+          .select("id, email, full_name, phone, role, school_id, university_id")
+          .eq("id", activeUserId)
+          .maybeSingle()
+      ),
+      safeFinanceQuery<any[]>(
+        (directAdmin as any)
+          .from("school_memberships")
+          .select("school_id, role, status")
+          .eq("user_id", activeUserId)
+          .eq("status", "active")
+      ),
+      safeFinanceQuery<any>(
+        (directAdmin as any)
+          .from("staff_profiles")
+          .select(
+            "id, school_id, user_id, first_name, last_name, email, role_code, designation, department_id, staff_number"
+          )
+          .eq("user_id", activeUserId)
+          .limit(1)
+          .maybeSingle()
+      ),
+    ]);
+
+    if (profRes.data) {
+      profileRow = profRes.data;
+      pushRole(profRes.data.role);
+      schoolId = schoolId || profRes.data.school_id || profRes.data.university_id || null;
     }
 
-    const { data: mems } = await (directAdmin as any)
-      .from("school_memberships")
-      .select("school_id, role, status")
-      .eq("user_id", activeUserId)
-      .eq("status", "active");
-    for (const m of mems || []) {
+    for (const m of memsRes.data || []) {
       pushRole(m.role);
       if (!schoolId && m.school_id) schoolId = String(m.school_id);
     }
 
-    const { data: sp } = await (directAdmin as any)
-      .from("staff_profiles")
-      .select("*")
-      .eq("user_id", activeUserId)
-      .limit(1)
-      .maybeSingle();
-    if (sp) {
-      staffProfile = sp;
-      pushRole(sp.role_code);
-      if (!schoolId && sp.school_id) schoolId = String(sp.school_id);
+    if (spRes.data) {
+      staffProfile = spRes.data;
+      pushRole(spRes.data.role_code);
+      if (!schoolId && spRes.data.school_id) schoolId = String(spRes.data.school_id);
     }
   }
 

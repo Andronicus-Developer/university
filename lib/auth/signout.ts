@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
+import { clearClientTenantContextCache } from "@/lib/saas/useTenantInstitution";
+import { clearCurrentUserAvatarCache } from "@/components/profile/UserAvatar";
+import { clearFeatureFlagsCache } from "@/lib/superadmin/useFeatureFlags";
 
 /**
  * Universal, watertight client-side sign-out utility.
@@ -12,6 +15,9 @@ import { createClient } from "@/lib/supabase/client";
  *    the Back button or memory cache from displaying protected pages.
  */
 export async function signOutUser(redirectPath: string = "/login") {
+  clearClientTenantContextCache();
+  clearCurrentUserAvatarCache();
+  clearFeatureFlagsCache();
   try {
     // 1. Invoke server-side signout endpoint to delete all HttpOnly and server-set cookies
     await fetch("/api/auth/signout", {
