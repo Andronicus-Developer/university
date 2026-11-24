@@ -466,17 +466,142 @@ export function ErudianLandingPage({
   );
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0B0F19] text-[#111118] dark:text-slate-100 font-sans overflow-x-hidden transition-colors">
+    <div className="min-h-screen bg-white dark:bg-[#0B0F19] text-[#111118] dark:text-slate-100 font-sans overflow-x-clip transition-colors">
       {/* ===================================================================== */}
-      {/* 1. CONTAINED HERO CARD WITH INTEGRATED NAVBAR                          */}
+      {/* 1. SEAMLESS STICKY NAVBAR & FULL-BLEED BLENDED HERO                    */}
       {/* ===================================================================== */}
-      {(visibility.navbar || visibility.hero) && (
-        <div id="home" className="px-3 sm:px-6 lg:px-8 pt-3 sm:pt-5">
-          <section className="relative max-w-[1260px] mx-auto rounded-[28px] sm:rounded-[36px] overflow-hidden border border-purple-200/60 dark:border-purple-900/50 bg-gradient-to-b from-[#FCFBFF] via-[#F6F1FF] via-50% to-[#CCA8FF] dark:from-[#121024] dark:via-[#191334] dark:to-[#27184A] shadow-[0_20px_70px_-20px_rgba(124,58,237,0.2)] dark:shadow-[0_20px_70px_-20px_rgba(0,0,0,0.65)]">
+      {visibility.navbar && (
+        <header className="sticky top-0 z-50 w-full backdrop-blur-md bg-[#FAF7FF]/80 dark:bg-[#0E0D1B]/80 transition-colors">
+          <div className="max-w-[1260px] mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+            <Link href="/" className="shrink-0 flex items-center gap-2.5" aria-label="Erudian360 Home">
+              {navbar.logoUrl ? (
+                <span className="inline-flex items-center gap-2.5">
+                  <img
+                    src={navbar.logoUrl}
+                    alt={`${navbar.brandPrimary}${navbar.brandAccent}`}
+                    className="h-8 w-auto max-w-[140px] object-contain"
+                  />
+                  {(navbar.brandPrimary || navbar.brandAccent) && (
+                    <span className="text-[19px] font-extrabold tracking-tight leading-none text-[#7C3AED] dark:text-[#A78BFA]">
+                      {navbar.brandPrimary}
+                      <span className="text-[#0F172A] dark:text-white">
+                        {navbar.brandAccent}
+                      </span>
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <ErudianLogo
+                  size="md"
+                  brandPrimary={navbar.brandPrimary}
+                  brandAccent={navbar.brandAccent}
+                />
+              )}
+            </Link>
+
+            {/* Center Translucent Pill Navigation */}
+            <nav
+              aria-label="Primary"
+              className="hidden md:flex items-center gap-1 rounded-full bg-purple-500/[0.07] dark:bg-white/[0.06] p-1"
+            >
+              {(navbar.navLinks || []).map((link, idx) => (
+                <a
+                  key={`${link.label}-${idx}`}
+                  href={link.href || "#home"}
+                  className={
+                    idx === 0
+                      ? "px-4 py-1.5 rounded-full bg-white/95 dark:bg-slate-800/95 text-xs font-bold text-slate-900 dark:text-white shadow-2xs"
+                      : "px-4 py-1.5 rounded-full text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  }
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+
+            {/* Right Navbar Actions: Theme Toggle + Sign In + Request Demo */}
+            <div className="hidden md:flex items-center gap-2.5 shrink-0">
+              <ThemeToggle variant="compact" align="right" />
+              <Link
+                href={navbar.signInHref || "/login"}
+                className="px-4 py-2 rounded-full bg-white/80 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-[#7C3AED] dark:hover:text-[#C4B5FD] transition-all"
+              >
+                {navbar.signInLabel || "Sign In"}
+              </Link>
+              <button
+                type="button"
+                onClick={() => openDemo()}
+                className="px-5 py-2 rounded-full bg-gradient-to-r from-[#9353FF] to-[#7C3AED] hover:from-[#8B5CF6] hover:to-[#6D28D9] text-white text-xs font-semibold shadow-md shadow-purple-500/20 transition-all cursor-pointer active:scale-[0.98]"
+              >
+                {navbar.ctaLabel || "Request Demo"}
+              </button>
+            </div>
+
+            {/* Mobile Actions: Compact Theme Toggle + Hamburger */}
+            <div className="md:hidden flex items-center gap-2">
+              <ThemeToggle variant="compact" align="right" />
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((v) => !v)}
+                aria-label="Toggle navigation menu"
+                className="h-9 w-9 rounded-full bg-white/80 dark:bg-white/10 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer"
+              >
+                {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile Drawer Menu */}
+          {mobileMenuOpen && (
+            <div className="md:hidden mx-4 mb-3 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 shadow-xl space-y-3">
+              <div className="flex flex-col gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {(navbar.navLinks || []).map((link, idx) => (
+                  <a
+                    key={`mob-${link.label}-${idx}`}
+                    href={link.href || "#home"}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="px-3 py-2 rounded-xl hover:bg-purple-50 dark:hover:bg-slate-800"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+              <div className="pt-2 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Theme
+                </span>
+                <ThemeToggle variant="segmented" />
+              </div>
+              <div className="pt-2 flex items-center gap-2">
+                <Link
+                  href={navbar.signInHref || "/login"}
+                  className="flex-1 text-center px-4 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold"
+                >
+                  {navbar.signInLabel || "Sign In"}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => openDemo()}
+                  className="flex-1 px-4 py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold cursor-pointer"
+                >
+                  {navbar.ctaLabel || "Request Demo"}
+                </button>
+              </div>
+            </div>
+          )}
+        </header>
+      )}
+
+      {visibility.hero && (
+        <section
+          id="home"
+          className="relative w-full overflow-hidden bg-gradient-to-b from-[#FAF7FF] via-[#F2E9FF] via-55% to-white dark:from-[#0E0D1B] dark:via-[#171232] dark:to-[#0B0F19]"
+        >
+          <div className="relative max-w-[1260px] mx-auto px-4 sm:px-8 pt-6 sm:pt-10 pb-8 sm:pb-12">
             {/* Decorative Swirling Lavender Vortex Graphics Left & Right */}
             <svg
               viewBox="0 0 260 260"
-              className="pointer-events-none hidden md:block absolute -left-16 top-28 w-64 h-64 opacity-45 dark:opacity-20"
+              className="pointer-events-none hidden md:block absolute -left-16 top-16 w-64 h-64 opacity-45 dark:opacity-20"
               fill="none"
               aria-hidden="true"
             >
@@ -492,7 +617,7 @@ export function ErudianLandingPage({
 
             <svg
               viewBox="0 0 260 260"
-              className="pointer-events-none hidden md:block absolute -right-16 top-28 w-64 h-64 opacity-45 dark:opacity-20"
+              className="pointer-events-none hidden md:block absolute -right-16 top-16 w-64 h-64 opacity-45 dark:opacity-20"
               fill="none"
               aria-hidden="true"
             >
@@ -506,325 +631,198 @@ export function ErudianLandingPage({
               </defs>
             </svg>
 
-            {/* NAVBAR */}
-            {visibility.navbar && (
-              <>
-                <header className="relative z-30 px-5 sm:px-10 pt-5 pb-3 flex items-center justify-between gap-4">
-                  <Link href="/" className="shrink-0 flex items-center gap-2.5" aria-label="Erudian360 Home">
-                    {navbar.logoUrl ? (
-                      <span className="inline-flex items-center gap-2.5">
-                        <img
-                          src={navbar.logoUrl}
-                          alt={`${navbar.brandPrimary}${navbar.brandAccent}`}
-                          className="h-8 w-auto max-w-[140px] object-contain"
-                        />
-                        {(navbar.brandPrimary || navbar.brandAccent) && (
-                          <span className="text-[19px] font-extrabold tracking-tight leading-none text-[#7C3AED] dark:text-[#A78BFA]">
-                            {navbar.brandPrimary}
-                            <span className="text-[#0F172A] dark:text-white">
-                              {navbar.brandAccent}
-                            </span>
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <ErudianLogo
-                        size="md"
-                        brandPrimary={navbar.brandPrimary}
-                        brandAccent={navbar.brandAccent}
-                      />
-                    )}
-                  </Link>
-
-                  {/* Center Translucent Pill Navigation */}
-                  <nav
-                    aria-label="Primary"
-                    className="hidden md:flex items-center gap-1 rounded-full bg-white/75 dark:bg-slate-900/75 backdrop-blur-md border border-purple-100/90 dark:border-slate-700/80 p-1.5 shadow-2xs"
-                  >
-                    {(navbar.navLinks || []).map((link, idx) => (
-                      <a
-                        key={`${link.label}-${idx}`}
-                        href={link.href || "#home"}
-                        className={
-                          idx === 0
-                            ? "px-4 py-1.5 rounded-full bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white shadow-2xs"
-                            : "px-4 py-1.5 rounded-full text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                        }
-                      >
-                        {link.label}
-                      </a>
-                    ))}
-                  </nav>
-
-                  {/* Right Navbar Actions: Theme Toggle + Sign In + Request Demo */}
-                  <div className="hidden md:flex items-center gap-2.5 shrink-0">
-                    <ThemeToggle variant="compact" align="right" />
-                    <Link
-                      href={navbar.signInHref || "/login"}
-                      className="px-4 py-2 rounded-full bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-800 border border-purple-200/80 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-[#7C3AED] dark:hover:text-[#C4B5FD] shadow-2xs transition-all"
-                    >
-                      {navbar.signInLabel || "Sign In"}
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => openDemo()}
-                      className="px-5 py-2 rounded-full bg-gradient-to-r from-[#9353FF] to-[#7C3AED] hover:from-[#8B5CF6] hover:to-[#6D28D9] text-white text-xs font-semibold shadow-md shadow-purple-500/25 transition-all cursor-pointer active:scale-[0.98]"
-                    >
-                      {navbar.ctaLabel || "Request Demo"}
-                    </button>
-                  </div>
-
-                  {/* Mobile Actions: Compact Theme Toggle + Hamburger */}
-                  <div className="md:hidden flex items-center gap-2">
-                    <ThemeToggle variant="compact" align="right" />
-                    <button
-                      type="button"
-                      onClick={() => setMobileMenuOpen((v) => !v)}
-                      aria-label="Toggle navigation menu"
-                      className="h-9 w-9 rounded-full bg-white/90 dark:bg-slate-900/90 border border-purple-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer"
-                    >
-                      {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </header>
-
-                {/* Mobile Drawer Menu */}
-                {mobileMenuOpen && (
-                  <div className="md:hidden relative z-30 mx-4 mb-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-purple-100 dark:border-slate-800 p-4 shadow-xl space-y-3">
-                    <div className="flex flex-col gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      {(navbar.navLinks || []).map((link, idx) => (
-                        <a
-                          key={`mob-${link.label}-${idx}`}
-                          href={link.href || "#home"}
-                          onClick={() => setMobileMenuOpen(false)}
-                          className="px-3 py-2 rounded-xl hover:bg-purple-50 dark:hover:bg-slate-800"
-                        >
-                          {link.label}
-                        </a>
-                      ))}
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                        Theme
-                      </span>
-                      <ThemeToggle variant="segmented" />
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
-                      <Link
-                        href={navbar.signInHref || "/login"}
-                        className="flex-1 text-center px-4 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold"
-                      >
-                        {navbar.signInLabel || "Sign In"}
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => openDemo()}
-                        className="flex-1 px-4 py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold cursor-pointer"
-                      >
-                        {navbar.ctaLabel || "Request Demo"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
             {/* HERO COPY & COMPOSITION */}
-            {visibility.hero && (
-              <>
-                <div className="relative z-10 text-center px-5 pt-8 sm:pt-12 pb-8 max-w-3xl mx-auto">
-                  <h1 className="text-3xl sm:text-5xl lg:text-[54px] font-extrabold tracking-tight leading-[1.08] text-[#111118] dark:text-white">
-                    {hero.headlineLine1}
-                    {hero.headlineLine2 && (
-                      <>
-                        <br />
-                        {hero.headlineLine2}
-                      </>
-                    )}
-                  </h1>
-                  <p className="mt-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl mx-auto leading-relaxed">
-                    {hero.subheading}
-                  </p>
+            <div className="relative z-10 text-center px-2 sm:px-5 pt-2 sm:pt-4 pb-8 max-w-3xl mx-auto">
+              <h1 className="text-3xl sm:text-5xl lg:text-[54px] font-extrabold tracking-tight leading-[1.08] text-[#111118] dark:text-white">
+                {hero.headlineLine1}
+                {hero.headlineLine2 && (
+                  <>
+                    <br />
+                    {hero.headlineLine2}
+                  </>
+                )}
+              </h1>
+              <p className="mt-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl mx-auto leading-relaxed">
+                {hero.subheading}
+              </p>
 
-                  {/* Dual Hero CTAs */}
-                  <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => openDemo()}
-                      className="px-6 py-3 rounded-full bg-[#0F0F14] dark:bg-white hover:bg-slate-800 dark:hover:bg-purple-50 text-white dark:text-[#0F0F14] text-xs sm:text-[13px] font-semibold shadow-lg shadow-slate-900/20 inline-flex items-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
-                    >
-                      <Sparkles className="h-3.5 w-3.5 text-[#C4B5FD] dark:text-[#7C3AED]" />
-                      <span>{hero.primaryCtaLabel}</span>
-                    </button>
+              {/* Dual Hero CTAs */}
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openDemo()}
+                  className="px-6 py-3 rounded-full bg-[#0F0F14] dark:bg-white hover:bg-slate-800 dark:hover:bg-purple-50 text-white dark:text-[#0F0F14] text-xs sm:text-[13px] font-semibold shadow-lg shadow-slate-900/20 inline-flex items-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-[#C4B5FD] dark:text-[#7C3AED]" />
+                  <span>{hero.primaryCtaLabel}</span>
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={openSales}
-                      className="px-6 py-3 rounded-full bg-white dark:bg-slate-900/90 hover:bg-purple-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white border border-slate-200/90 dark:border-slate-700 text-xs sm:text-[13px] font-semibold shadow-sm inline-flex items-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
-                    >
-                      <MessageCircle className="h-3.5 w-3.5 text-[#7C3AED] dark:text-[#C4B5FD]" />
-                      <span>{hero.secondaryCtaLabel}</span>
-                    </button>
+                <button
+                  type="button"
+                  onClick={openSales}
+                  className="px-6 py-3 rounded-full bg-white/95 dark:bg-slate-900/90 hover:bg-purple-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-[13px] font-semibold shadow-sm inline-flex items-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
+                >
+                  <MessageCircle className="h-3.5 w-3.5 text-[#7C3AED] dark:text-[#C4B5FD]" />
+                  <span>{hero.secondaryCtaLabel}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* HERO 3-PHONE SHOWCASE OR CUSTOM HERO VISUAL */}
+            {hero.heroImageUrl ? (
+              <div className="relative z-10 max-w-4xl mx-auto px-2 sm:px-6 pt-2 pb-4">
+                <div className="rounded-3xl overflow-hidden shadow-2xl bg-white/80 dark:bg-slate-900/80">
+                  <img
+                    src={hero.heroImageUrl}
+                    alt={hero.headlineLine1}
+                    className="w-full max-h-[420px] object-cover"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="relative z-10 max-w-5xl mx-auto px-2 sm:px-6 pt-2">
+                <div className="relative flex items-end justify-center gap-4 lg:gap-6">
+                  {/* Floating Left Alert Pills */}
+                  <div className="hidden lg:flex flex-col gap-2.5 absolute left-2 top-8 z-30 w-56">
+                    {(hero.alertBadges || []).map((pill, idx) => {
+                      const toneClass =
+                        pill.tone === "sky"
+                          ? "bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-300"
+                          : pill.tone === "emerald"
+                          ? "bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-300"
+                          : "bg-purple-50 dark:bg-purple-950/70 text-[#7C3AED] dark:text-[#C4B5FD]";
+                      return (
+                        <div
+                          key={`${pill.label}-${idx}`}
+                          className="rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-purple-100/80 dark:border-slate-700/80 px-3.5 py-2.5 shadow-lg flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${toneClass}`}
+                            >
+                              ✓
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-100 truncate">
+                              {pill.label}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                            {pill.value}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Left Secondary Phone: Class Schedule */}
+                  <div
+                    data-keep-light="true"
+                    className="hidden md:block w-[225px] lg:w-[240px] -mb-2 translate-y-4"
+                  >
+                    <div className="bg-[#181822] rounded-t-[30px] p-2 pb-0 shadow-xl border border-slate-800/70">
+                      <div className="bg-white rounded-t-[24px] p-3.5 pb-6 text-left">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-800 mb-3">
+                          <span>Class Schedule</span>
+                          <span className="px-2 py-0.5 rounded-full bg-purple-50 text-[#7C3AED]">
+                            Term 1
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 text-center text-[8px] font-semibold text-slate-400 mb-1.5">
+                          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-medium text-slate-700">
+                          {Array.from({ length: 21 }).map((_, idx) => {
+                            const day = idx + 1;
+                            const active = day === 12 || day === 16;
+                            return (
+                              <span
+                                key={day}
+                                className={`h-5 w-5 mx-auto rounded-md flex items-center justify-center ${
+                                  active
+                                    ? "bg-[#7C3AED] text-white font-bold"
+                                    : "hover:bg-slate-100"
+                                }`}
+                              >
+                                {day}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Center Primary Front Phone */}
+                  <div className="w-[275px] sm:w-[300px] lg:w-[315px] z-20">
+                    <CenterPhoneScreen onOpenDemo={() => openDemo("Student Management")} />
+                  </div>
+
+                  {/* Right Secondary Phone: Student Progress */}
+                  <div
+                    data-keep-light="true"
+                    className="hidden md:block w-[225px] lg:w-[240px] -mb-2 translate-y-4"
+                  >
+                    <div className="bg-[#181822] rounded-t-[30px] p-2 pb-0 shadow-xl border border-slate-800/70">
+                      <div className="bg-white rounded-t-[24px] p-3.5 pb-6 text-left">
+                        <div className="text-[10px] font-bold text-slate-800 mb-2">
+                          Course Progress
+                        </div>
+                        <div className="rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#6366F1] p-2.5 text-white mb-2.5">
+                          <div className="text-[9px] opacity-85">Active Term</div>
+                          <div className="text-xs font-extrabold">92.4% Score</div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full w-4/5 rounded-full bg-[#7C3AED]" />
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full w-3/4 rounded-full bg-emerald-500" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Floating Right Academic Summary Card */}
+                  <div className="hidden lg:block absolute right-2 top-8 z-30 w-56 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-purple-100/80 dark:border-slate-700/80 p-3.5 shadow-xl text-left">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-[11px] font-bold text-slate-900 dark:text-white">
+                        {hero.summaryTitle}
+                      </span>
+                      <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/70 text-[#7C3AED] dark:text-[#C4B5FD]">
+                        {hero.summaryStatus}
+                      </span>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div>
+                        <div className="flex justify-between text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          <span>{hero.attendanceLabel}</span>
+                          <span className="text-[#7C3AED] dark:text-[#C4B5FD]">
+                            {hero.attendanceValue}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-purple-100 dark:bg-slate-800 overflow-hidden">
+                          <div className="h-full w-[94%] rounded-full bg-[#7C3AED]" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          <span>{hero.feeCollectionLabel}</span>
+                          <span className="text-rose-500 dark:text-rose-400">
+                            {hero.feeCollectionValue}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-rose-100 dark:bg-slate-800 overflow-hidden">
+                          <div className="h-full w-[88%] rounded-full bg-rose-400" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* HERO 3-PHONE SHOWCASE OR CUSTOM HERO VISUAL */}
-                {hero.heroImageUrl ? (
-                  <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-8 pt-2 pb-6">
-                    <div className="rounded-3xl overflow-hidden border border-white/60 dark:border-slate-700/80 shadow-2xl bg-white/80 dark:bg-slate-900/80">
-                      <img
-                        src={hero.heroImageUrl}
-                        alt={hero.headlineLine1}
-                        className="w-full max-h-[420px] object-cover"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-8 pt-2">
-                    <div className="relative flex items-end justify-center gap-4 lg:gap-6">
-                      {/* Floating Left Alert Pills */}
-                      <div className="hidden lg:flex flex-col gap-2.5 absolute left-2 top-8 z-30 w-56">
-                        {(hero.alertBadges || []).map((pill, idx) => {
-                          const toneClass =
-                            pill.tone === "sky"
-                              ? "bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-300"
-                              : pill.tone === "emerald"
-                              ? "bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-300"
-                              : "bg-purple-50 dark:bg-purple-950/70 text-[#7C3AED] dark:text-[#C4B5FD]";
-                          return (
-                            <div
-                              key={`${pill.label}-${idx}`}
-                              className="rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-purple-100/80 dark:border-slate-700/80 px-3.5 py-2.5 shadow-lg flex items-center justify-between gap-2"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span
-                                  className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${toneClass}`}
-                                >
-                                  ✓
-                                </span>
-                                <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-100 truncate">
-                                  {pill.label}
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
-                                {pill.value}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Left Secondary Phone: Class Schedule */}
-                      <div
-                        data-keep-light="true"
-                        className="hidden md:block w-[225px] lg:w-[240px] -mb-2 translate-y-4"
-                      >
-                        <div className="bg-[#181822] rounded-t-[30px] p-2 pb-0 shadow-xl border border-slate-800/70">
-                          <div className="bg-white rounded-t-[24px] p-3.5 pb-6 text-left">
-                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-800 mb-3">
-                              <span>Class Schedule</span>
-                              <span className="px-2 py-0.5 rounded-full bg-purple-50 text-[#7C3AED]">
-                                Term 1
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1 text-center text-[8px] font-semibold text-slate-400 mb-1.5">
-                              <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-medium text-slate-700">
-                              {Array.from({ length: 21 }).map((_, idx) => {
-                                const day = idx + 1;
-                                const active = day === 12 || day === 16;
-                                return (
-                                  <span
-                                    key={day}
-                                    className={`h-5 w-5 mx-auto rounded-md flex items-center justify-center ${
-                                      active
-                                        ? "bg-[#7C3AED] text-white font-bold"
-                                        : "hover:bg-slate-100"
-                                    }`}
-                                  >
-                                    {day}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Center Primary Front Phone */}
-                      <div className="w-[275px] sm:w-[300px] lg:w-[315px] z-20">
-                        <CenterPhoneScreen onOpenDemo={() => openDemo("Student Management")} />
-                      </div>
-
-                      {/* Right Secondary Phone: Student Progress */}
-                      <div
-                        data-keep-light="true"
-                        className="hidden md:block w-[225px] lg:w-[240px] -mb-2 translate-y-4"
-                      >
-                        <div className="bg-[#181822] rounded-t-[30px] p-2 pb-0 shadow-xl border border-slate-800/70">
-                          <div className="bg-white rounded-t-[24px] p-3.5 pb-6 text-left">
-                            <div className="text-[10px] font-bold text-slate-800 mb-2">
-                              Course Progress
-                            </div>
-                            <div className="rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#6366F1] p-2.5 text-white mb-2.5">
-                              <div className="text-[9px] opacity-85">Active Term</div>
-                              <div className="text-xs font-extrabold">92.4% Score</div>
-                            </div>
-                            <div className="space-y-1.5">
-                              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full w-4/5 rounded-full bg-[#7C3AED]" />
-                              </div>
-                              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full w-3/4 rounded-full bg-emerald-500" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Floating Right Academic Summary Card */}
-                      <div className="hidden lg:block absolute right-2 top-8 z-30 w-56 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-purple-100/80 dark:border-slate-700/80 p-3.5 shadow-xl text-left">
-                        <div className="flex items-center justify-between mb-2.5">
-                          <span className="text-[11px] font-bold text-slate-900 dark:text-white">
-                            {hero.summaryTitle}
-                          </span>
-                          <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/70 text-[#7C3AED] dark:text-[#C4B5FD]">
-                            {hero.summaryStatus}
-                          </span>
-                        </div>
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                              <span>{hero.attendanceLabel}</span>
-                              <span className="text-[#7C3AED] dark:text-[#C4B5FD]">
-                                {hero.attendanceValue}
-                              </span>
-                            </div>
-                            <div className="h-2 rounded-full bg-purple-100 dark:bg-slate-800 overflow-hidden">
-                              <div className="h-full w-[94%] rounded-full bg-[#7C3AED]" />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                              <span>{hero.feeCollectionLabel}</span>
-                              <span className="text-rose-500 dark:text-rose-400">
-                                {hero.feeCollectionValue}
-                              </span>
-                            </div>
-                            <div className="h-2 rounded-full bg-rose-100 dark:bg-slate-800 overflow-hidden">
-                              <div className="h-full w-[88%] rounded-full bg-rose-400" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
-          </section>
-        </div>
+          </div>
+        </section>
       )}
 
       {/* ===================================================================== */}

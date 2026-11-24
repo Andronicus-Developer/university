@@ -62,7 +62,7 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
   const [userEmail, setUserEmail] = useState<string>("superadmin@university.edu.gh");
   const [userRole, setUserRole] = useState<string>("Root Super Administrator");
   const [schoolName, setSchoolName] = useState<string>("School Management System");
-  const [unreadNotifications, setUnreadNotifications] = useState<number>(3);
+  const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [unreadEmailsCount, setUnreadEmailsCount] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
@@ -114,20 +114,9 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
         setUserRole("Super Administrator");
 
         try {
-          const { count } = await (supabase as any)
-            .from("notifications")
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", user.id)
-            .eq("is_read", false);
-          if (count !== null && count !== undefined) {
-            setUnreadNotifications(count);
-          }
-        } catch {
-          // ignore
-        }
-
-        try {
-          const commRes = await fetch("/api/superadmin/communications?config=true");
+          const commRes = await fetch("/api/superadmin/communications?summary=true", {
+            cache: "no-store",
+          });
           if (commRes.ok) {
             const commData = await commRes.json();
             if (typeof commData.unreadCount === "number") {
@@ -146,7 +135,9 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
 
     const handleCommUpdate = async () => {
       try {
-        const commRes = await fetch("/api/superadmin/communications?config=true");
+        const commRes = await fetch("/api/superadmin/communications?summary=true", {
+          cache: "no-store",
+        });
         if (commRes.ok) {
           const commData = await commRes.json();
           if (typeof commData.unreadCount === "number") {
@@ -185,7 +176,7 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
           label: "Communications",
           href: "/superadmin/communications",
           icon: Megaphone,
-          badge: unreadEmailsCount > 0 ? `${unreadEmailsCount} New` : "Mail",
+          badge: unreadEmailsCount > 0 ? `${unreadEmailsCount} New` : undefined,
         },
         { id: "users", label: "Users & Directory", href: "/superadmin/users", icon: Users },
         { id: "roles", label: "Roles & Permissions", href: "/superadmin/roles", icon: UserCheck },
@@ -456,17 +447,17 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
 
               {/* Chat / Messages */}
               <Link
-                href="/superadmin/communications?folder=inbox"
-                className="relative h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                href="/superadmin/communications"
+                className="relative h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
                 title={
                   unreadEmailsCount > 0
-                    ? `${unreadEmailsCount} Unread Email Replies`
-                    : "Communications & Inbox"
+                    ? `${unreadEmailsCount} Unread Leads & School Messages`
+                    : "Communications Hub"
                 }
               >
                 <MessageSquare className="h-4 w-4" />
                 {unreadEmailsCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
                     {unreadEmailsCount}
                   </span>
                 )}

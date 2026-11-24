@@ -8,6 +8,7 @@ import {
   Send,
   X,
 } from "lucide-react";
+import { submitLandingInquiryAction } from "@/lib/landing/inquiry-actions";
 
 interface ChatWithSalesModalProps {
   open: boolean;
@@ -16,11 +17,11 @@ interface ChatWithSalesModalProps {
 }
 
 const SCHOOL_TYPES = [
-  "University / Tertiary",
-  "High School / Secondary",
-  "Vocational / Technical School",
-  "Other",
-];
+  { value: "university", label: "University / Tertiary" },
+  { value: "high_school", label: "High School / Secondary" },
+  { value: "vocational", label: "Vocational / Technical School" },
+  { value: "other", label: "Other / Multi-Campus" },
+] as const;
 
 const INQUIRY_TOPICS = [
   "Pricing & Licensing Plans",
@@ -33,6 +34,9 @@ const INQUIRY_TOPICS = [
 
 const CHANNELS = ["Email", "Phone Call", "WhatsApp", "Video Meeting"];
 
+const INPUT_CLASS =
+  "w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#7C3AED] dark:focus:border-[#A78BFA]";
+
 export function ChatWithSalesModal({
   open,
   onClose,
@@ -42,16 +46,19 @@ export function ChatWithSalesModal({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [institutionName, setInstitutionName] = useState("");
-  const [schoolType, setSchoolType] = useState(SCHOOL_TYPES[0]);
+  const [schoolType, setSchoolType] = useState<string>("university");
   const [topic, setTopic] = useState(INQUIRY_TOPICS[0]);
   const [preferredChannel, setPreferredChannel] = useState(CHANNELS[0]);
   const [message, setMessage] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     referenceId: string;
     message: string;
+    submittedTopic: string;
+    submittedChannel: string;
   } | null>(null);
 
   useEffect(() => {
@@ -87,33 +94,37 @@ export function ChatWithSalesModal({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/public/inquiries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "sales_chat",
-          full_name: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
-          institution_name: institutionName.trim(),
-          school_type: schoolType,
-          topic,
-          preferred_channel: preferredChannel,
-          message: message.trim(),
-        }),
+      const result = await submitLandingInquiryAction({
+        inquiry_type: "sales_chat",
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        school_name: institutionName.trim(),
+        school_type: schoolType,
+        topic,
+        preferred_channel: preferredChannel,
+        message: message.trim(),
+        website,
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || "Unable to send your message.");
+      if (!result.ok) {
+        throw new Error(result.error || "Unable to send your message.");
       }
 
       setConfirmation({
-        referenceId: data.referenceId || "ERD-SALES-SENT",
+        referenceId: result.referenceId || "ERD-SALES-SENT",
         message:
-          data.message ||
+          result.message ||
           "Thank you! Our sales specialists have received your message and will reply shortly.",
+        submittedTopic: topic,
+        submittedChannel: preferredChannel,
       });
+
+      setFullName("");
+      setEmail("");
+      setPhone("");
+      setInstitutionName("");
+      setMessage("");
     } catch (err: any) {
       setErrorMsg(err?.message || "Something went wrong. Please try again.");
     } finally {
@@ -163,30 +174,34 @@ export function ChatWithSalesModal({
 
         {confirmation ? (
           <div className="p-8 text-center space-y-5">
-            <div className="h-14 w-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto">
+            <div className="h-14 w-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
               <CheckCircle2 className="h-7 w-7" />
             </div>
 
             <div className="space-y-1.5">
-              <span className="inline-block px-3 py-1 rounded-full bg-purple-50 text-[#7C3AED] text-xs font-bold border border-purple-100">
+              <span className="inline-block px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/60 text-[#7C3AED] dark:text-[#C4B5FD] text-xs font-bold border border-purple-100 dark:border-purple-800/70">
                 Ticket ID: {confirmation.referenceId}
               </span>
-              <h3 className="text-xl font-extrabold text-slate-900">
+              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                 Message Sent to Sales
               </h3>
-              <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
                 {confirmation.message}
               </p>
             </div>
 
-            <div className="max-w-md mx-auto rounded-2xl bg-slate-50 border border-slate-200/80 p-4 text-left text-xs space-y-1.5">
+            <div className="max-w-md mx-auto rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 p-4 text-left text-xs space-y-1.5">
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">Topic:</span>
-                <span className="font-semibold text-slate-900">{topic}</span>
+                <span className="text-slate-500 dark:text-slate-400">Topic:</span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {confirmation.submittedTopic}
+                </span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">Reply Via:</span>
-                <span className="font-semibold text-slate-900">{preferredChannel}</span>
+                <span className="text-slate-500 dark:text-slate-400">Reply Via:</span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {confirmation.submittedChannel}
+                </span>
               </div>
             </div>
 
@@ -194,7 +209,7 @@ export function ChatWithSalesModal({
               <button
                 type="button"
                 onClick={resetAndClose}
-                className="px-6 py-2.5 rounded-full bg-[#0F0F14] hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer"
+                className="px-6 py-2.5 rounded-full bg-[#0F0F14] dark:bg-white hover:bg-slate-800 dark:hover:bg-purple-50 text-white dark:text-[#0F0F14] text-xs font-semibold transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -205,7 +220,7 @@ export function ChatWithSalesModal({
                     resetAndClose();
                     onSwitchToDemo();
                   }}
-                  className="px-6 py-2.5 rounded-full bg-purple-50 hover:bg-purple-100 text-[#7C3AED] text-xs font-semibold border border-purple-200 transition-colors cursor-pointer"
+                  className="px-6 py-2.5 rounded-full bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-[#7C3AED] dark:text-[#C4B5FD] text-xs font-semibold border border-purple-200 dark:border-purple-800 transition-colors cursor-pointer"
                 >
                   Request a Live Demo
                 </button>
@@ -214,15 +229,27 @@ export function ChatWithSalesModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            {/* Honeypot anti-spam field */}
+            <input
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              className="hidden"
+              aria-hidden="true"
+            />
+
             {errorMsg && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium">
                 {errorMsg}
               </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Full Name *
                 </label>
                 <input
@@ -231,12 +258,12 @@ export function ChatWithSalesModal({
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Your full name"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Work Email *
                 </label>
                 <input
@@ -245,12 +272,12 @@ export function ChatWithSalesModal({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@institution.edu"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Phone / WhatsApp Number
                 </label>
                 <input
@@ -258,12 +285,12 @@ export function ChatWithSalesModal({
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+233 24 000 0000"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   School / Organization Name *
                 </label>
                 <input
@@ -272,35 +299,35 @@ export function ChatWithSalesModal({
                   value={institutionName}
                   onChange={(e) => setInstitutionName(e.target.value)}
                   placeholder="School or institution name"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   School Type
                 </label>
                 <select
                   value={schoolType}
                   onChange={(e) => setSchoolType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 >
                   {SCHOOL_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                    <option key={t.value} value={t.value}>
+                      {t.label}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Inquiry Topic
                 </label>
                 <select
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED]"
+                  className={INPUT_CLASS}
                 >
                   {INQUIRY_TOPICS.map((item) => (
                     <option key={item} value={item}>
@@ -312,7 +339,7 @@ export function ChatWithSalesModal({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 Preferred Contact Channel
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -326,7 +353,7 @@ export function ChatWithSalesModal({
                       className={`py-2 px-3 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
                         active
                           ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-xs"
-                          : "bg-slate-50 text-slate-600 border-slate-200 hover:border-purple-300"
+                          : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-600"
                       }`}
                     >
                       {ch}
@@ -337,7 +364,7 @@ export function ChatWithSalesModal({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Message / Questions *
               </label>
               <textarea
@@ -346,22 +373,22 @@ export function ChatWithSalesModal({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Ask about pricing, multi-campus licensing, onboarding timeline, or integrations..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#7C3AED] resize-none"
+                className={`${INPUT_CLASS} resize-none`}
               />
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={resetAndClose}
-                className="px-4 py-2.5 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="px-4 py-2.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-6 py-2.5 rounded-full bg-[#0F0F14] hover:bg-slate-800 disabled:opacity-60 text-white text-xs font-bold shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                className="px-6 py-2.5 rounded-full bg-[#0F0F14] dark:bg-white hover:bg-slate-800 dark:hover:bg-purple-50 disabled:opacity-60 text-white dark:text-[#0F0F14] text-xs font-bold shadow-md flex items-center gap-2 transition-all cursor-pointer"
               >
                 {submitting ? (
                   <>

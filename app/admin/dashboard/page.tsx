@@ -31,6 +31,10 @@ import {
   GraduationCap,
   Briefcase,
   AlertCircle,
+  Megaphone,
+  MessageSquare,
+  Send,
+  Loader2,
 } from "lucide-react";
 import {
   type CanonicalSchoolType,
@@ -117,6 +121,33 @@ interface StudentActivityItem {
   category: string;
 }
 
+interface PlatformAnnouncementBanner {
+  id: string;
+  title: string;
+  body: string;
+  category: string;
+  priority: "normal" | "high" | "urgent";
+  target_scope: string;
+  created_at: string;
+}
+
+interface SchoolSupportTicket {
+  id: string;
+  subject: string;
+  category: string;
+  priority: string;
+  message: string;
+  status: string;
+  created_at: string;
+  replies: Array<{
+    id: string;
+    sender_role: string;
+    sender_name: string;
+    body: string;
+    created_at: string;
+  }>;
+}
+
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState<string>("Administrator");
@@ -127,10 +158,20 @@ export default function AdminDashboardPage() {
   const [tenantError, setTenantError] = useState<string | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
-  const [showAlert, setShowAlert] = useState(true);
-  const [alertMessage, setAlertMessage] = useState<string>(
-    "Notice: Academic Term is active. All system services and database connections are operational."
-  );
+
+  // Live Super Admin Platform Announcements & Direct School Support
+  const [platformAnnouncements, setPlatformAnnouncements] = useState<PlatformAnnouncementBanner[]>([]);
+  const [dismissedAnnIds, setDismissedAnnIds] = useState<string[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SchoolSupportTicket[]>([]);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportCategory, setSupportCategory] = useState("Support");
+  const [supportPriority, setSupportPriority] = useState<"normal" | "high" | "urgent">("normal");
+  const [supportBody, setSupportBody] = useState("");
+  const [sendingSupport, setSendingSupport] = useState(false);
+  const [supportError, setSupportError] = useState<string | null>(null);
+  const [supportSuccess, setSupportSuccess] = useState<string | null>(null);
+  const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
 
   // Stats
   const [stats, setStats] = useState<StatCounts>({
@@ -305,9 +346,17 @@ export default function AdminDashboardPage() {
         })
       );
 
-      // 2. Fetch authoritative server-side KPI counts, fees, attendance, and top performers
-      const dashRes = await fetch("/api/admin/dashboard", { cache: "no-store" });
+      // 2. Fetch authoritative server-side KPI counts and live platform announcements/support
+      const [dashRes, commsRes] = await Promise.all([
+        fetch("/api/admin/dashboard", { cache: "no-store" }),
+        fetch("/api/admin/platform-comms", { cache: "no-store" }).catch(() => null),
+      ]);
       const dashData = await dashRes.json().catch(() => ({}));
+      if (commsRes && commsRes.ok) {
+        const commsData = await commsRes.json().catch(() => ({}));
+        setPlatformAnnouncements(Array.isArray(commsData?.announcements) ? commsData.announcements : []);
+        setSupportTickets(Array.isArray(commsData?.supportMessages) ? commsData.supportMessages : []);
+      }
 
       if (!dashRes.ok) {
         const msg =
@@ -355,13 +404,6 @@ export default function AdminDashboardPage() {
               ? dashData.fees.quarterData
               : [],
           });
-
-          if (dashData.fees.latestPaymentAmount !== null && dashData.fees.latestPaymentAmount !== undefined) {
-            const amtLabel = `${resolvedCurrency ? `${resolvedCurrency} ` : ""}${dashData.fees.latestPaymentAmount}`;
-            setAlertMessage(
-              `Payment Verified: Recent student payment of ${amtLabel} successfully logged.`
-            );
-          }
         }
 
         if (dashData?.attendanceStats) {
@@ -581,6 +623,59 @@ export default function AdminDashboardPage() {
     alert(`Leave request has been marked as ${newStatus}.`);
   };
 
+  const handleSubmitSupportTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportSubject.trim() || !supportBody.trim()) return;
+    setSendingSupport(true);
+    setSupportError(null);
+    setSupportSuccess(null);
+    try {
+      const res = await fetch("/api/admin/platform-comms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: supportSubject.trim(),
+          category: supportCategory,
+          priority: supportPriority,
+          message: supportBody.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to send support message.");
+      if (json.item) {
+        setSupportTickets((prev) => [json.item, ...prev]);
+      }
+      setSupportSubject("");
+      setSupportBody("");
+      setSupportSuccess("Message delivered to Super Admin Support.");
+    } catch (err: any) {
+      setSupportError(err?.message || "Failed to send support message.");
+    } finally {
+      setSendingSupport(false);
+    }
+  };
+
+  const handleFollowUpSupportReply = async (ticketId: string) => {
+    const body = (followUpDrafts[ticketId] || "").trim();
+    if (!body) return;
+    setSupportError(null);
+    try {
+      const res = await fetch("/api/admin/platform-comms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reply", id: ticketId, body }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Reply failed.");
+      if (json.item) {
+        setSupportTickets((prev) => prev.map((t) => (t.id === ticketId ? json.item : t)));
+      }
+      setFollowUpDrafts((prev) => ({ ...prev, [ticketId]: "" }));
+    } catch (err: any) {
+      setSupportError(err?.message || "Unable to send reply.");
+    }
+  };
+
   const totalAttendance =
     attendanceStats.present +
     attendanceStats.absent +
@@ -622,7 +717,25 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Right Action Buttons */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setSupportError(null);
+              setSupportSuccess(null);
+              setShowSupportModal(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+          >
+            <MessageSquare className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+            <span>Platform Support</span>
+            {supportTickets.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-bold">
+                {supportTickets.length}
+              </span>
+            )}
+          </button>
+
           <Link
             href="/admin/students"
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
@@ -641,23 +754,56 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* 2. Dismissible Alert Banner */}
-      {showAlert && (
-        <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 text-emerald-900 text-xs font-medium shadow-2xs transition-all">
-          <div className="flex items-center gap-2.5">
-            <span className="h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shadow-2xs">
-              ✓
-            </span>
-            <span className="text-emerald-800">{alertMessage}</span>
-          </div>
-          <button
-            onClick={() => setShowAlert(false)}
-            className="text-emerald-600 hover:text-emerald-800 p-1 rounded-lg hover:bg-emerald-100/50 transition-colors cursor-pointer"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      {/* 2. Live Super Admin Platform Broadcast Announcements */}
+      {platformAnnouncements
+        .filter((ann) => !dismissedAnnIds.includes(ann.id))
+        .slice(0, 3)
+        .map((ann) => {
+          const isUrgent = ann.priority === "urgent";
+          const isHigh = ann.priority === "high";
+          const toneClasses = isUrgent
+            ? "bg-rose-50/90 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/80 text-rose-900 dark:text-rose-100"
+            : isHigh
+            ? "bg-amber-50/90 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-100"
+            : "bg-blue-50/90 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-100";
+          const iconBg = isUrgent
+            ? "bg-rose-600 text-white"
+            : isHigh
+            ? "bg-amber-600 text-white"
+            : "bg-blue-600 text-white";
+
+          return (
+            <div
+              key={ann.id}
+              className={`flex items-start justify-between gap-4 px-4 py-3.5 rounded-2xl border text-xs shadow-2xs transition-all ${toneClasses}`}
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <span
+                  className={`h-7 w-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${iconBg}`}
+                >
+                  <Megaphone className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-xs">{ann.title}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-white/70 dark:bg-slate-900/60 text-[10px] font-semibold uppercase">
+                      {ann.category}
+                    </span>
+                  </div>
+                  <p className="text-[11px] opacity-90 leading-relaxed">{ann.body}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedAnnIds((prev) => [...prev, ann.id])}
+                className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                aria-label="Dismiss announcement"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
 
       {/* 3. Welcome Banner (Modern Deep Indigo/Navy Gradient Card) */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0F172A] via-[#1E1B4B] to-[#1E293B] text-white p-6 sm:p-7 shadow-md border border-slate-800/80">
@@ -1671,6 +1817,173 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Platform Support Modal (Direct School Admin <-> Super Admin Messaging) */}
+      {showSupportModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSupportModal(false);
+          }}
+        >
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Direct Super Admin Support
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Send support requests or billing/compliance inquiries directly to the Platform Super Admin
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSupportModal(false)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+              {supportError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
+                  {supportError}
+                </div>
+              )}
+              {supportSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300">
+                  {supportSuccess}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmitSupportTicket} className="space-y-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800">
+                <div className="text-xs font-bold text-slate-900 dark:text-white">
+                  New Support Message
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <input
+                    type="text"
+                    required
+                    value={supportSubject}
+                    onChange={(e) => setSupportSubject(e.target.value)}
+                    placeholder="Subject..."
+                    className="sm:col-span-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={supportCategory}
+                      onChange={(e) => setSupportCategory(e.target.value)}
+                      className="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="Support">Support</option>
+                      <option value="Billing">Billing</option>
+                      <option value="Technical">Technical</option>
+                    </select>
+                    <select
+                      value={supportPriority}
+                      onChange={(e) => setSupportPriority(e.target.value as any)}
+                      className="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+                <textarea
+                  rows={3}
+                  required
+                  value={supportBody}
+                  onChange={(e) => setSupportBody(e.target.value)}
+                  placeholder="Describe your request or question..."
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={sendingSupport}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  >
+                    {sendingSupport ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    <span>{sendingSupport ? "Sending..." : "Send to Super Admin"}</span>
+                  </button>
+                </div>
+              </form>
+
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-slate-900 dark:text-white">
+                  Recent Support Threads ({supportTickets.length})
+                </div>
+                {supportTickets.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400">
+                    No support messages sent yet.
+                  </div>
+                ) : (
+                  supportTickets.map((t) => (
+                    <div
+                      key={t.id}
+                      className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          {t.subject}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">
+                          {t.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                        {t.message}
+                      </p>
+                      {(t.replies || []).map((rep) => (
+                        <div
+                          key={rep.id}
+                          className={`rounded-xl p-3 text-xs ${
+                            rep.sender_role === "superadmin"
+                              ? "bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/60"
+                              : "bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700"
+                          }`}
+                        >
+                          <div className="font-bold text-[11px] text-slate-800 dark:text-slate-100 mb-0.5">
+                            {rep.sender_name}
+                          </div>
+                          <div className="text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+                            {rep.body}
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="flex gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={followUpDrafts[t.id] || ""}
+                          onChange={(e) =>
+                            setFollowUpDrafts((prev) => ({ ...prev, [t.id]: e.target.value }))
+                          }
+                          placeholder="Write a follow-up reply..."
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleFollowUpSupportReply(t.id)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold cursor-pointer"
+                        >
+                          Reply
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
