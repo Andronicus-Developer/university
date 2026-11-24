@@ -9,6 +9,7 @@ import {
   type SchoolPortalConfig,
 } from "@/config/schoolPortalConfig";
 import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { resolveStaffEntityType } from "@/lib/id-numbering/config";
 import {
   Users,
   Plus,
@@ -165,6 +166,8 @@ export default function StaffDirectoryPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [editingStaff, setEditingStaff] = useState<StaffRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffRecord | null>(null);
+  const [nextIdPreviews, setNextIdPreviews] = useState<Record<string, string>>({});
+  const [manualIdOverride, setManualIdOverride] = useState<boolean>(false);
 
   const [currentYear, setCurrentYear] = useState(2026);
   const [todayIso, setTodayIso] = useState("2026-10-31");
@@ -208,6 +211,9 @@ export default function StaffDirectoryPage() {
       if (data.school_type) {
         setSchoolType(toPortalSchoolType(data.school_type));
       }
+      if (data.next_id_previews && typeof data.next_id_previews === "object") {
+        setNextIdPreviews(data.next_id_previews);
+      }
       setStaffList(data.staff || []);
       setDepartments(data.departments || []);
       setRoles(data.roles || []);
@@ -235,14 +241,28 @@ export default function StaffDirectoryPage() {
     return formSpec.roleOptions;
   }, [formSpec.roleOptions, roles]);
 
+  const selectedRolePreview = useMemo(() => {
+    const entity = resolveStaffEntityType(formData.role_code, schoolType, false);
+    return (
+      nextIdPreviews[entity] ||
+      nextIdPreviews.staff ||
+      generateNextStaffNumber(staffList, currentYear, formSpec.idPrefix)
+    );
+  }, [formData.role_code, schoolType, nextIdPreviews, staffList, currentYear, formSpec.idPrefix]);
+
   const openCreateModal = () => {
     setEditingStaff(null);
+    setManualIdOverride(false);
     const defaultRole = formSpec.roleOptions[0]?.code || "bursar";
+    const defaultEntity = resolveStaffEntityType(defaultRole, schoolType, false);
     setFormData({
       full_name: "",
       email: "",
       phone: "",
-      staff_number: generateNextStaffNumber(staffList, currentYear, formSpec.idPrefix),
+      staff_number:
+        nextIdPreviews[defaultEntity] ||
+        nextIdPreviews.staff ||
+        generateNextStaffNumber(staffList, currentYear, formSpec.idPrefix),
       job_title: formSpec.roleOptions[0]?.name || "",
       department_id:
         formSpec.showDepartmentDropdown && schoolType === "university"
@@ -264,6 +284,7 @@ export default function StaffDirectoryPage() {
   const openEditModal = (staff: StaffRecord) => {
     const meta = staff.metadata || {};
     setEditingStaff(staff);
+    setManualIdOverride(true);
     setFormData({
       full_name: staff.full_name,
       email: staff.email,
@@ -307,7 +328,9 @@ export default function StaffDirectoryPage() {
           full_name: formData.full_name,
           email: formData.email,
           phone: formData.phone,
-          staff_number: formData.staff_number,
+          auto_generate_id: !isEdit && !manualIdOverride,
+          staff_number:
+            !isEdit && !manualIdOverride ? "" : formData.staff_number,
           job_title: formData.job_title,
           department_id: formData.department_id || null,
           employment_type: formData.employment_type,
@@ -326,11 +349,13 @@ export default function StaffDirectoryPage() {
         return;
       }
 
+      const assignedStaffNumber =
+        data.staff?.staff_number || formData.staff_number;
       showNotification(
         "success",
         isEdit
-          ? `Staff member "${formData.full_name}" (${formData.staff_number}) updated successfully.`
-          : `Staff member "${formData.full_name}" (${formData.staff_number}) registered successfully.`
+          ? `Staff member "${formData.full_name}" (${assignedStaffNumber}) updated successfully.`
+          : `Staff member "${formData.full_name}" (${assignedStaffNumber}) registered successfully.`
       );
       setModalMode(null);
       setEditingStaff(null);
@@ -784,22 +809,69 @@ export default function StaffDirectoryPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    {formSpec.idLabel} <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-xs font-bold text-[#334155]">
+                      {formSpec.idLabel}{" "}
+                      {manualIdOverride || modalMode === "edit" ? (
+                        <span className="text-red-500">*</span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-blue-600">
+                          (Auto)
+                        </span>
+                      )}
+                    </label>
+                    {modalMode === "create" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualIdOverride((prev) => {
+                            const next = !prev;
+                            if (!next) {
+                              setFormData((f) => ({
+                                ...f,
+                                staff_number: selectedRolePreview,
+                              }));
+                            }
+                            return next;
+                          });
+                        }}
+                        className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        {manualIdOverride ? "Use auto-ID" : "Manual override"}
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    required
-                    placeholder={formSpec.idPlaceholder}
-                    value={formData.staff_number}
+                    required={modalMode === "edit" || manualIdOverride}
+                    readOnly={modalMode === "create" && !manualIdOverride}
+                    placeholder={selectedRolePreview || formSpec.idPlaceholder}
+                    value={
+                      modalMode === "create" && !manualIdOverride
+                        ? selectedRolePreview
+                        : formData.staff_number
+                    }
                     onChange={(e) =>
                       setFormData({
                         ...formData,
                         staff_number: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
+                    className={`w-full px-3 py-2 border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] ${
+                      modalMode === "create" && !manualIdOverride
+                        ? "bg-slate-100/80 text-slate-600 cursor-default"
+                        : "bg-[#F8FAFC]"
+                    }`}
                   />
+                  {modalMode === "create" && !manualIdOverride && selectedRolePreview && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Preview for selected role:{" "}
+                      <span className="font-mono font-semibold text-slate-700">
+                        {selectedRolePreview}
+                      </span>{" "}
+                      (assigned atomically on save)
+                    </p>
+                  )}
                 </div>
               </div>
 

@@ -21,7 +21,7 @@ const SECTION_ALLOWED_TYPES: Record<string, PortalSchoolType[] | "all"> = {
   results: ["university"],
   hostel: ["university"],
   subjects: ["high_school"],
-  assignments: ["high_school"],
+  assignments: ["university", "high_school"],
   attendance: ["high_school"],
   "report-card": ["high_school"],
   modules: ["vocational"],
@@ -36,7 +36,7 @@ const ACTION_ALLOWED_TYPES: Record<string, PortalSchoolType[] | "all"> = {
   drop_course: ["university"],
   request_hostel: ["university"],
   cancel_hostel_request: ["university"],
-  submit_assignment: ["high_school"],
+  submit_assignment: ["university", "high_school"],
   create_logbook_entry: ["vocational"],
   delete_logbook_entry: ["vocational"],
   submit_attachment_report: ["vocational"],
@@ -323,57 +323,81 @@ export async function GET(req: NextRequest) {
     // UNIVERSITY SECTIONS
     // ----------------------------------------------------------------------
     if (section === "dashboard" && ctx.schoolType === "university") {
-      const [coursesRes, enrolsRes, gradesRes, timetableRes, invoicesRes, paymentsRes, hostelRes] =
-        await Promise.all([
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("courses")
-              .select("*")
-              .eq("school_id", schoolId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("course_enrolments")
-              .select("*")
-              .eq("school_id", schoolId)
-              .eq("student_id", studentId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("exam_grades")
-              .select("*")
-              .eq("school_id", schoolId)
-              .eq("student_id", studentId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("timetable_entries")
-              .select("*")
-              .eq("school_id", schoolId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("invoices")
-              .select("*")
-              .eq("school_id", schoolId)
-              .eq("student_id", studentId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("payments")
-              .select("*")
-              .eq("school_id", schoolId)
-              .eq("student_id", studentId)
-          ),
-          safeStudentQuery<any[]>(
-            (db as any)
-              .from("hostel_allocations")
-              .select("*, hostel:hostel_id(name, code, warden_name)")
-              .eq("school_id", schoolId)
-              .eq("student_id", studentId)
-              .limit(1)
-          ),
-        ]);
+      const [
+        coursesRes,
+        enrolsRes,
+        gradesRes,
+        timetableRes,
+        invoicesRes,
+        paymentsRes,
+        hostelRes,
+        assignRes,
+        subsRes,
+      ] = await Promise.all([
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("courses")
+            .select("*")
+            .eq("school_id", schoolId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("course_enrolments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("exam_grades")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("timetable_entries")
+            .select("*")
+            .eq("school_id", schoolId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("invoices")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("payments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("hostel_allocations")
+            .select("*, hostel:hostel_id(name, code, warden_name)")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+            .limit(1)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("assignments")
+            .select("id, course_id, title, assessment_type, due_date, max_score, status")
+            .eq("school_id", schoolId)
+            .neq("status", "draft")
+            .order("due_date", { ascending: true })
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("assignment_submissions")
+            .select("id, assignment_id, status")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+      ]);
 
       const courses = coursesRes.data || [];
       const courseMap = new Map(courses.map((c: any) => [String(c.id), c]));
@@ -428,6 +452,40 @@ export async function GET(req: NextRequest) {
         course: courseMap.get(String(e.course_id)) || null,
       }));
 
+      const submittedAssignmentIds = new Set(
+        (subsRes.data || []).map((s: any) => String(s.assignment_id))
+      );
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const inSevenDaysIso = new Date(Date.now() + 7 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+
+      const pendingAssignments = (assignRes.data || [])
+        .filter(
+          (a: any) =>
+            a.course_id &&
+            registeredCourseIds.has(String(a.course_id)) &&
+            a.status !== "closed" &&
+            !submittedAssignmentIds.has(String(a.id))
+        )
+        .map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          assessment_type: a.assessment_type || "assignment",
+          due_date: a.due_date || null,
+          max_score: a.max_score ?? 100,
+          course: courseMap.get(String(a.course_id)) || null,
+        }));
+
+      const overdueAssignmentsCount = pendingAssignments.filter(
+        (a: any) => a.due_date && String(a.due_date).slice(0, 10) < todayIso
+      ).length;
+      const dueSoonAssignmentsCount = pendingAssignments.filter((a: any) => {
+        if (!a.due_date) return false;
+        const d = String(a.due_date).slice(0, 10);
+        return d >= todayIso && d <= inSevenDaysIso;
+      }).length;
+
       return NextResponse.json(
         {
           ...base,
@@ -438,9 +496,13 @@ export async function GET(req: NextRequest) {
             cgpa: displayCgpa,
             feeBalance,
             scheduleCount: mySchedule.length,
+            pendingAssignmentsCount: pendingAssignments.length,
+            dueSoonAssignmentsCount,
+            overdueAssignmentsCount,
           },
           courses: myCourses.slice(0, 6),
           schedule: mySchedule.slice(0, 6),
+          pendingAssignments: pendingAssignments.slice(0, 5),
           recentGrades: grades.slice(0, 5).map((g: any) => ({
             ...g,
             course: courseMap.get(String(g.course_id)) || null,
@@ -942,6 +1004,95 @@ export async function GET(req: NextRequest) {
     }
 
     if (section === "assignments") {
+      if (ctx.schoolType === "university") {
+        const [enrolsRes, coursesRes, assignRes, subsRes, staffRes] =
+          await Promise.all([
+            safeStudentQuery<any[]>(
+              (db as any)
+                .from("course_enrolments")
+                .select("course_id, status")
+                .eq("school_id", schoolId)
+                .eq("student_id", studentId)
+            ),
+            safeStudentQuery<any[]>(
+              (db as any)
+                .from("courses")
+                .select("id, code, name, credits, lecturer_id, course_type")
+                .eq("school_id", schoolId)
+                .order("code", { ascending: true })
+            ),
+            safeStudentQuery<any[]>(
+              (db as any)
+                .from("assignments")
+                .select("*")
+                .eq("school_id", schoolId)
+                .neq("status", "draft")
+                .order("due_date", { ascending: true })
+            ),
+            safeStudentQuery<any[]>(
+              (db as any)
+                .from("assignment_submissions")
+                .select("*")
+                .eq("school_id", schoolId)
+                .eq("student_id", studentId)
+            ),
+            safeStudentQuery<any[]>(
+              (db as any)
+                .from("staff_profiles")
+                .select("id, first_name, last_name, email")
+                .eq("school_id", schoolId)
+            ),
+          ]);
+
+        const activeEnrolments = (enrolsRes.data || []).filter(
+          (e: any) => e.status !== "dropped" && e.status !== "withdrawn"
+        );
+        const registeredCourseIds = new Set(
+          activeEnrolments.map((e: any) => String(e.course_id))
+        );
+        const courseMap = new Map(
+          (coursesRes.data || []).map((c: any) => [String(c.id), c])
+        );
+        const staffMap = buildStaffMap(staffRes.data);
+        const subMap = new Map(
+          (subsRes.data || []).map((s: any) => [String(s.assignment_id), s])
+        );
+
+        const registeredCourses = Array.from(registeredCourseIds)
+          .map((cid) => courseMap.get(cid))
+          .filter(Boolean)
+          .sort((a: any, b: any) =>
+            String(a.code || "").localeCompare(String(b.code || ""))
+          );
+
+        const assignments = (assignRes.data || [])
+          .filter(
+            (a: any) => a.course_id && registeredCourseIds.has(String(a.course_id))
+          )
+          .map((a: any) => {
+            const course = courseMap.get(String(a.course_id)) || null;
+            const lecturerId = a.teacher_id || course?.lecturer_id || null;
+            return {
+              ...a,
+              course,
+              lecturer_name: lecturerId
+                ? staffMap.get(String(lecturerId))?.full_name || ""
+                : "",
+              submission: subMap.get(String(a.id)) || null,
+            };
+          });
+
+        return NextResponse.json(
+          {
+            ...base,
+            assignments,
+            registeredCourses,
+            tableMissing: assignRes.missing || subsRes.missing,
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        );
+      }
+
       const [assignRes, subsRes, subjectsRes, staffRes] = await Promise.all([
         safeStudentQuery<any[]>(
           (db as any)
@@ -1846,7 +1997,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ----------------------------------------------------------------------
-    // HIGH SCHOOL: SUBMIT ASSIGNMENT / HOMEWORK
+    // UNIVERSITY & HIGH SCHOOL: SUBMIT ASSIGNMENT / COURSEWORK
     // ----------------------------------------------------------------------
     if (action === "submit_assignment") {
       const assignmentId = String(body.assignmentId || "").trim();
@@ -1858,42 +2009,116 @@ export async function POST(req: NextRequest) {
       }
       if (!responseText && !submissionUrl) {
         return NextResponse.json(
-          { error: "Please provide written answers or attach a homework link/file." },
+          { error: "Please provide written answers or attach a coursework link/file." },
           { status: 400 }
         );
       }
 
       const { data: assign } = await (db as any)
         .from("assignments")
-        .select("id, title")
+        .select("id, title, course_id, due_date, status")
         .eq("school_id", schoolId)
         .eq("id", assignmentId)
         .maybeSingle();
 
-      if (!assign) {
+      if (!assign || assign.status === "draft") {
         return NextResponse.json(
           { error: "Assignment not found in your school." },
           { status: 404 }
         );
       }
 
-      const { data: sub, error } = await (db as any)
+      if (assign.status === "closed") {
+        return NextResponse.json(
+          { error: "Submissions are closed for this assignment." },
+          { status: 400 }
+        );
+      }
+
+      if (ctx.schoolType === "university" && assign.course_id) {
+        const { data: enrolmentRow } = await (db as any)
+          .from("course_enrolments")
+          .select("id, status")
+          .eq("school_id", schoolId)
+          .eq("student_id", studentId)
+          .eq("course_id", assign.course_id)
+          .not("status", "in", "(dropped,withdrawn)")
+          .limit(1)
+          .maybeSingle();
+
+        if (!enrolmentRow) {
+          return NextResponse.json(
+            {
+              error:
+                "You must be actively registered for this course to submit its coursework.",
+            },
+            { status: 403 }
+          );
+        }
+      }
+
+      const { data: existingSub } = await (db as any)
         .from("assignment_submissions")
-        .upsert(
-          {
-            school_id: schoolId,
-            assignment_id: assignmentId,
-            student_id: studentId,
-            response_text: responseText,
-            submission_url: submissionUrl || null,
-            submitted_at: new Date().toISOString(),
-            status: "submitted",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "assignment_id,student_id" }
-        )
+        .select("id, status")
+        .eq("school_id", schoolId)
+        .eq("assignment_id", assignmentId)
+        .eq("student_id", studentId)
+        .maybeSingle();
+
+      if (existingSub?.status === "graded") {
+        return NextResponse.json(
+          { error: "This assignment has already been graded and cannot be edited." },
+          { status: 400 }
+        );
+      }
+
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (
+        existingSub &&
+        assign.due_date &&
+        String(assign.due_date).slice(0, 10) < todayIso
+      ) {
+        return NextResponse.json(
+          { error: "Editing is locked because the assignment due date has passed." },
+          { status: 400 }
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+      const fullPayload: Record<string, any> = {
+        school_id: schoolId,
+        assignment_id: assignmentId,
+        student_id: studentId,
+        course_id: assign.course_id || null,
+        response_text: responseText || null,
+        submission_url: submissionUrl || null,
+        submitted_at: nowIso,
+        status: "submitted",
+        updated_at: nowIso,
+      };
+
+      let { data: sub, error } = await (db as any)
+        .from("assignment_submissions")
+        .upsert(fullPayload, { onConflict: "assignment_id,student_id" })
         .select("*")
         .single();
+
+      // Fallback cleanly if `course_id` column migration hasn't run yet
+      if (
+        error &&
+        (String(error.code || "") === "42703" ||
+          String(error.code || "") === "PGRST204" ||
+          String(error.message || "").toLowerCase().includes("course_id"))
+      ) {
+        const { course_id: _omit, ...fallbackPayload } = fullPayload;
+        const retry = await (db as any)
+          .from("assignment_submissions")
+          .upsert(fallbackPayload, { onConflict: "assignment_id,student_id" })
+          .select("*")
+          .single();
+        sub = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         if (isMissingTableError(error)) {

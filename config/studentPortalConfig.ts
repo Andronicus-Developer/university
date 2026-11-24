@@ -82,6 +82,12 @@ export const STUDENT_PORTAL_CONFIG: Record<PortalSchoolType, StudentPortalConfig
             iconKey: "BookOpen",
           },
           {
+            id: "assignments",
+            label: "Coursework & Assignments",
+            href: "/student/assignments",
+            iconKey: "FileCheck2",
+          },
+          {
             id: "timetable",
             label: "Lecture & Exam Timetable",
             href: "/student/timetable",
@@ -129,6 +135,7 @@ export const STUDENT_PORTAL_CONFIG: Record<PortalSchoolType, StudentPortalConfig
       "/student/dashboard",
       "/student/registration",
       "/student/enrolments",
+      "/student/assignments",
       "/student/timetable",
       "/student/results",
       "/student/hostel",

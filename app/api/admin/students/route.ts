@@ -17,6 +17,12 @@ import {
   upsertLiveStudentRecord,
   upsertParentGuardianForStudent,
 } from "@/lib/admin/parent-guardian-sync";
+import { toPortalSchoolType } from "@/config/schoolPortalConfig";
+import { resolveLearnerEntityType } from "@/lib/id-numbering/config";
+import {
+  generateNextSchoolId,
+  getSchoolIdSequences,
+} from "@/lib/id-numbering/service";
 
 function splitFullName(fullName: string): { first_name: string; last_name: string } {
   const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -268,6 +274,13 @@ export async function GET(req: NextRequest) {
       (progRes as any)?.school_type ||
       (deptRes as any)?.school_type ||
       "university";
+    const portalSchoolType = toPortalSchoolType(resolvedSchoolType);
+    const learnerEntity = resolveLearnerEntityType(portalSchoolType);
+    const nextIdInfo = tenant.schoolId
+      ? await getSchoolIdSequences(tenant.schoolId, portalSchoolType).catch(
+          () => null
+        )
+      : null;
 
     const total = students.length;
     const active = students.filter((s: any) => s.status === "active").length;
@@ -291,6 +304,7 @@ export async function GET(req: NextRequest) {
       intakes: liveIntakesRes?.data || [],
       hostels: liveHostelsRes?.data || [],
       school_type: resolvedSchoolType,
+      next_student_id_preview: nextIdInfo?.previewMap?.[learnerEntity] || null,
       stats: {
         total,
         active,
@@ -326,7 +340,8 @@ export async function POST(req: NextRequest) {
       .trim()
       .toLowerCase();
     const phone = body.phone ? String(body.phone).trim() : null;
-    const studentNumber = String(body.student_number || "")
+    const autoGenerateId = Boolean(body.auto_generate_id);
+    const manualStudentNumber = String(body.student_number || "")
       .trim()
       .toUpperCase();
     const programmeId = String(body.programme_id || "").trim() || null;
@@ -367,11 +382,10 @@ export async function POST(req: NextRequest) {
     const createParentPortalAccount = Boolean(body.create_parent_portal_account);
     const parentPassword = body.parent_password ? String(body.parent_password).trim() : "";
 
-    if (!fullName || !email || !studentNumber) {
+    if (!fullName || !email) {
       return NextResponse.json(
         {
-          error:
-            "Full name, institutional email, and student number are required.",
+          error: "Full name and institutional email are required.",
         },
         { status: 400 }
       );
@@ -391,14 +405,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: existingNumber } = await (supabase as any)
-      .from("students")
-      .select("id")
-      .eq("school_id", targetSchool.schoolId)
-      .eq("student_number", studentNumber)
-      .maybeSingle();
+    const directAdmin = createDirectAdminClient();
 
-    if (existingNumber) {
+    let studentNumber = manualStudentNumber;
+    if (autoGenerateId || !studentNumber) {
+      const { data: schoolRow } = await (directAdmin as any)
+        .from("schools")
+        .select("school_type")
+        .eq("id", targetSchool.schoolId)
+        .maybeSingle();
+      const portalSchoolType = toPortalSchoolType(schoolRow?.school_type);
+      studentNumber = await generateNextSchoolId(
+        targetSchool.schoolId,
+        resolveLearnerEntityType(portalSchoolType),
+        { checkTable: "students", idColumn: "student_number" }
+      );
+    }
+
+    const [{ data: existingNumber }, { data: existingLiveNumber }] =
+      await Promise.all([
+        (supabase as any)
+          .from("students")
+          .select("id")
+          .eq("school_id", targetSchool.schoolId)
+          .eq("student_number", studentNumber)
+          .maybeSingle(),
+        (directAdmin as any)
+          .from("students")
+          .select("id")
+          .eq("school_id", targetSchool.schoolId)
+          .eq("student_number", studentNumber)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+      ]);
+
+    if (existingNumber || existingLiveNumber) {
       return NextResponse.json(
         { error: `Student number "${studentNumber}" is already assigned to another student.` },
         { status: 400 }
@@ -520,7 +561,6 @@ export async function POST(req: NextRequest) {
 
     // Mirror cleanly into live Postgres `public.students` and sync Parent/Guardian record
     const savedStudentId = createdStudent.id || newStudentId;
-    const directAdmin = createDirectAdminClient();
 
     const liveStuRes = await upsertLiveStudentRecord(directAdmin, {
       id: savedStudentId,

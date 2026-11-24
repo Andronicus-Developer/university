@@ -29,10 +29,13 @@ import {
   Smartphone,
   Eye,
   EyeOff,
+  Hash,
 } from "lucide-react";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
+import { IdNumberingSettingsPanel } from "@/components/admin/IdNumberingSettingsPanel";
+import { toPortalSchoolType, type PortalSchoolType } from "@/config/schoolPortalConfig";
 
-type SettingsTab = "account" | "school" | "academics" | "display";
+type SettingsTab = "account" | "school" | "id_numbering" | "academics" | "display";
 
 interface ThemeOption {
   id: "premier_royal" | "emerald_campus" | "imperial_midnight";
@@ -52,6 +55,7 @@ interface ThemeOption {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -252,6 +256,9 @@ export default function SettingsPage() {
           const instJson = await instRes.json();
           const s = instJson?.institution || instJson;
           if (s) {
+            if (s.school_type || s.institution_type) {
+              setSchoolType(toPortalSchoolType(s.school_type || s.institution_type));
+            }
             setSchoolForm((prev) => ({
               ...prev,
               name: s.name || prev.name,
@@ -570,6 +577,7 @@ export default function SettingsPage() {
         {[
           { id: "account", label: "Admin Account Settings", icon: User },
           { id: "school", label: "School & Institution Settings", icon: Building2 },
+          { id: "id_numbering", label: "ID Numbering System", icon: Hash },
           { id: "academics", label: "Academic Policies & Thresholds", icon: GraduationCap },
           { id: "display", label: "Display, Colors & Themes", icon: Palette },
         ].map((tab) => {
@@ -1113,6 +1121,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === "id_numbering" && (
+        <IdNumberingSettingsPanel schoolType={schoolType} />
       )}
 
       {/* ===================================================================== */}

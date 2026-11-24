@@ -207,6 +207,8 @@ export default function TeachersManagementPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [editingTeacher, setEditingTeacher] = useState<TeacherRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TeacherRecord | null>(null);
+  const [nextIdPreview, setNextIdPreview] = useState<string>("");
+  const [manualIdOverride, setManualIdOverride] = useState<boolean>(false);
 
   const [currentYear, setCurrentYear] = useState(2026);
   const [todayIso, setTodayIso] = useState("2026-10-31");
@@ -259,6 +261,9 @@ export default function TeachersManagementPage() {
       if (data.school_type) {
         setSchoolType(toPortalSchoolType(data.school_type));
       }
+      if (data.next_staff_id_preview) {
+        setNextIdPreview(String(data.next_staff_id_preview));
+      }
       setTeachers(data.teachers || []);
       setDepartments(data.departments || []);
       setProgrammes(data.programmes || []);
@@ -300,11 +305,14 @@ export default function TeachersManagementPage() {
 
   const openCreateModal = () => {
     setEditingTeacher(null);
+    setManualIdOverride(false);
     setFormData({
       full_name: "",
       email: "",
       phone: "",
-      staff_number: generateNextFacultyNumber(teachers, currentYear, formSpec.idPrefix),
+      staff_number:
+        nextIdPreview ||
+        generateNextFacultyNumber(teachers, currentYear, formSpec.idPrefix),
       job_title: formSpec.ranks[0] || "Lecturer",
       department_id: formSpec.showDepartment ? departments[0]?.id || "" : "",
       employment_type: formSpec.employmentTypes[0]?.value || "full_time",
@@ -330,6 +338,7 @@ export default function TeachersManagementPage() {
   const openEditModal = (teacher: TeacherRecord) => {
     const meta = teacher.metadata && typeof teacher.metadata === "object" ? teacher.metadata : {};
     setEditingTeacher(teacher);
+    setManualIdOverride(true);
     setFormData({
       full_name: teacher.full_name,
       email: teacher.email,
@@ -434,7 +443,9 @@ export default function TeachersManagementPage() {
           full_name: formData.full_name,
           email: formData.email,
           phone: formData.phone,
-          staff_number: formData.staff_number,
+          auto_generate_id: !isEdit && !manualIdOverride,
+          staff_number:
+            !isEdit && !manualIdOverride ? "" : formData.staff_number,
           job_title: formData.job_title,
           department_id: formSpec.showDepartment ? formData.department_id || null : null,
           employment_type: formData.employment_type,
@@ -454,11 +465,13 @@ export default function TeachersManagementPage() {
         return;
       }
 
+      const assignedStaffNumber =
+        data.teacher?.staff_number || formData.staff_number;
       showNotification(
         "success",
         isEdit
-          ? `${portalConfig.instructorSingular} "${formData.full_name}" (${formData.staff_number}) updated successfully.`
-          : `${portalConfig.instructorSingular} "${formData.full_name}" (${formData.staff_number}) added successfully.`
+          ? `${portalConfig.instructorSingular} "${formData.full_name}" (${assignedStaffNumber}) updated successfully.`
+          : `${portalConfig.instructorSingular} "${formData.full_name}" (${assignedStaffNumber}) added successfully.`
       );
       setModalMode(null);
       setEditingTeacher(null);
@@ -1049,22 +1062,71 @@ export default function TeachersManagementPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    {formSpec.idLabel} <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-xs font-bold text-[#334155]">
+                      {formSpec.idLabel}{" "}
+                      {manualIdOverride || modalMode === "edit" ? (
+                        <span className="text-red-500">*</span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-blue-600">
+                          (Auto)
+                        </span>
+                      )}
+                    </label>
+                    {modalMode === "create" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualIdOverride((prev) => {
+                            const next = !prev;
+                            if (!next) {
+                              setFormData((f) => ({
+                                ...f,
+                                staff_number:
+                                  nextIdPreview ||
+                                  generateNextFacultyNumber(
+                                    teachers,
+                                    currentYear,
+                                    formSpec.idPrefix
+                                  ),
+                              }));
+                            }
+                            return next;
+                          });
+                        }}
+                        className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        {manualIdOverride ? "Use auto-ID" : "Manual override"}
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    required
-                    placeholder={formSpec.idPlaceholder}
-                    value={formData.staff_number}
+                    required={modalMode === "edit" || manualIdOverride}
+                    readOnly={modalMode === "create" && !manualIdOverride}
+                    placeholder={nextIdPreview || formSpec.idPlaceholder}
+                    value={
+                      modalMode === "create" && !manualIdOverride
+                        ? nextIdPreview || formData.staff_number
+                        : formData.staff_number
+                    }
                     onChange={(e) =>
                       setFormData({
                         ...formData,
                         staff_number: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
+                    className={`w-full px-3 py-2 border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] ${
+                      modalMode === "create" && !manualIdOverride
+                        ? "bg-slate-100/80 text-slate-600 cursor-default"
+                        : "bg-[#F8FAFC]"
+                    }`}
                   />
+                  {modalMode === "create" && !manualIdOverride && nextIdPreview && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Preview: <span className="font-mono font-semibold text-slate-700">{nextIdPreview}</span> (assigned atomically on save)
+                    </p>
+                  )}
                 </div>
               </div>
 

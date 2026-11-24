@@ -16,6 +16,7 @@ import { getPortalTerminology } from "@/lib/portals/school-type-labels";
 interface AdmissionsData {
   school: { id: string; name: string; school_type: string };
   missingTables: string[];
+  nextStudentIdPreview?: string | null;
   applications: Array<{
     id: string;
     application_number: string;
@@ -459,10 +460,18 @@ export default function RegistrarAdmissionsPage() {
                   <input
                     type="text"
                     value={studentNumber}
-                    onChange={(e) => setStudentNumber(e.target.value)}
-                    placeholder="Auto-generated ID"
+                    onChange={(e) => setStudentNumber(e.target.value.toUpperCase())}
+                    placeholder={data.nextStudentIdPreview || "Auto-generated ID"}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
                   />
+                  {!studentNumber.trim() && data.nextStudentIdPreview && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Next auto ID:{" "}
+                      <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+                        {data.nextStudentIdPreview}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block font-medium mb-1">Email (for portal login)</label>

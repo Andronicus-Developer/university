@@ -8,6 +8,12 @@ import {
   scopeQueryBySchool,
   syncVirtualProfileAndRole,
 } from "@/lib/admin/tenant-provisioning";
+import { toPortalSchoolType } from "@/config/schoolPortalConfig";
+import { resolveStaffEntityType } from "@/lib/id-numbering/config";
+import {
+  generateNextSchoolId,
+  getSchoolIdSequences,
+} from "@/lib/id-numbering/service";
 
 const PROTECTED_ADMIN_ID = "a0000000-0000-0000-0000-000000000001";
 const PROTECTED_ADMIN_EMAIL = "admin@university.edu.gh";
@@ -500,6 +506,15 @@ export async function GET(req: NextRequest) {
       0
     );
 
+    const rawSchoolType = liveSchoolRes?.data?.school_type || "university";
+    const portalSchoolType = toPortalSchoolType(rawSchoolType);
+    const academicEntity = resolveStaffEntityType("", portalSchoolType, true);
+    const nextIdInfo = tenant.schoolId
+      ? await getSchoolIdSequences(tenant.schoolId, portalSchoolType).catch(
+          () => null
+        )
+      : null;
+
     return NextResponse.json({
       teachers,
       departments: mergedDepartments,
@@ -508,7 +523,8 @@ export async function GET(req: NextRequest) {
       subjects: liveSubjectsRes?.data || [],
       vocational_modules: liveModulesRes?.data || [],
       roles: rolesRes.data || [],
-      school_type: liveSchoolRes?.data?.school_type || "university",
+      school_type: rawSchoolType,
+      next_staff_id_preview: nextIdInfo?.previewMap?.[academicEntity] || null,
       stats: {
         total,
         active,
@@ -542,7 +558,8 @@ export async function POST(req: NextRequest) {
       .trim()
       .toLowerCase();
     const phone = body.phone ? String(body.phone).trim() : null;
-    const staffNumber = String(body.staff_number || "")
+    const autoGenerateId = Boolean(body.auto_generate_id);
+    const manualStaffNumber = String(body.staff_number || "")
       .trim()
       .toUpperCase();
     const jobTitle = String(body.job_title || "").trim();
@@ -571,9 +588,9 @@ export async function POST(req: NextRequest) {
         : {};
     const rawPassword = body.password ? String(body.password).trim() : "";
 
-    if (!fullName || !email || !staffNumber || !jobTitle) {
+    if (!fullName || !email || !jobTitle) {
       return NextResponse.json(
-        { error: "Full name, email, staff number, and academic title are required." },
+        { error: "Full name, email, and academic title are required." },
         { status: 400 }
       );
     }
@@ -592,14 +609,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: existingNumber } = await (supabase as any)
-      .from("staff")
-      .select("id")
-      .eq("school_id", targetSchool.schoolId)
-      .eq("staff_number", staffNumber)
-      .maybeSingle();
+    const directAdmin = createDirectAdminClient();
 
-    if (existingNumber) {
+    let staffNumber = manualStaffNumber;
+    if (autoGenerateId || !staffNumber) {
+      const { data: schoolRow } = await (directAdmin as any)
+        .from("schools")
+        .select("school_type")
+        .eq("id", targetSchool.schoolId)
+        .maybeSingle();
+      const portalSchoolType = toPortalSchoolType(schoolRow?.school_type);
+      staffNumber = await generateNextSchoolId(
+        targetSchool.schoolId,
+        resolveStaffEntityType(roleCode, portalSchoolType, true),
+        { checkTable: "staff_profiles", idColumn: "staff_number" }
+      );
+    }
+
+    const [{ data: existingNumber }, { data: existingLiveNumber }] =
+      await Promise.all([
+        (supabase as any)
+          .from("staff")
+          .select("id")
+          .eq("school_id", targetSchool.schoolId)
+          .eq("staff_number", staffNumber)
+          .maybeSingle(),
+        (directAdmin as any)
+          .from("staff_profiles")
+          .select("id")
+          .eq("school_id", targetSchool.schoolId)
+          .eq("staff_number", staffNumber)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null })),
+      ]);
+
+    if (existingNumber || existingLiveNumber) {
       return NextResponse.json(
         { error: `Staff ID "${staffNumber}" is already assigned to another staff member.` },
         { status: 400 }
@@ -628,7 +672,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const directAdmin = createDirectAdminClient();
     let departmentName: string | null = null;
     if (departmentId) {
       const { data: deptRow } = await (supabase as any)

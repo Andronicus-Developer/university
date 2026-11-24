@@ -192,6 +192,56 @@ export default function StudentDashboardPage() {
             </Link>
           </div>
 
+          {(kpis.pendingAssignmentsCount ?? 0) > 0 && (
+            <div className="rounded-2xl border border-amber-200/90 dark:border-amber-800/80 bg-amber-50/70 dark:bg-amber-950/30 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                  <FileCheck2 className="h-5 w-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {kpis.pendingAssignmentsCount} Pending Coursework{" "}
+                      {kpis.pendingAssignmentsCount === 1 ? "Assignment" : "Assignments"}
+                    </h2>
+                    {(kpis.overdueAssignmentsCount ?? 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 text-[10px] font-bold border border-rose-200 dark:border-rose-800">
+                        {kpis.overdueAssignmentsCount} Overdue
+                      </span>
+                    )}
+                    {(kpis.dueSoonAssignmentsCount ?? 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 text-[10px] font-bold border border-amber-200 dark:border-amber-700">
+                        {kpis.dueSoonAssignmentsCount} Due Within 7 Days
+                      </span>
+                    )}
+                  </div>
+                  {Array.isArray(data.pendingAssignments) && data.pendingAssignments[0] && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Next:{" "}
+                      <span className="font-semibold">
+                        {data.pendingAssignments[0].course?.code
+                          ? `${data.pendingAssignments[0].course.code} — `
+                          : ""}
+                        {data.pendingAssignments[0].title}
+                      </span>
+                      {data.pendingAssignments[0].due_date
+                        ? ` · Due ${data.pendingAssignments[0].due_date}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Link
+                href="/student/assignments"
+                className="self-start sm:self-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs shrink-0"
+              >
+                <span>Open Assignments</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Registered Courses */}
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-4">

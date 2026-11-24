@@ -5,6 +5,11 @@ import {
   resolveRegistrarPortalContext,
   safeRegistrarQuery,
 } from "@/lib/registrar/registrar-context";
+import { resolveLearnerEntityType } from "@/lib/id-numbering/config";
+import {
+  generateNextSchoolId,
+  getSchoolIdSequences,
+} from "@/lib/id-numbering/service";
 
 function fullNameOf(row: any): string {
   const full = `${row?.first_name || ""} ${row?.last_name || ""}`.trim();
@@ -161,13 +166,16 @@ export async function GET(req: NextRequest) {
     }
 
     if (section === "admissions") {
-      const appsRes = await safeRegistrarQuery(
-        db
-          .from("admissions_applications")
-          .select("*")
-          .eq("school_id", schoolId)
-          .order("created_at", { ascending: false })
-      );
+      const [appsRes, nextIdInfo] = await Promise.all([
+        safeRegistrarQuery(
+          db
+            .from("admissions_applications")
+            .select("*")
+            .eq("school_id", schoolId)
+            .order("created_at", { ascending: false })
+        ),
+        getSchoolIdSequences(schoolId, ctx.schoolType).catch(() => null),
+      ]);
       const missingTables = appsRes.missing ? ["admissions_applications"] : [];
       const applications = (appsRes.data || []).map((a: any) => ({
         ...a,
@@ -183,6 +191,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...baseInfo,
         missingTables,
+        nextStudentIdPreview:
+          nextIdInfo?.previewMap?.[resolveLearnerEntityType(ctx.schoolType)] ||
+          null,
         applications,
         programmes,
         departments,
@@ -193,13 +204,16 @@ export async function GET(req: NextRequest) {
     }
 
     if (section === "students") {
-      const { data: studentRows } = await safeRegistrarQuery(
-        db
-          .from("students")
-          .select("*")
-          .eq("school_id", schoolId)
-          .order("created_at", { ascending: false })
-      );
+      const [{ data: studentRows }, nextIdInfo] = await Promise.all([
+        safeRegistrarQuery(
+          db
+            .from("students")
+            .select("*")
+            .eq("school_id", schoolId)
+            .order("created_at", { ascending: false })
+        ),
+        getSchoolIdSequences(schoolId, ctx.schoolType).catch(() => null),
+      ]);
 
       const students = (studentRows || []).map((s: any) => ({
         ...s,
@@ -212,6 +226,9 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         ...baseInfo,
+        nextStudentIdPreview:
+          nextIdInfo?.previewMap?.[resolveLearnerEntityType(ctx.schoolType)] ||
+          null,
         students,
         programmes,
         departments,
@@ -583,11 +600,31 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const studentNumber =
-        String(body?.studentNumber || "").trim() ||
-        `${defaultIdPrefix(ctx.schoolType)}-${new Date().getFullYear()}-${Math.floor(
-          1000 + Math.random() * 9000
-        )}`;
+      const manualNumber = String(body?.studentNumber || "").trim().toUpperCase();
+      let studentNumber = manualNumber;
+
+      if (studentNumber) {
+        const { data: existingStu } = await db
+          .from("students")
+          .select("id")
+          .eq("school_id", schoolId)
+          .eq("student_number", studentNumber)
+          .maybeSingle();
+        if (existingStu?.id) {
+          return NextResponse.json(
+            {
+              error: `ID "${studentNumber}" is already assigned to another student in this school.`,
+            },
+            { status: 400 }
+          );
+        }
+      } else {
+        studentNumber = await generateNextSchoolId(
+          schoolId,
+          resolveLearnerEntityType(ctx.schoolType),
+          { checkTable: "students", idColumn: "student_number" }
+        );
+      }
 
       let profileId: string | null = null;
       const tempPassword = String(body?.loginPassword || "").trim();
