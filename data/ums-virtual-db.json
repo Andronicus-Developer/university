@@ -1132,6 +1132,77 @@
   ],
   "profiles": [
     {
+      "id": "d6e19fe0-e566-44e5-abad-f268d698ac74",
+      "created_at": "2026-11-24T14:29:27.358Z",
+      "updated_at": "2026-11-24T14:29:27.358Z",
+      "email": "cynthia@sps.edu.lr",
+      "full_name": "Cynthia Miller",
+      "account_status": "active",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "metadata": {
+        "role": "finance_officer",
+        "default_role": "finance_officer",
+        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_name": "Soltiamon Preparatory School"
+      }
+    },
+    {
+      "id": "b21b9b8a-4153-4dd4-a969-14bc4ae6221a",
+      "created_at": "2026-11-24T13:50:22.743Z",
+      "updated_at": "2026-11-24T13:50:22.743Z",
+      "email": "pwashington@sps.edu.lr",
+      "full_name": "Mr. John Washington",
+      "account_status": "active",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "metadata": {
+        "role": "parent",
+        "default_role": "parent",
+        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_name": "Soltiamon Preparatory School"
+      }
+    },
+    {
+      "id": "13ea02eb-eb48-4b15-9126-aaf7954b20e0",
+      "created_at": "2026-11-24T05:53:10.782Z",
+      "updated_at": "2026-11-24T05:53:10.782Z",
+      "email": "washington@sps.edu.lr",
+      "full_name": "Ezekiel Washington",
+      "account_status": "active",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "metadata": {
+        "role": "student",
+        "default_role": "student",
+        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_name": "Soltiamon Preparatory School"
+      }
+    },
+    {
+      "id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
+      "created_at": "2026-11-24T04:24:54.013Z",
+      "updated_at": "2026-11-24T16:08:30.519Z",
+      "email": "moses.admin@sps.edu.lr",
+      "full_name": "Moses Blay",
+      "account_status": "active",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "metadata": {
+        "job_title": "Chief Technology & Information Officer",
+        "department": "Directorate of ICT Services",
+        "bio": "Super Administrator with full institutional management permissions across academic, finance, and system operations.",
+        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+        "university_id": "416e39ad-a548-4daa-91de-1c51443e2830"
+      },
+      "phone": "+233 24 123 4567",
+      "avatar_url": null,
+      "is_mfa_enabled": false
+    },
+    {
       "id": "1440ed7e-cb23-4248-a372-f38b20d01554",
       "email": "superadmin@university.edu.gh",
       "full_name": "Master Super Administrator",
@@ -1373,7 +1444,23 @@
   "campuses": [],
   "faculties": [],
   "departments": [],
-  "programmes": [],
+  "programmes": [
+    {
+      "id": "c9bb0f6b-bc07-43bc-9edc-a17c12e14704",
+      "created_at": "2026-11-24T04:13:58.664Z",
+      "updated_at": "2026-11-24T04:13:58.664Z",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "department_id": null,
+      "code": "G10",
+      "name": "Grade 10, Science Class",
+      "degree_level": "general",
+      "duration_years": 1,
+      "total_credits_required": 3,
+      "total_credits": 3,
+      "is_active": true
+    }
+  ],
   "academic_years": [],
   "terms": [],
   "courses": [],
@@ -1414,6 +1501,21 @@
   "service_requests": [],
   "audit_events": [
     {
+      "id": "8ea3c8cc-4690-4b2e-80b6-9fb6cccd8451",
+      "created_at": "2026-11-24T04:13:59.048Z",
+      "updated_at": "2026-11-24T04:13:59.048Z",
+      "action": "PROGRAM_CREATED",
+      "entity_type": "programme",
+      "entity_id": "c9bb0f6b-bc07-43bc-9edc-a17c12e14704",
+      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
+      "outcome": "success",
+      "metadata": {
+        "code": "G10",
+        "name": "Grade 10, Science Class",
+        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830"
+      }
+    },
+    {
       "id": "aud-1",
       "event_time": "2026-11-05T08:00:00.000Z",
       "actor_id": "1440ed7e-cb23-4248-a372-f38b20d01554",
@@ -1442,6 +1544,39 @@
   "admission_decisions": [],
   "offers": [],
   "system_settings": [
+    {
+      "id": "62180cf8-a90b-4fb2-acd0-adfb23a92222",
+      "created_at": "2026-11-24T16:08:32.116Z",
+      "updated_at": "2026-11-24T16:08:31.879Z",
+      "setting_key": "academic_policy_416e39ad-a548-4daa-91de-1c51443e2830",
+      "setting_value": {
+        "passMarkThreshold": 50,
+        "minRegistrationCredits": 15,
+        "maxRegistrationCredits": 21,
+        "attendanceThresholdPct": 75,
+        "probationGpaThreshold": 1.5,
+        "firstClassGpaThreshold": 3.6,
+        "secondClassUpperGpa": 3,
+        "currentAcademicYear": "2026/2027",
+        "activeSemester": "Semester 1",
+        "addDropWindowDays": 14,
+        "gradeSubmissionDeadlineDays": 21,
+        "lateRegistrationFine": 150,
+        "enableSelfRegistration": true,
+        "requireAdvisorApproval": true,
+        "autoSenateBroadsheet": true,
+        "restrictTranscriptOnDebt": true,
+        "display_theme": {
+          "theme": "imperial_midnight",
+          "accent_color": "#6366F1",
+          "density": "comfortable",
+          "border_radius": "rounded-2xl",
+          "dark_mode": false
+        }
+      },
+      "category": "academics",
+      "description": "School-specific grading scale and academic rules"
+    },
     {
       "id": "267bb377-6b29-42fc-9fec-ccee63f7df8a",
       "setting_key": "institution_info",
@@ -1733,6 +1868,28 @@
   "institutional_reports": [],
   "communications": [],
   "platform_feature_flags": [
+    {
+      "id": "0eee3c33-cb56-40eb-9d0d-d17d5cefeede",
+      "created_at": "2026-11-24T14:18:23.707Z",
+      "updated_at": "2026-11-24T14:18:23.707Z",
+      "portal_key": "registrar_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Registrar Portal",
+      "description": "Admissions review, student directory, course/module registration approvals, academic calendars, transcripts, and graduation clearance.",
+      "target_roles": [
+        "registrar",
+        "admissions_officer",
+        "academic_affairs_officer"
+      ],
+      "route_prefixes": [
+        "/registrar"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
     {
       "id": "c4bdd857-cdaf-43e2-95a7-8da9567e2253",
       "created_at": "2026-11-24T02:48:58.899Z",
@@ -2034,5 +2191,9 @@
       "is_enabled": true,
       "updated_by": null
     }
-  ]
+  ],
+  "schools": [],
+  "school_events": [],
+  "audit_logs": [],
+  "timetable_entries": []
 }

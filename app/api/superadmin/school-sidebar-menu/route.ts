@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireSuperAdminApi } from "@/lib/superadmin/api-guard";
 import {
   getSchoolSidebarMenuItems,
   saveSchoolSidebarMenuItem,
@@ -9,6 +10,8 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const schoolType = searchParams.get("school_type") as SchoolType | undefined;
     const activeOnly = searchParams.get("active_only") === "true";
@@ -26,6 +29,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     if (!body.label || !body.href) {
@@ -63,6 +68,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     if (!body.id) {
@@ -85,6 +92,8 @@ export async function PUT(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     if (!body.id || body.is_active === undefined) {
@@ -107,6 +116,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

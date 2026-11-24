@@ -1,76 +1,52 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import {
-  BarChart3,
-  Download,
-  Calendar,
-  FileSpreadsheet,
-  CheckCircle,
-  TrendingUp,
-  Plus,
-  RefreshCw,
-  X,
-  FileText,
-} from "lucide-react";
+import { AlertTriangle, BarChart3, Plus, Printer, RefreshCw, X } from "lucide-react";
 
 interface ReportItem {
   id: string;
   title: string;
-  category: string;
-  file_format: string;
-  period_covered: string;
+  report_type: string;
+  period_label: string | null;
+  summary: string | null;
   status: string;
-  file_path: string | null;
-  storage_bucket: string;
   created_at: string;
 }
 
 export default function ReportsPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
+  const [liveStats, setLiveStats] = useState<{
+    totalStudents: number;
+    activeStudents: number;
+    totalStaff: number;
+    totalBilled: number;
+    totalCollected: number;
+  } | null>(null);
+  const [missingTables, setMissingTables] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const [newReport, setNewReport] = useState({
-    title: "",
-    category: "finance",
-    fileFormat: "PDF",
-    periodCovered: "2026/2027 Semester 1",
-  });
+  const [title, setTitle] = useState("");
+  const [reportType, setReportType] = useState("executive_summary");
+  const [periodLabel, setPeriodLabel] = useState("Current Academic Session");
 
   const fetchReports = async () => {
     setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
+    setErrorMsg(null);
     try {
-      const { data, error } = await db
-        .from("institutional_reports")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (data && data.length > 0) {
-        setReports(
-          data.map((r: any) => ({
-            id: r.id,
-            title: r.title,
-            category: r.category,
-            file_format: r.file_format || "PDF",
-            period_covered: r.period_covered || "Current Academic Session",
-            status: r.status || "verified",
-            file_path: r.file_path,
-            storage_bucket: r.storage_bucket || "institutional-reports",
-            created_at: new Date(r.created_at).toLocaleDateString(),
-          }))
-        );
+      const res = await fetch("/api/admin/ops?resource=reports", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMsg(data?.error || "Failed to load reports.");
       } else {
-        setReports([]);
+        setReports(data.reports || []);
+        setLiveStats(data.liveStats || null);
+        setMissingTables(data.missingTables || []);
       }
-    } catch (err) {
-      console.error("Error fetching reports from Supabase:", err);
-      setReports([]);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Network error.");
     } finally {
       setLoading(false);
     }
@@ -80,218 +56,192 @@ export default function ReportsPage() {
     fetchReports();
   }, []);
 
-  const handleGenerateReport = async (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     setGenerating(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
+    setErrorMsg(null);
     try {
-      const fileName = `${newReport.title.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${Date.now()}.${newReport.fileFormat.toLowerCase()}`;
-      const fileContent = `Premier University Management System\nTitle: ${newReport.title}\nCategory: ${newReport.category.toUpperCase()}\nPeriod: ${newReport.periodCovered}\nGenerated At: ${new Date().toISOString()}\nStatus: AUTHORITATIVE & AUDITED\n`;
-
-      // 1. Upload file to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from("institutional-reports")
-        .upload(fileName, new Blob([fileContent], { type: "text/plain" }), {
-          upsert: true,
-        });
-
-      // 2. Insert record into institutional_reports table
-      await db.from("institutional_reports").insert({
-        title: newReport.title,
-        category: newReport.category,
-        file_format: newReport.fileFormat,
-        period_covered: newReport.periodCovered,
-        file_path: fileName,
-        storage_bucket: "institutional-reports",
-        status: "verified",
+      const res = await fetch("/api/admin/ops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resource: "reports",
+          title,
+          report_type: reportType,
+          period_label: periodLabel,
+        }),
       });
-
-      setShowGenerateModal(false);
-      fetchReports();
-    } catch (err) {
-      console.error("Failed to generate report:", err);
-      setShowGenerateModal(false);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMsg(json?.error || "Failed to generate report.");
+      } else {
+        setShowModal(false);
+        setTitle("");
+        await fetchReports();
+      }
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleDownload = async (report: ReportItem) => {
-    const supabase = createClient();
-
-    try {
-      if (report.file_path) {
-        const { data, error } = await supabase.storage
-          .from("institutional-reports")
-          .download(report.file_path);
-
-        if (data) {
-          const url = URL.createObjectURL(data);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = report.file_path;
-          a.click();
-          return;
-        }
-      }
-    } catch {
-      // Fallback
-    }
-
-    // Direct fallback download
-    const content = `Premier University Official Document\nReport: ${report.title}\nCategory: ${report.category}\nPeriod: ${report.period_covered}\nGenerated: ${report.created_at}`;
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${report.title.toLowerCase().replace(/\s+/g, "_")}.txt`;
-    a.click();
-  };
-
   return (
-    <div className="space-y-6 max-w-[1580px] mx-auto pb-10">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
         <div>
-          <div className="flex items-center gap-2 text-xs text-[#64748B] font-medium">
-            <span className="text-[#3B82F6] hover:underline cursor-pointer">Dashboard</span>
-            <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Institutional Analytics</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Reports & Analytical Intelligence
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+            Institutional Reports & Analytics
           </h1>
-          <p className="text-xs text-[#64748B]">
-            Authoritative statutory returns and audit exports fetched directly from Supabase database and storage.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Generate live multi-tenant enrollment and revenue snapshots.
           </p>
         </div>
-
-        <button
-          onClick={() => setShowGenerateModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3B82F6] hover:bg-blue-600 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Generate New Report</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>Print</span>
+          </button>
+          <button
+            type="button"
+            onClick={fetchReports}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Generate Snapshot</span>
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {reports.length > 0 ? (
-          reports.map((r) => (
-            <div
-              key={r.id}
-              className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-2xs space-y-3 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#2563EB] uppercase">
-                    {r.category}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B]">
-                    {r.file_format}
-                  </span>
-                </div>
-                <h3 className="text-sm font-bold text-[#1E293B] mt-2">{r.title}</h3>
-                <p className="text-xs text-[#64748B] mt-1">
-                  Period: <strong className="text-[#334155]">{r.period_covered}</strong> | Added: {r.created_at}
-                </p>
-              </div>
+      {missingTables.length > 0 && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2 print:hidden">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Run migration `20261124000010_audit_remediation_tables_and_rls.sql` in Supabase SQL Editor to archive generated reports.</span>
+        </div>
+      )}
 
-              <button
-                onClick={() => handleDownload(r)}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-xs font-semibold text-[#334155] transition-colors cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5 text-[#3B82F6]" />
-                <span>Download Report ({r.file_format})</span>
-              </button>
-            </div>
-          ))
+      {errorMsg && (
+        <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-xs font-semibold text-rose-800 dark:text-rose-200">
+          {errorMsg}
+        </div>
+      )}
+
+      {liveStats && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <p className="text-xs text-slate-500">Enrolled Learners</p>
+            <p className="text-2xl font-bold mt-1">{liveStats.activeStudents}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <p className="text-xs text-slate-500">Academic & Admin Staff</p>
+            <p className="text-2xl font-bold mt-1">{liveStats.totalStaff}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <p className="text-xs text-slate-500">Total Fee Billed</p>
+            <p className="text-2xl font-bold mt-1">{liveStats.totalBilled.toFixed(2)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <p className="text-xs text-slate-500">Total Collected</p>
+            <p className="text-2xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">
+              {liveStats.totalCollected.toFixed(2)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        {loading ? (
+          <div className="p-10 text-center text-xs text-slate-500">Loading archived reports...</div>
+        ) : reports.length === 0 ? (
+          <div className="p-10 text-center space-y-2">
+            <BarChart3 className="h-7 w-7 mx-auto text-slate-400" />
+            <p className="text-sm font-semibold">No Snapshots Archived Yet</p>
+            <p className="text-xs text-slate-500">Click &ldquo;Generate Snapshot&rdquo; to archive current figures.</p>
+          </div>
         ) : (
-          <div className="col-span-2 py-16 bg-white rounded-2xl border border-[#E2E8F0] text-center text-xs text-[#94A3B8]">
-            {loading ? "Querying institutional reports database..." : "No reports generated in database yet."}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+            {reports.map((r) => (
+              <div key={r.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-slate-100">{r.title}</p>
+                  <p className="text-[11px] text-slate-500">{r.summary}</p>
+                </div>
+                <div className="text-right text-[11px] text-slate-500 shrink-0">
+                  <span className="uppercase font-semibold">{r.report_type.replace(/_/g, " ")}</span>
+                  <div>{(r.created_at || "").slice(0, 10)}</div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Generate Report Modal */}
-      {showGenerateModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-[#E2E8F0] overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
-              <h3 className="text-sm font-bold text-[#1E293B]">Generate & Save Institutional Report</h3>
-              <button onClick={() => setShowGenerateModal(false)}>
-                <X className="h-4 w-4 text-[#94A3B8]" />
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold">Generate Snapshot Report</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="cursor-pointer">
+                <X className="h-4 w-4 text-slate-400" />
               </button>
             </div>
-            <form onSubmit={handleGenerateReport} className="p-6 space-y-4">
+            <form onSubmit={handleGenerate} className="space-y-3 text-xs">
               <div>
-                <label className="block text-xs font-bold text-[#334155] mb-1">Report Title</label>
+                <label className="block font-semibold mb-1">Report Title *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. End of Semester Revenue & Fees Reconciliation"
-                  value={newReport.title}
-                  onChange={(e) => setNewReport({ ...newReport, title: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Mid-Term Enrollment & Fee Summary"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Functional Domain</label>
-                  <select
-                    value={newReport.category}
-                    onChange={(e) => setNewReport({ ...newReport, category: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
-                  >
-                    <option value="finance">Finance & Accounts</option>
-                    <option value="admissions">Admissions & Enrollment</option>
-                    <option value="academics">Curriculum & Academics</option>
-                    <option value="examinations">Examinations & GPA</option>
-                    <option value="registry">Registry & Compliance</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Export Format</label>
-                  <select
-                    value={newReport.fileFormat}
-                    onChange={(e) => setNewReport({ ...newReport, fileFormat: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
-                  >
-                    <option value="PDF">PDF Document (.pdf)</option>
-                    <option value="CSV">CSV Spreadsheet (.csv)</option>
-                    <option value="XLSX">Excel Workbook (.xlsx)</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-bold text-[#334155] mb-1">Academic Session Covered</label>
+                <label className="block font-semibold mb-1">Category</label>
+                <select
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                >
+                  <option value="executive_summary">Executive Summary</option>
+                  <option value="finance">Fee & Revenue Snapshot</option>
+                  <option value="enrollment">Enrollment & Registry</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Period Label</label>
                 <input
                   type="text"
-                  required
-                  value={newReport.periodCovered}
-                  onChange={(e) => setNewReport({ ...newReport, periodCovered: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
+                  value={periodLabel}
+                  onChange={(e) => setPeriodLabel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
               </div>
-
-              <div className="pt-3 border-t border-[#F1F5F9] flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#64748B]"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={generating}
-                  className="px-4 py-2 rounded-xl bg-[#3B82F6] text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer"
                 >
-                  {generating ? "Saving to Storage..." : "Generate & Save Report"}
+                  {generating ? "Generating..." : "Archive Snapshot"}
                 </button>
               </div>
             </form>

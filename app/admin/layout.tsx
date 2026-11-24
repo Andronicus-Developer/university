@@ -514,9 +514,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const normalizedDisplayType = schoolType ? normalizeSchoolType(schoolType) : "";
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white select-none">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 select-none">
       {/* Brand Header */}
-      <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100 bg-white">
+      <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
         <Link href="/admin/dashboard" className="flex items-center gap-3 min-w-0">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-blue-500/20 shrink-0 overflow-hidden">
             {schoolLogo ? (
@@ -541,7 +541,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
           <div className="flex flex-col min-w-0">
             <span
-              className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
+              className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
               {schoolName || "—"}
@@ -591,11 +591,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                     isActive
                       ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25 font-semibold"
-                      : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2.5 truncate">
-                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"}`} />
+                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"}`} />
                     <span className="truncate">{item.label}</span>
                   </div>
 
@@ -604,7 +604,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                       className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                         isActive
                           ? "bg-white/25 text-white"
-                          : "bg-blue-50 text-blue-600 border border-blue-200"
+                          : "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
                       }`}
                     >
                       {item.badge}
@@ -618,20 +618,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       </nav>
 
       {/* Modern Sidebar Footer with User Details and Prominent Logout */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/60">
+      <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/90">
         {/* User Card */}
-        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 mb-2.5 shadow-2xs">
+        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 mb-2.5 shadow-2xs">
           <div className="relative">
             <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
               {(userName || "SA").slice(0, 2).toUpperCase()}
             </div>
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-slate-800 truncate leading-snug">
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate leading-snug">
               {userName}
             </div>
-            <div className="text-[10px] text-slate-500 truncate">
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
               {userRole}
             </div>
           </div>
@@ -641,7 +641,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <button
           onClick={handleSignOut}
           disabled={isSigningOut}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100/90 text-red-600 hover:text-red-700 text-xs font-semibold transition-all border border-red-200/80 shadow-2xs active:scale-[0.98] cursor-pointer disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100/90 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 hover:text-red-700 text-xs font-semibold transition-all border border-red-200/80 dark:border-red-900/70 shadow-2xs active:scale-[0.98] cursor-pointer disabled:opacity-50"
           title="Sign out of system"
         >
           {isSigningOut ? (
@@ -661,7 +661,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex text-slate-800 font-sans antialiased">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex text-slate-800 dark:text-slate-100 font-sans antialiased">
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
@@ -680,19 +680,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       </div>
 
       {/* Static Desktop Sidebar: Permanent fixed width, border-r, clean & steady */}
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 lg:z-40 border-r border-slate-200/80 shadow-xs">
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 lg:z-40 border-r border-slate-200/80 dark:border-slate-800 shadow-xs">
         {sidebarContent}
       </aside>
 
       {/* Main Viewport Container (offset by sidebar width on desktop) */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen lg:pl-64">
         {/* Top App Bar */}
-        <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
+        <header className="h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
           {/* Left: Mobile hamburger + Search input */}
           <div className="flex items-center gap-3 flex-1 max-w-xs sm:max-w-md">
             <button
               onClick={() => setMobileOpen(true)}
-              className="lg:hidden h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-50 cursor-pointer"
+              className="lg:hidden h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               <Menu className="h-4 w-4" />
             </button>
@@ -704,19 +704,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
 
           {/* Center: Live Date & Time pill */}
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-[12px] text-slate-600 font-medium">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-xl text-[12px] text-slate-600 dark:text-slate-300 font-medium">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <Clock className="h-3.5 w-3.5 text-blue-600" />
+            <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
             <span>
-              Date & time: <span className="font-semibold text-slate-800">{currentTime || "Loading..."}</span>
+              Date & time: <span className="font-semibold text-slate-800 dark:text-slate-100">{currentTime || "Loading..."}</span>
             </span>
           </div>
 
           {/* Right: Academic Year & Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Academic Year Badge */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 font-semibold shadow-2xs">
-              <Calendar className="h-3.5 w-3.5 text-slate-500" />
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-xl text-xs text-slate-700 dark:text-slate-200 font-semibold shadow-2xs">
+              <Calendar className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
               <span>Academic Year: {academicYear || "Not Configured"}</span>
               <ChevronDown className="h-3 w-3 text-slate-400" />
             </div>
@@ -768,22 +768,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </button>
 
               {/* Profile Avatar & Dropdown */}
-              <div className="relative pl-2 border-l border-slate-200 ml-1">
+              <div className="relative pl-2 border-l border-slate-200 dark:border-slate-700 ml-1">
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
                     {(userName || "SA").slice(0, 2).toUpperCase()}
                   </div>
-                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 hidden sm:block" />
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400 hidden sm:block" />
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-slate-200 shadow-xl py-2 z-50">
-                    <div className="px-4 py-2 border-b border-slate-100">
-                      <div className="text-xs font-bold text-slate-900">{userName}</div>
-                      <div className="text-[11px] text-slate-500 truncate">{userEmail}</div>
+                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50">
+                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                      <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{userName}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userEmail}</div>
                     </div>
 
                     <Link

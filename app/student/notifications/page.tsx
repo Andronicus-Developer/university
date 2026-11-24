@@ -1,128 +1,97 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import React, { useState } from "react";
+import { Bell, Check } from "lucide-react";
+import { useStudentPortalSection } from "@/lib/student/useStudentPortalData";
+import { MigrationNoticeBanner } from "@/components/staff/StaffPortalPrimitives";
 import {
-  Bell,
-  CheckCircle2,
-  Clock,
-  BookOpen,
-  CreditCard,
-  Building,
-  Check,
-} from "lucide-react";
+  StudentEmptyState,
+  StudentPageError,
+  StudentPageLoading,
+} from "@/components/student/StudentPortalPrimitives";
+
+interface NotificationsPayload {
+  school: { name: string };
+  notifications: Array<{
+    id: string;
+    title: string;
+    body: string | null;
+    category: string | null;
+    is_read: boolean;
+    created_at: string;
+  }>;
+  missingTables?: string[];
+}
 
 export default function StudentNotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error, reload, mutate } =
+    useStudentPortalSection<NotificationsPayload>("notifications");
+  const [marking, setMarking] = useState(false);
 
-  const loadNotifications = async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
-    try {
-      const { data: list } = await db
-        .from("notifications")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      setNotifications(list || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
-  const handleMarkAllRead = async () => {
-    const supabase = createClient();
-    const db = supabase as any;
-
-    try {
-      await db.from("notifications").update({ is_read: true }).eq("is_read", false);
-      await loadNotifications();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-semibold text-slate-500">Loading notifications...</p>
-      </div>
-    );
+  if (loading) return <StudentPageLoading label="Loading notifications..." />;
+  if (error || !data) {
+    return <StudentPageError error={error || "Failed to load notifications"} onRetry={reload} />;
   }
 
+  const notifications = data.notifications || [];
   const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  async function handleMarkAllRead() {
+    setMarking(true);
+    await mutate("mark_notifications_read", {});
+    setMarking(false);
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Student Notifications</h1>
-          <p className="text-xs text-slate-500">Alerts, grade publications, fee payments, and campus notices</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Student Notifications
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Alerts, grade publications, and fee updates at {data.school.name}
+          </p>
         </div>
         {unreadCount > 0 && (
           <button
+            type="button"
+            disabled={marking}
             onClick={handleMarkAllRead}
-            className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 transition self-start"
+            className="inline-flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-xl text-xs font-semibold cursor-pointer"
           >
             <Check className="h-3.5 w-3.5 text-blue-600" />
-            <span>Mark All as Read</span>
+            <span>{marking ? "Updating..." : "Mark All as Read"}</span>
           </button>
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4 text-blue-600" />
-            <h2 className="text-sm font-bold text-slate-900">All Notifications ({notifications.length})</h2>
-          </div>
-          {unreadCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-xs">
-              {unreadCount} Unread
-            </span>
-          )}
-        </div>
+      <MigrationNoticeBanner tables={data.missingTables || []} />
 
-        <div className="divide-y divide-slate-100">
-          {notifications.length > 0 ? (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                className={`p-5 flex items-start gap-4 transition ${
-                  !n.is_read ? "bg-blue-50/20" : "hover:bg-slate-50/50"
-                }`}
-              >
-                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 mt-0.5">
-                  <Bell className="h-4 w-4" />
+      {notifications.length === 0 ? (
+        <StudentEmptyState
+          icon={Bell}
+          title="You Are All Caught Up"
+          description="Notifications about assignments, grades, and billing updates will appear here."
+        />
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+          {notifications.map((n) => (
+            <div key={n.id} className="p-4 flex items-start justify-between gap-3 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  {!n.is_read && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{n.title}</p>
                 </div>
-
-                <div className="space-y-1 flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-xs font-bold text-slate-900">{n.title}</h3>
-                    <span className="text-[10px] text-slate-400 shrink-0">
-                      {new Date(n.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">{n.message}</p>
-                </div>
+                {n.body && <p className="text-slate-600 dark:text-slate-300">{n.body}</p>}
               </div>
-            ))
-          ) : (
-            <p className="p-8 text-center text-xs text-slate-400">No notifications to display.</p>
-          )}
+              <span className="text-[11px] text-slate-500 shrink-0">
+                {(n.created_at || "").slice(0, 10)}
+              </span>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
-

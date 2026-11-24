@@ -36,6 +36,7 @@ interface StudentRecord {
   full_name: string;
   email: string;
   phone: string;
+  gender?: string;
   account_status: string;
   programme_id: string | null;
   programme_name: string;
@@ -105,6 +106,7 @@ interface StudentFormState {
   full_name: string;
   email: string;
   phone: string;
+  gender: string;
   student_number: string;
   programme_id: string;
   department_id: string;
@@ -239,6 +241,7 @@ export default function StudentsManagementPage() {
     full_name: "",
     email: "",
     phone: "",
+    gender: "other",
     student_number: "",
     programme_id: "",
     department_id: "",
@@ -333,6 +336,7 @@ export default function StudentsManagementPage() {
       full_name: "",
       email: "",
       phone: "",
+      gender: "other",
       student_number: generateNextStudentNumber(students, currentYear, formSpec.idPrefix),
       programme_id: formSpec.showProgram ? defaultProg : "",
       department_id: formSpec.showDepartment ? defaultDept : "",
@@ -376,6 +380,7 @@ export default function StudentsManagementPage() {
       full_name: student.full_name,
       email: student.email,
       phone: student.phone || "",
+      gender: student.gender || meta.gender || "other",
       student_number: student.student_number,
       programme_id: student.programme_id || "",
       department_id: student.department_id || meta.department_id || "",
@@ -436,10 +441,12 @@ export default function StudentsManagementPage() {
     const numericLevel = levelSpec ? levelSpec.numeric : Number(formData.current_level) || 100;
 
     // Build school_type-specific metadata JSONB cleanly
+    const cleanGender = formData.gender || "other";
     let metadataPayload: Record<string, any> = {};
     if (schoolType === "university") {
       metadataPayload = {
         school_type: "university",
+        gender: cleanGender,
         department_id: formData.department_id || null,
         department_name: formData.department_id ? deptNameById.get(formData.department_id) || "" : "",
         level_label: formData.level_label,
@@ -452,6 +459,7 @@ export default function StudentsManagementPage() {
     } else if (schoolType === "high_school") {
       metadataPayload = {
         school_type: "high_school",
+        gender: cleanGender,
         stream_track: formData.stream_track,
         boarding_status: formData.boarding_status,
         house_dormitory: formData.house_dormitory.trim(),
@@ -463,6 +471,7 @@ export default function StudentsManagementPage() {
     } else {
       metadataPayload = {
         school_type: "vocational",
+        gender: cleanGender,
         department_id: formData.department_id || null,
         department_name: formData.department_id ? deptNameById.get(formData.department_id) || "" : "",
         intake_id: formData.intake_id || null,
@@ -485,6 +494,7 @@ export default function StudentsManagementPage() {
           full_name: formData.full_name,
           email: formData.email,
           phone: formData.phone,
+          gender: cleanGender,
           student_number: formData.student_number,
           programme_id: schoolType === "vocational" ? null : formData.programme_id || null,
           department_id: schoolType === "high_school" ? null : formData.department_id || null,
@@ -517,12 +527,25 @@ export default function StudentsManagementPage() {
         return;
       }
 
-      showNotification(
-        "success",
-        isEdit
-          ? `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) updated successfully.`
-          : `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) registered successfully.`
-      );
+      if (data.parent_warning) {
+        showNotification(
+          "error",
+          `${portalConfig.learnerSingular} saved, but parent link reported: ${data.parent_warning}`
+        );
+      } else {
+        const parentSuffix = data.linked_existing_parent
+          ? " Linked to existing sibling parent in Parents Directory."
+          : data.parent_guardian
+          ? " Parent/Guardian saved to Parents Directory."
+          : "";
+        showNotification(
+          "success",
+          (isEdit
+            ? `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) updated successfully.`
+            : `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) registered successfully.`) +
+            parentSuffix
+        );
+      }
       setModalMode(null);
       setEditingStudent(null);
       await fetchStudents();
@@ -1231,8 +1254,8 @@ export default function StudentsManagementPage() {
                 </div>
               </div>
 
-              {/* Row 2: Email & Phone */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Row 2: Email, Phone & Gender */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
                     Institutional Email <span className="text-red-500">*</span>
@@ -1258,6 +1281,21 @@ export default function StudentsManagementPage() {
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-1">
+                    Gender
+                  </label>
+                  <select
+                    value={formData.gender}
+                    onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                  >
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="other">Other / Prefer not to say</option>
+                  </select>
                 </div>
               </div>
 

@@ -66,6 +66,16 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     default_enabled: true,
   },
   {
+    portal_key: "registrar_portal",
+    category: "portal",
+    label: "Registrar Portal",
+    description:
+      "Admissions review, student directory, course/module registration approvals, academic calendars, transcripts, and graduation clearance.",
+    target_roles: ["registrar", "admissions_officer", "academic_affairs_officer"],
+    route_prefixes: ["/registrar"],
+    default_enabled: true,
+  },
+  {
     portal_key: "lecturer_portal",
     category: "portal",
     label: "Lecturer / Faculty Portal",
@@ -80,8 +90,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     category: "portal",
     label: "Teacher / Staff Portal",
     description:
-      "High school and vocational instructor workspace for class roll call, gradebooks, parent messages, and workshops.",
-    target_roles: ["teacher"],
+      "High school teachers and vocational instructors workspace for attendance, gradebooks, logbooks, parent messages, and workshops.",
+    target_roles: ["teacher", "instructor"],
     route_prefixes: ["/teacher"],
     default_enabled: true,
   },
@@ -135,14 +145,21 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "Examinations & Grading",
     description:
       "Exam scheduling, marks entry, moderation workflows, GPA/CGPA computation, results publishing, and transcripts.",
-    target_roles: ["system_admin", "lecturer", "student", "registrar"],
+    target_roles: ["system_admin", "lecturer", "teacher", "instructor", "student", "registrar"],
     route_prefixes: [
       "/admin/exams",
       "/lecturer/marks-entry",
       "/lecturer/assessments",
       "/lecturer/moderation",
+      "/lecturer/grades",
+      "/lecturer/assignments",
+      "/teacher/report-cards",
+      "/teacher/competencies",
+      "/teacher/gradebook",
       "/student/results",
       "/student/transcripts",
+      "/student/report-card",
+      "/student/competencies",
     ],
     default_enabled: true,
   },
@@ -182,8 +199,17 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "LMS / E-Learning & Workshops",
     description:
       "Digital classrooms, practical vocational workshops, apprenticeship tracking, and online learning materials.",
-    target_roles: ["system_admin", "teacher", "lecturer", "student"],
-    route_prefixes: ["/admin/workshops", "/teacher/workshops"],
+    target_roles: ["system_admin", "teacher", "instructor", "lecturer", "student"],
+    route_prefixes: [
+      "/admin/workshops",
+      "/teacher/workshops",
+      "/teacher/modules",
+      "/teacher/logbooks",
+      "/teacher/attachments",
+      "/teacher/inventory",
+      "/student/modules",
+      "/student/logbook",
+    ],
     default_enabled: true,
   },
 ];
@@ -224,6 +250,9 @@ export function normalizePathForMatching(pathname: string): string {
     return base.replace(/^\/api/, "");
   }
   if (base.startsWith("/api/bursar/") || base === "/api/bursar") {
+    return base.replace(/^\/api/, "");
+  }
+  if (base.startsWith("/api/registrar/") || base === "/api/registrar") {
     return base.replace(/^\/api/, "");
   }
   if (base.startsWith("/api/lecturer/") || base === "/api/lecturer") {

@@ -94,6 +94,77 @@ async function syncTeacherCourses(
   }
 }
 
+async function mirrorLiveStaffAssignments(
+  directAdmin: ReturnType<typeof createDirectAdminClient>,
+  params: {
+    schoolId: string;
+    profileId: string;
+    courseIds?: string[];
+    subjectIds?: string[];
+    moduleIds?: string[];
+  }
+) {
+  try {
+    const { data: liveStaff } = await (directAdmin as any)
+      .from("staff_profiles")
+      .select("id")
+      .eq("school_id", params.schoolId)
+      .eq("user_id", params.profileId)
+      .maybeSingle();
+    const liveStaffId = liveStaff?.id;
+    if (!liveStaffId) return;
+
+    if (Array.isArray(params.courseIds) && params.courseIds.length > 0) {
+      try {
+        await (directAdmin as any)
+          .from("courses")
+          .update({ lecturer_id: null })
+          .eq("school_id", params.schoolId)
+          .eq("lecturer_id", liveStaffId);
+        await (directAdmin as any)
+          .from("courses")
+          .update({ lecturer_id: liveStaffId })
+          .eq("school_id", params.schoolId)
+          .in("id", params.courseIds);
+      } catch {}
+    }
+
+    if (Array.isArray(params.subjectIds)) {
+      try {
+        await (directAdmin as any)
+          .from("subjects")
+          .update({ teacher_id: null })
+          .eq("school_id", params.schoolId)
+          .eq("teacher_id", liveStaffId);
+        if (params.subjectIds.length > 0) {
+          await (directAdmin as any)
+            .from("subjects")
+            .update({ teacher_id: liveStaffId })
+            .eq("school_id", params.schoolId)
+            .in("id", params.subjectIds);
+        }
+      } catch {}
+    }
+
+    if (Array.isArray(params.moduleIds)) {
+      try {
+        await (directAdmin as any)
+          .from("vocational_modules")
+          .update({ instructor_id: null })
+          .eq("school_id", params.schoolId)
+          .eq("instructor_id", liveStaffId);
+        if (params.moduleIds.length > 0) {
+          await (directAdmin as any)
+            .from("vocational_modules")
+            .update({ instructor_id: liveStaffId })
+            .eq("school_id", params.schoolId)
+            .in("id", params.moduleIds);
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 // GET: Fetch all Faculty & Teachers scoped strictly to caller's school_id
 export async function GET(req: NextRequest) {
   try {
@@ -656,6 +727,18 @@ export async function POST(req: NextRequest) {
       await syncTeacherCourses(supabase, profileId, courseIds, targetSchool.schoolId);
     }
 
+    await mirrorLiveStaffAssignments(directAdmin, {
+      schoolId: targetSchool.schoolId,
+      profileId,
+      courseIds,
+      subjectIds: Array.isArray(metadata.teaching_subject_ids)
+        ? metadata.teaching_subject_ids
+        : undefined,
+      moduleIds: Array.isArray(metadata.assigned_module_ids)
+        ? metadata.assigned_module_ids
+        : undefined,
+    });
+
     try {
       await (supabase as any).from("audit_events").insert({
         action: "FACULTY_CREATED",
@@ -937,6 +1020,18 @@ export async function PUT(req: NextRequest) {
     if (Array.isArray(body.course_ids)) {
       await syncTeacherCourses(supabase, profileId, body.course_ids, targetSchool.schoolId);
     }
+
+    await mirrorLiveStaffAssignments(directAdmin, {
+      schoolId: targetSchool.schoolId,
+      profileId,
+      courseIds: Array.isArray(body.course_ids) ? body.course_ids : undefined,
+      subjectIds: Array.isArray(metadata.teaching_subject_ids)
+        ? metadata.teaching_subject_ids
+        : undefined,
+      moduleIds: Array.isArray(metadata.assigned_module_ids)
+        ? metadata.assigned_module_ids
+        : undefined,
+    });
 
     try {
       await (supabase as any).from("audit_events").insert({

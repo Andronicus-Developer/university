@@ -407,6 +407,7 @@ export const SCHOOL_FORM_CONFIG: Record<PortalSchoolType, SchoolFormConfig> = {
       ],
       roleOptions: [
         { code: "bursar", name: "School Bursar" },
+        { code: "registrar", name: "Academic Registrar" },
         { code: "matron", name: "Matron / House Parent" },
         { code: "librarian", name: "Librarian" },
         { code: "school_admin", name: "School Admin / Secretary" },

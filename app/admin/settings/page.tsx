@@ -244,87 +244,12 @@ export default function SettingsPage() {
         }
       }
 
-      // 2. Fetch system_settings table rows
-      const { data: systemSettings } = await db.from("system_settings").select("*");
-
-      if (systemSettings && systemSettings.length > 0) {
-        // School Info
-        const infoRow = systemSettings.find((s: any) => s.setting_key === "institution_info");
-        if (infoRow?.setting_value) {
-          const v = infoRow.setting_value;
-          setSchoolForm((prev) => ({
-            ...prev,
-            name: v.name || prev.name,
-            shortName: v.short_name || prev.shortName,
-            abbreviation: v.abbreviation || prev.abbreviation,
-            motto: v.motto || prev.motto,
-            establishedYear: v.established_year || prev.establishedYear,
-            accreditationCode: v.accreditation_code || prev.accreditationCode,
-            affiliation: v.affiliation || prev.affiliation,
-            logoUrl: v.logo_url || prev.logoUrl,
-            sealUrl: v.seal_url || prev.sealUrl,
-            email: v.email || prev.email,
-            supportEmail: v.support_email || prev.supportEmail,
-            phone: v.phone || prev.phone,
-            altPhone: v.alt_phone || prev.altPhone,
-            website: v.website || prev.website,
-            address: v.address || prev.address,
-            city: v.city || prev.city,
-            region: v.region || prev.region,
-            postalCode: v.postal_code || prev.postalCode,
-            country: v.country || prev.country,
-            currency: v.currency || prev.currency,
-            currencySymbol: v.currency_symbol || prev.currencySymbol,
-            taxId: v.tax_id || prev.taxId,
-          }));
-        }
-
-        // Academic Policy
-        const academicRow = systemSettings.find((s: any) => s.setting_key === "academic_policy");
-        if (academicRow?.setting_value) {
-          const a = academicRow.setting_value;
-          setAcademicForm((prev) => ({
-            ...prev,
-            passMarkThreshold: a.pass_mark_threshold ?? prev.passMarkThreshold,
-            minRegistrationCredits: a.min_registration_credits ?? prev.minRegistrationCredits,
-            maxRegistrationCredits: a.max_registration_credits ?? prev.maxRegistrationCredits,
-            attendanceThresholdPct: a.attendance_warning_threshold_pct ?? prev.attendanceThresholdPct,
-            probationGpaThreshold: a.probation_gpa_threshold ?? prev.probationGpaThreshold,
-            firstClassGpaThreshold: a.first_class_gpa_threshold ?? prev.firstClassGpaThreshold,
-            secondClassUpperGpa: a.second_class_upper_gpa ?? prev.secondClassUpperGpa,
-            currentAcademicYear: a.current_academic_year ?? prev.currentAcademicYear,
-            activeSemester: a.active_semester ?? prev.activeSemester,
-            addDropWindowDays: a.add_drop_window_days ?? prev.addDropWindowDays,
-            gradeSubmissionDeadlineDays: a.grade_submission_deadline_days ?? prev.gradeSubmissionDeadlineDays,
-            lateRegistrationFine: a.late_registration_fine ?? prev.lateRegistrationFine,
-            enableSelfRegistration: a.enable_self_registration ?? prev.enableSelfRegistration,
-            requireAdvisorApproval: a.require_advisor_approval ?? prev.requireAdvisorApproval,
-            autoSenateBroadsheet: a.auto_senate_broadsheet ?? prev.autoSenateBroadsheet,
-            restrictTranscriptOnDebt: a.restrict_transcript_on_debt ?? prev.restrictTranscriptOnDebt,
-          }));
-        }
-
-        // Display Theme
-        const displayRow = systemSettings.find((s: any) => s.setting_key === "display_theme");
-        if (displayRow?.setting_value) {
-          const d = displayRow.setting_value;
-          setDisplayForm((prev) => ({
-            ...prev,
-            theme: d.theme || prev.theme,
-            accentColor: d.accent_color || prev.accentColor,
-            density: d.density || prev.density,
-            borderRadius: d.border_radius || prev.borderRadius,
-            darkMode: d.dark_mode ?? prev.darkMode,
-          }));
-        }
-      }
-
-      // 3. Overlay authoritative tenant record from live `public.schools`
+      // 2. Load authoritative tenant record from live `public.schools`
       try {
         const instRes = await fetch("/api/settings/institution", { cache: "no-store" });
         if (instRes.ok) {
           const instJson = await instRes.json();
-          const s = instJson?.institution;
+          const s = instJson?.institution || instJson;
           if (s) {
             setSchoolForm((prev) => ({
               ...prev,
@@ -342,6 +267,17 @@ export default function SettingsPage() {
                 ...prev,
                 ...s.academic_settings,
               }));
+              if (s.academic_settings.display_theme) {
+                const d = s.academic_settings.display_theme;
+                setDisplayForm((prev) => ({
+                  ...prev,
+                  theme: d.theme || prev.theme,
+                  accentColor: d.accent_color || prev.accentColor,
+                  density: d.density || prev.density,
+                  borderRadius: d.border_radius || prev.borderRadius,
+                  darkMode: d.dark_mode ?? prev.darkMode,
+                }));
+              }
             }
           }
         }
@@ -497,89 +433,7 @@ export default function SettingsPage() {
         });
       }
 
-      // 2. Save School Settings to system_settings table
-      await db.from("system_settings").upsert(
-        {
-          setting_key: "institution_info",
-          setting_value: {
-            name: schoolForm.name,
-            short_name: schoolForm.shortName,
-            abbreviation: schoolForm.abbreviation,
-            motto: schoolForm.motto,
-            established_year: Number(schoolForm.establishedYear),
-            accreditation_code: schoolForm.accreditationCode,
-            affiliation: schoolForm.affiliation,
-            logo_url: schoolForm.logoUrl,
-            seal_url: schoolForm.sealUrl,
-            email: schoolForm.email,
-            support_email: schoolForm.supportEmail,
-            phone: schoolForm.phone,
-            alt_phone: schoolForm.altPhone,
-            website: schoolForm.website,
-            address: schoolForm.address,
-            city: schoolForm.city,
-            region: schoolForm.region,
-            postal_code: schoolForm.postalCode,
-            country: schoolForm.country,
-            currency: schoolForm.currency,
-            currency_symbol: schoolForm.currencySymbol,
-            tax_id: schoolForm.taxId,
-          },
-          category: "general",
-          description: "Complete institution identity, logos, contact, and operational parameters",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "setting_key" }
-      );
-
-      // 3. Save Academic Policy Settings to system_settings table
-      await db.from("system_settings").upsert(
-        {
-          setting_key: "academic_policy",
-          setting_value: {
-            pass_mark_threshold: Number(academicForm.passMarkThreshold),
-            min_registration_credits: Number(academicForm.minRegistrationCredits),
-            max_registration_credits: Number(academicForm.maxRegistrationCredits),
-            attendance_warning_threshold_pct: Number(academicForm.attendanceThresholdPct),
-            probation_gpa_threshold: Number(academicForm.probationGpaThreshold),
-            first_class_gpa_threshold: Number(academicForm.firstClassGpaThreshold),
-            second_class_upper_gpa: Number(academicForm.secondClassUpperGpa),
-            current_academic_year: academicForm.currentAcademicYear,
-            active_semester: academicForm.activeSemester,
-            add_drop_window_days: Number(academicForm.addDropWindowDays),
-            grade_submission_deadline_days: Number(academicForm.gradeSubmissionDeadlineDays),
-            late_registration_fine: Number(academicForm.lateRegistrationFine),
-            enable_self_registration: academicForm.enableSelfRegistration,
-            require_advisor_approval: academicForm.requireAdvisorApproval,
-            auto_senate_broadsheet: academicForm.autoSenateBroadsheet,
-            restrict_transcript_on_debt: academicForm.restrictTranscriptOnDebt,
-          },
-          category: "academics",
-          description: "Comprehensive university academic regulations, grading thresholds, and registration policies",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "setting_key" }
-      );
-
-      // 4. Save Display & Theme Settings to system_settings table
-      await db.from("system_settings").upsert(
-        {
-          setting_key: "display_theme",
-          setting_value: {
-            theme: displayForm.theme,
-            accent_color: displayForm.accentColor,
-            density: displayForm.density,
-            border_radius: displayForm.borderRadius,
-            dark_mode: displayForm.darkMode,
-          },
-          category: "display",
-          description: "Administrative console themes, brand color styling, and interface preferences",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "setting_key" }
-      );
-
-      // 5. Persist tenant institution details & academic settings to live `public.schools`
+      // 2. Persist tenant institution details & academic settings to live `public.schools`
       const instSaveRes = await fetch("/api/settings/institution", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -592,7 +446,16 @@ export default function SettingsPage() {
           logo_url: schoolForm.logoUrl,
           motto: schoolForm.motto,
           website: schoolForm.website,
-          academic_settings: academicForm,
+          academic_settings: {
+            ...academicForm,
+            display_theme: {
+              theme: displayForm.theme,
+              accent_color: displayForm.accentColor,
+              density: displayForm.density,
+              border_radius: displayForm.borderRadius,
+              dark_mode: displayForm.darkMode,
+            },
+          },
         }),
       });
       if (!instSaveRes.ok) {

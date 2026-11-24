@@ -1,132 +1,96 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { supabaseFetchWithRetry } from "@/lib/supabase/fetch";
+import { createDirectAdminClient } from "@/lib/supabase/admin";
+import {
+  resolveAdminTenantRequest,
+  resolveTargetSchoolForMutation,
+} from "@/lib/admin/tenant-provisioning";
 
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(supabaseUrl, serviceRoleKey, {
-    global: {
-      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 4000),
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+function splitCandidateName(fullName: string) {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "Applicant", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: "-" };
+  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
 }
 
-// GET: Fetch all admission applications, cycles, programmes, and stats
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const supabase = getAdminClient();
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
 
-    // 1. Fetch applications
-    const { data: appsData, error: appsErr } = await supabase
-      .from("applications")
-      .select(`
-        id,
-        cycle_id,
-        applicant_id,
-        application_number,
-        status,
-        personal_info,
-        academic_history,
-        notes,
-        submitted_at,
-        created_at,
-        updated_at,
-        applicant:applicant_id(id, full_name, email, phone)
-      `)
+    const db = createDirectAdminClient() as any;
+    const schoolId = tenant.schoolId;
+
+    let appsQuery = db
+      .from("admissions_applications")
+      .select("*")
       .order("created_at", { ascending: false });
+    if (schoolId) appsQuery = appsQuery.eq("school_id", schoolId);
 
-    if (appsErr) {
-      console.error("Error fetching applications:", appsErr);
-      return NextResponse.json({ error: appsErr.message }, { status: 500 });
-    }
+    let progsQuery = db
+      .from("programmes")
+      .select("id, name, code, degree_level")
+      .order("name", { ascending: true });
+    if (schoolId) progsQuery = progsQuery.eq("school_id", schoolId);
 
-    // 2. Fetch application programmes preferences
-    const { data: appProgsData } = await supabase
-      .from("application_programmes")
-      .select(`
-        application_id,
-        preference_order,
-        programme:programme_id(id, name, code, degree_level)
-      `)
-      .order("preference_order", { ascending: true });
+    let deptsQuery = db
+      .from("departments")
+      .select("id, name, code")
+      .order("name", { ascending: true });
+    if (schoolId) deptsQuery = deptsQuery.eq("school_id", schoolId);
 
-    const progMap = new Map();
-    if (appProgsData) {
-      appProgsData.forEach((ap: any) => {
-        if (!progMap.has(ap.application_id)) {
-          progMap.set(ap.application_id, ap.programme);
-        }
+    const [appsRes, progsRes, deptsRes] = await Promise.all([
+      appsQuery,
+      progsQuery,
+      deptsQuery,
+    ]);
+
+    if (appsRes.error) {
+      return NextResponse.json({
+        applications: [],
+        programmes: progsRes.data || [],
+        stats: { totalApplications: 0, approved: 0, underReview: 0, enrolled: 0 },
       });
     }
 
-    // 3. Fetch admission cycles
-    const { data: cyclesData } = await supabase
-      .from("admission_cycles")
-      .select("id, name, code, is_active")
-      .order("created_at", { ascending: false });
+    const progMap = new Map<string, any>(
+      (progsRes.data || []).map((p: any) => [String(p.id), p])
+    );
+    const deptMap = new Map<string, any>(
+      (deptsRes.data || []).map((d: any) => [String(d.id), d])
+    );
 
-    // 4. Fetch available programmes for dropdown
-    const { data: programmesData } = await supabase
-      .from("programmes")
-      .select("id, name, code, degree_level")
-      .eq("is_active", true)
-      .order("name", { ascending: true });
-
-    const applications = (appsData || []).map((app: any) => {
-      const chosenProg = progMap.get(app.id);
-      const personalInfo = app.personal_info || {};
-      const candidateName =
-        personalInfo.full_name ||
-        app.applicant?.full_name ||
-        "Unnamed Applicant";
-      const candidateEmail =
-        personalInfo.email ||
-        app.applicant?.email ||
-        "applicant@university.edu.gh";
-      const candidatePhone =
-        personalInfo.phone ||
-        app.applicant?.phone ||
-        "+233 20 000 0000";
-
+    const applications = (appsRes.data || []).map((a: any) => {
+      const prog = a.programme_id ? progMap.get(String(a.programme_id)) : null;
+      const dept = a.department_id ? deptMap.get(String(a.department_id)) : null;
+      const unit = prog || dept;
       return {
-        id: app.id,
-        cycle_id: app.cycle_id,
-        applicant_id: app.applicant_id,
-        application_number: app.application_number,
-        status: app.status || "submitted",
-        candidate_name: candidateName,
-        candidate_email: candidateEmail,
-        candidate_phone: candidatePhone,
-        programme_id: chosenProg?.id || null,
-        programme_name: chosenProg?.name || "General Studies",
-        programme_code: chosenProg?.code || "GEN",
-        notes: app.notes || "",
-        submitted_at: app.submitted_at || app.created_at,
-        created_at: app.created_at,
+        id: a.id,
+        application_number: a.application_number,
+        status: a.status || "submitted",
+        candidate_name: `${a.first_name || ""} ${a.last_name || ""}`.trim(),
+        candidate_email: a.email || "",
+        candidate_phone: a.phone || "",
+        programme_id: a.programme_id || a.department_id || null,
+        programme_name: unit?.name || "General Studies",
+        programme_code: unit?.code || "GEN",
+        notes: a.notes || "",
+        submitted_at: a.created_at,
+        created_at: a.created_at,
       };
     });
 
-    const totalApplications = applications.length;
-    const approved = applications.filter((a) => a.status === "approved").length;
-    const underReview = applications.filter(
-      (a) => a.status === "under_review" || a.status === "submitted"
-    ).length;
-    const enrolled = applications.filter((a) => a.status === "converted_to_student").length;
-
     return NextResponse.json({
       applications,
-      cycles: cyclesData || [],
-      programmes: programmesData || [],
+      programmes: progsRes.data || [],
       stats: {
-        totalApplications,
-        approved,
-        underReview,
-        enrolled,
+        totalApplications: applications.length,
+        approved: applications.filter((a: any) => a.status === "approved").length,
+        underReview: applications.filter((a: any) =>
+          ["submitted", "under_review"].includes(a.status)
+        ).length,
+        enrolled: applications.filter((a: any) =>
+          ["enrolled", "converted_to_student"].includes(a.status)
+        ).length,
       },
     });
   } catch (err: any) {
@@ -135,16 +99,17 @@ export async function GET() {
   }
 }
 
-// POST: Create a new admission applicant & application record
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
+
+    const body = await req.json().catch(() => ({}));
     const {
       candidate_name,
       candidate_email,
       candidate_phone,
       programme_id,
-      cycle_id,
       application_number,
       status,
       notes,
@@ -152,316 +117,100 @@ export async function POST(req: NextRequest) {
 
     if (!candidate_name?.trim() || !candidate_email?.trim()) {
       return NextResponse.json(
-        { error: "Applicant name and email are required." },
+        { error: "Candidate name and email are required." },
         { status: 400 }
       );
     }
 
-    const supabase = getAdminClient();
+    const targetSchool = await resolveTargetSchoolForMutation(tenant, body.school_id);
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
+    const schoolId = targetSchool.schoolId;
 
-    // 1. Resolve or ensure an active admission cycle
-    let targetCycleId = cycle_id;
-    if (!targetCycleId) {
-      const { data: existingCycle } = await supabase
-        .from("admission_cycles")
+    const db = createDirectAdminClient() as any;
+    const { first_name, last_name } = splitCandidateName(candidate_name);
+
+    let resolvedProgrammeId: string | null = null;
+    let resolvedDepartmentId: string | null = null;
+    if (programme_id) {
+      const { data: progMatch } = await db
+        .from("programmes")
         .select("id")
-        .limit(1);
-
-      if (existingCycle && existingCycle.length > 0) {
-        targetCycleId = existingCycle[0].id;
+        .eq("id", programme_id)
+        .eq("school_id", schoolId)
+        .maybeSingle();
+      if (progMatch) {
+        resolvedProgrammeId = progMatch.id;
       } else {
-        // Resolve an academic year
-        const { data: years } = await supabase.from("academic_years").select("id").limit(1);
-        if (years && years[0]) {
-          const { data: newCycle } = await supabase
-            .from("admission_cycles")
-            .insert({
-              academic_year_id: years[0].id,
-              code: `ADM-${new Date().getFullYear()}`,
-              name: `Undergraduate & Postgraduate Admissions ${new Date().getFullYear()}`,
-              start_date: "2026-01-01",
-              end_date: "2026-12-31",
-              is_active: true,
-            })
-            .select()
-            .single();
-          targetCycleId = newCycle?.id;
-        }
+        const { data: deptMatch } = await db
+          .from("departments")
+          .select("id")
+          .eq("id", programme_id)
+          .eq("school_id", schoolId)
+          .maybeSingle();
+        if (deptMatch) resolvedDepartmentId = deptMatch.id;
       }
     }
 
-    if (!targetCycleId) {
-      return NextResponse.json(
-        { error: "No admission cycle found. Please configure an academic year first." },
-        { status: 400 }
-      );
-    }
-
-    // 2. Resolve or insert applicant profile (profiles.id references auth.users.id)
-    const normalizedEmail = candidate_email.trim().toLowerCase();
-    let applicantId: string | null = null;
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("email", normalizedEmail)
-      .maybeSingle();
-
-    if (existingProfile) {
-      applicantId = existingProfile.id;
-    } else {
-      const tempPassword = `Applicant@${Math.floor(100000 + Math.random() * 900000)}`;
-      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-        email: normalizedEmail,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: {
-          full_name: candidate_name.trim(),
-          role: "applicant",
-        },
-      });
-
-      if (authErr || !authData?.user) {
-        console.error("Applicant auth user creation error:", authErr);
-        return NextResponse.json(
-          { error: authErr?.message || "Failed to provision applicant user account." },
-          { status: 500 }
-        );
-      }
-
-      applicantId = authData.user.id;
-
-      // Upsert profile record (handles both trigger-created and manual profile rows)
-      const { error: profErr } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: applicantId,
-            email: normalizedEmail,
-            full_name: candidate_name.trim(),
-            phone: candidate_phone?.trim() || null,
-            account_status: "active",
-          },
-          { onConflict: "id" }
-        );
-
-      if (profErr) {
-        console.error("Profile creation error:", profErr);
-        return NextResponse.json({ error: profErr.message }, { status: 500 });
-      }
-    }
-
-    // 3. Generate application number if not provided
-    const appNum =
+    const appNumber =
       application_number?.trim() ||
-      `ADM-${Date.now().toString().slice(-6)}`;
+      `ADM-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // 4. Insert application
-    const appStatus = status || "submitted";
-    const { data: newApp, error: appErr } = await supabase
-      .from("applications")
+    const { data, error } = await db
+      .from("admissions_applications")
       .insert({
-        cycle_id: targetCycleId,
-        applicant_id: applicantId,
-        application_number: appNum,
-        status: appStatus,
-        personal_info: {
-          full_name: candidate_name.trim(),
-          email: candidate_email.trim().toLowerCase(),
-          phone: candidate_phone?.trim() || "",
-        },
-        notes: notes ? notes.trim() : null,
-        submitted_at: new Date().toISOString(),
+        school_id: schoolId,
+        application_number: appNumber,
+        first_name,
+        last_name,
+        email: candidate_email.trim().toLowerCase(),
+        phone: candidate_phone ? String(candidate_phone).trim() : null,
+        programme_id: resolvedProgrammeId,
+        department_id: resolvedDepartmentId,
+        status: status || "submitted",
+        notes: notes ? String(notes).trim() : null,
       })
-      .select()
+      .select("*")
       .single();
 
-    if (appErr) {
-      console.error("Application creation error:", appErr);
-      return NextResponse.json({ error: appErr.message }, { status: 500 });
-    }
-
-    // 5. Link chosen programme preference
-    if (programme_id) {
-      await supabase.from("application_programmes").insert({
-        application_id: newApp.id,
-        programme_id: programme_id,
-        preference_order: 1,
-      });
-    }
-
-    // 6. If status is converted_to_student, also provision student record
-    if (appStatus === "converted_to_student" && programme_id && applicantId) {
-      const stdNum = `STU-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const { data: terms } = await supabase.from("terms").select("id").limit(1);
-      const termId = terms?.[0]?.id;
-
-      if (termId) {
-        await supabase.from("students").insert({
-          profile_id: applicantId,
-          student_number: stdNum,
-          application_id: newApp.id,
-          programme_id: programme_id,
-          cohort_year: new Date().getFullYear(),
-          entry_term_id: termId,
-          status: "active",
-          current_level: 100,
-        });
-      }
-    }
-
-    // 7. Audit log
-    try {
-      await supabase.from("audit_events").insert({
-        action: "ADMISSION_APPLICATION_CREATED",
-        entity_type: "application",
-        entity_id: newApp.id,
-        outcome: "success",
-        metadata: {
-          application_number: newApp.application_number,
-          candidate: candidate_name,
-        },
-      });
-    } catch {
-      // Non-blocking
-    }
-
-    return NextResponse.json({ success: true, application: newApp });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ application: data, success: true });
   } catch (err: any) {
     console.error("POST /api/admin/admissions error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// PUT: Update an application details or admission status
 export async function PUT(req: NextRequest) {
   try {
-    const body = await req.json();
-    const {
-      id,
-      candidate_name,
-      candidate_email,
-      candidate_phone,
-      programme_id,
-      status,
-      notes,
-    } = body;
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
 
+    const body = await req.json().catch(() => ({}));
+    const { id, candidate_name, candidate_email, candidate_phone, status, notes } = body;
     if (!id) {
       return NextResponse.json({ error: "Application ID is required." }, { status: 400 });
     }
 
-    const supabase = getAdminClient();
+    const db = createDirectAdminClient() as any;
+    const { first_name, last_name } = splitCandidateName(candidate_name);
 
-    // 1. Fetch current application
-    const { data: currentApp, error: fetchErr } = await supabase
-      .from("applications")
-      .select("id, applicant_id, status, personal_info")
-      .eq("id", id)
-      .single();
-
-    if (fetchErr || !currentApp) {
-      return NextResponse.json({ error: "Application not found." }, { status: 404 });
-    }
-
-    const personalInfo = {
-      ...(currentApp.personal_info || {}),
-      ...(candidate_name ? { full_name: candidate_name.trim() } : {}),
-      ...(candidate_email ? { email: candidate_email.trim().toLowerCase() } : {}),
-      ...(candidate_phone ? { phone: candidate_phone.trim() } : {}),
-    };
-
-    const updatePayload: any = {
-      personal_info: personalInfo,
-      updated_at: new Date().toISOString(),
-    };
-    if (status !== undefined) updatePayload.status = status;
-    if (notes !== undefined) updatePayload.notes = notes.trim();
-
-    const { error: appUpdateErr } = await supabase
-      .from("applications")
-      .update(updatePayload)
+    let q = db
+      .from("admissions_applications")
+      .update({
+        first_name,
+        last_name,
+        email: candidate_email ? String(candidate_email).trim().toLowerCase() : null,
+        phone: candidate_phone ? String(candidate_phone).trim() : null,
+        status: status || "submitted",
+        notes: notes ? String(notes).trim() : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id);
 
-    if (appUpdateErr) {
-      console.error("Update application error:", appUpdateErr);
-      return NextResponse.json({ error: appUpdateErr.message }, { status: 500 });
-    }
+    if (tenant.schoolId) q = q.eq("school_id", tenant.schoolId);
 
-    // 2. Update profile name/email/phone if applicant_id is present
-    if (currentApp.applicant_id && (candidate_name || candidate_email || candidate_phone)) {
-      const profUpdate: any = {};
-      if (candidate_name) profUpdate.full_name = candidate_name.trim();
-      if (candidate_email) profUpdate.email = candidate_email.trim().toLowerCase();
-      if (candidate_phone) profUpdate.phone = candidate_phone.trim();
-
-      await supabase.from("profiles").update(profUpdate).eq("id", currentApp.applicant_id);
-    }
-
-    // 3. Update programme preference
-    if (programme_id) {
-      const { data: existingAppProg } = await supabase
-        .from("application_programmes")
-        .select("id")
-        .eq("application_id", id)
-        .eq("preference_order", 1)
-        .maybeSingle();
-
-      if (existingAppProg) {
-        await supabase
-          .from("application_programmes")
-          .update({ programme_id })
-          .eq("id", existingAppProg.id);
-      } else {
-        await supabase.from("application_programmes").insert({
-          application_id: id,
-          programme_id,
-          preference_order: 1,
-        });
-      }
-    }
-
-    // 4. If status converted to student, check if already in students table, else enroll
-    if (status === "converted_to_student" && currentApp.applicant_id) {
-      const { data: existingStudent } = await supabase
-        .from("students")
-        .select("id")
-        .eq("profile_id", currentApp.applicant_id)
-        .maybeSingle();
-
-      if (!existingStudent) {
-        const stdNum = `STU-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const { data: terms } = await supabase.from("terms").select("id").limit(1);
-        const termId = terms?.[0]?.id;
-        const progId = programme_id;
-
-        if (termId && progId) {
-          await supabase.from("students").insert({
-            profile_id: currentApp.applicant_id,
-            student_number: stdNum,
-            application_id: id,
-            programme_id: progId,
-            cohort_year: new Date().getFullYear(),
-            entry_term_id: termId,
-            status: "active",
-            current_level: 100,
-          });
-        }
-      }
-    }
-
-    // 5. Audit log
-    try {
-      await supabase.from("audit_events").insert({
-        action: "ADMISSION_APPLICATION_UPDATED",
-        entity_type: "application",
-        entity_id: id,
-        outcome: "success",
-        metadata: { new_status: status },
-      });
-    } catch {
-      // Non-blocking
-    }
-
+    const { error } = await q;
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("PUT /api/admin/admissions error:", err);
@@ -469,47 +218,25 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE: Delete an admission application
 export async function DELETE(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(req);
+    if (errorResponse) return errorResponse;
 
+    const id = req.nextUrl.searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "Application ID is required." }, { status: 400 });
     }
 
-    const supabase = getAdminClient();
+    const db = createDirectAdminClient() as any;
+    let q = db.from("admissions_applications").delete().eq("id", id);
+    if (tenant.schoolId) q = q.eq("school_id", tenant.schoolId);
 
-    // 1. Delete associated choices
-    await supabase.from("application_programmes").delete().eq("application_id", id);
-    // 2. Delete offers if any
-    await supabase.from("offers").delete().eq("application_id", id);
-    // 3. Delete application
-    const { error: delErr } = await supabase.from("applications").delete().eq("id", id);
-
-    if (delErr) {
-      console.error("Delete application error:", delErr);
-      return NextResponse.json({ error: delErr.message }, { status: 500 });
-    }
-
-    // 4. Audit log
-    try {
-      await supabase.from("audit_events").insert({
-        action: "ADMISSION_APPLICATION_DELETED",
-        entity_type: "application",
-        entity_id: id,
-        outcome: "success",
-        metadata: { application_id: id },
-      });
-    } catch {
-      // Non-blocking
-    }
-
-    return NextResponse.json({ success: true, message: "Application removed from database." });
+    const { error } = await q;
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("DELETE /api/admin/admissions error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
-

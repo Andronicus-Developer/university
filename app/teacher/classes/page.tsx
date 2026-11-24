@@ -1,72 +1,222 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
-import { BookOpen, Users, Clock, Calendar, CheckCircle2, ChevronRight, School, Wrench } from "lucide-react";
+import { BookOpen, GraduationCap, Mail, Phone, Users } from "lucide-react";
+import { useStaffPortalSection } from "@/lib/staff/useStaffPortalData";
+import {
+  StaffEmptyState,
+  StaffPageError,
+  StaffPageLoading,
+} from "@/components/staff/StaffPortalPrimitives";
+
+interface HsClassesPayload {
+  isClassTeacher: boolean;
+  classes: Array<{ id: string; name: string; code: string; studentCount: number; isAssignedClass: boolean }>;
+  subjects: Array<{
+    id: string;
+    code: string;
+    name: string;
+    programme_name: string;
+    weekly_periods: number;
+    pass_mark: number;
+    description: string | null;
+  }>;
+  formClass: {
+    id: string;
+    name: string;
+    code: string;
+    students: Array<{
+      id: string;
+      full_name: string;
+      student_number: string;
+      email: string;
+      phone: string;
+      boarding_status: string;
+      stream_track: string;
+      guardian_name: string;
+      guardian_phone: string;
+      guardian_email: string;
+    }>;
+  } | null;
+}
 
 export default function TeacherClassesPage() {
-  const [activeTab, setActiveTab] = useState<"timetable" | "roster">("timetable");
+  const { data, loading, error, reload } =
+    useStaffPortalSection<HsClassesPayload>("hs_classes");
+  const [tab, setTab] = useState<"subjects" | "form_class">("subjects");
 
-  const timetable = [
-    { period: "Period 1", time: "08:00 AM - 09:00 AM", class: "Form 3 General Arts B", subject: "Core Mathematics", room: "Room 102", students: 38 },
-    { period: "Period 2", time: "09:15 AM - 10:15 AM", class: "Form 1 Elective ICT", subject: "Computer Studies", room: "ICT Lab 2", students: 45 },
-    { period: "Period 3", time: "10:45 AM - 11:45 AM", class: "Form 2 Science A", subject: "Elective Physics", room: "Science Lab B", students: 42, active: true },
-    { period: "Period 4", time: "01:00 PM - 02:00 PM", class: "Form 2 Science B", subject: "Integrated Science", room: "Room 204", students: 40 },
-  ];
+  if (loading) return <StaffPageLoading label="Loading assigned classes & subjects..." />;
+  if (error) return <StaffPageError error={error} onRetry={reload} />;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-              Teaching Allocations
-            </span>
-            <span className="text-xs text-slate-400">Term 2 • 2026/2027</span>
-          </div>
-          <h1 className="text-xl font-black text-slate-900">Classes, Timetable & Workshop Batches</h1>
-          <p className="text-xs text-slate-500">
-            View allocated subject periods, active laboratory batches, and cohort rosters.
-          </p>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div>
+        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          <BookOpen className="h-3.5 w-3.5" />
+          <span>Form &amp; Subject Allocations</span>
         </div>
-        <Link
-          href="/teacher/attendance"
-          className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-xs flex items-center gap-2"
-        >
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Take Class Attendance</span>
-        </Link>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-1">
+          My Classes &amp; Subjects
+        </h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          View your assigned classes/forms, teaching subjects, and homeroom Form Class student roster.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {timetable.map((t, idx) => (
-          <div
-            key={idx}
-            className={`p-5 rounded-2xl border transition-all ${
-              t.active
-                ? "bg-emerald-50/70 border-emerald-300 shadow-sm"
-                : "bg-white border-slate-200/80 shadow-xs"
+      {data?.formClass && (
+        <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1">
+          <button
+            type="button"
+            onClick={() => setTab("subjects")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+              tab === "subjects" ? "bg-emerald-600 text-white" : "text-slate-600 dark:text-slate-300"
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                t.active ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
-              }`}>
-                {t.period}
-              </span>
-              <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
-                <Clock className="h-3 w-3" /> {t.time}
-              </span>
+            Assigned Classes &amp; Subjects
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("form_class")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+              tab === "form_class" ? "bg-emerald-600 text-white" : "text-slate-600 dark:text-slate-300"
+            }`}
+          >
+            My Form Class ({data.formClass.name} · {data.formClass.students.length})
+          </button>
+        </div>
+      )}
+
+      {tab === "form_class" && data?.formClass ? (
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {data.formClass.name} ({data.formClass.code}) — Homeroom Roster
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {data.isClassTeacher ? "Designated Class Teacher View" : "Assigned Class Roster"}
+              </p>
             </div>
-            <h3 className="text-sm font-black text-slate-900">{t.class}</h3>
-            <p className="text-xs font-semibold text-emerald-800 mt-0.5">{t.subject}</p>
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span>{t.room}</span>
-              <span className="font-bold text-slate-700">{t.students} Students</span>
-            </div>
+            <span className="px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+              {data.formClass.students.length} Students
+            </span>
           </div>
-        ))}
-      </div>
+
+          {data.formClass.students.length === 0 ? (
+            <StaffEmptyState
+              icon={Users}
+              title="No Students Enrolled in Form Class"
+              description="Students placed into this Class/Form will appear here."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                    <th className="py-2 pr-4 font-semibold">Admission #</th>
+                    <th className="py-2 pr-4 font-semibold">Student Name</th>
+                    <th className="py-2 pr-4 font-semibold">Stream / Boarding</th>
+                    <th className="py-2 pr-4 font-semibold">Parent / Guardian</th>
+                    <th className="py-2 font-semibold">Contact</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.formClass.students.map((st) => (
+                    <tr key={st.id}>
+                      <td className="py-2.5 pr-4 font-mono">{st.student_number}</td>
+                      <td className="py-2.5 pr-4 font-semibold text-slate-900 dark:text-white">
+                        {st.full_name}
+                      </td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
+                        {[st.stream_track, st.boarding_status].filter(Boolean).join(" · ")}
+                      </td>
+                      <td className="py-2.5 pr-4 font-medium">{st.guardian_name || "—"}</td>
+                      <td className="py-2.5">
+                        <div className="flex flex-col text-[11px] text-slate-500">
+                          {st.guardian_phone && (
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="h-3 w-3" /> {st.guardian_phone}
+                            </span>
+                          )}
+                          {st.guardian_email && (
+                            <span className="inline-flex items-center gap-1">
+                              <Mail className="h-3 w-3" /> {st.guardian_email}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Assigned Classes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {(data?.classes || []).map((cls) => (
+              <div
+                key={cls.id}
+                className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
+                    {cls.code}
+                  </span>
+                  {cls.isAssignedClass && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                      Form Class
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">{cls.name}</h3>
+                <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
+                  {cls.studentCount} enrolled student(s)
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Assigned Subjects */}
+          {(data?.subjects || []).length === 0 ? (
+            <StaffEmptyState
+              icon={BookOpen}
+              title="No Subjects Assigned Yet"
+              description="Subjects linked to your teacher profile in Admin -> Teachers will appear here."
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {data!.subjects.map((subj) => (
+                <div
+                  key={subj.id}
+                  className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      {subj.code}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {subj.weekly_periods} periods/wk · Pass {subj.pass_mark}%
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">{subj.name}</h3>
+                  {subj.programme_name && (
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                      Class: {subj.programme_name}
+                    </p>
+                  )}
+                  {subj.description && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{subj.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

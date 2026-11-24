@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDirectAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, createDirectAdminClient } from "@/lib/supabase/admin";
 import {
-  provisionLiveTenantUser,
   resolveAdminTenantRequest,
   resolveTargetSchoolForMutation,
 } from "@/lib/admin/tenant-provisioning";
+import {
+  backfillSchoolStudentsAndParents,
+  upsertParentGuardianForStudent,
+} from "@/lib/admin/parent-guardian-sync";
 
 const ALLOWED_RESOURCES = new Set<string>([
   "academic_years",
@@ -412,6 +415,38 @@ export async function GET(
       );
     }
 
+    let records = Array.isArray(data) ? data : [];
+
+    // Enrich parent_guardians with all sibling links from parent_guardian_students join table
+    if (resource === "parent_guardians" && records.length > 0) {
+      const linksByParent = new Map<string, Set<string>>();
+      try {
+        const { data: joinRows, error: joinErr } = await (directAdmin as any)
+          .from("parent_guardian_students")
+          .select("parent_guardian_id, student_id")
+          .eq("school_id", schoolId);
+        if (!joinErr && Array.isArray(joinRows)) {
+          for (const jr of joinRows) {
+            if (!jr?.parent_guardian_id || !jr?.student_id) continue;
+            const key = String(jr.parent_guardian_id);
+            if (!linksByParent.has(key)) linksByParent.set(key, new Set());
+            linksByParent.get(key)!.add(String(jr.student_id));
+          }
+        }
+      } catch {
+        // Join table optional prior to migration 20261124000007
+      }
+
+      records = records.map((pg: any) => {
+        const linked = new Set<string>(linksByParent.get(String(pg.id)) || []);
+        if (pg.student_id) linked.add(String(pg.student_id));
+        return {
+          ...pg,
+          linked_student_ids: Array.from(linked),
+        };
+      });
+    }
+
     const includeLookups =
       req.nextUrl.searchParams.get("include") === "lookups";
     const lookups = includeLookups
@@ -422,7 +457,7 @@ export async function GET(
       {
         resource,
         school_id: schoolId,
-        records: Array.isArray(data) ? data : [],
+        records,
         ...(lookups ? { lookups } : {}),
       },
       { headers: { "Cache-Control": "no-store" } }
@@ -461,6 +496,18 @@ export async function POST(
 
     const directAdmin = createDirectAdminClient();
 
+    // Support manual one-click backfill on Parents page
+    if (resource === "parent_guardians" && body.action === "sync_from_students") {
+      const synced = await backfillSchoolStudentsAndParents({
+        directAdmin,
+        virtualAdmin: createAdminClient(),
+        schoolId: targetSchool.schoolId,
+        schoolName: targetSchool.schoolName,
+        schoolCode: targetSchool.schoolCode,
+      });
+      return NextResponse.json({ synced });
+    }
+
     // Extract special action-only fields before DB insert
     const invoiceIdToSettle = body.invoice_id ? String(body.invoice_id).trim() : null;
     const createAccount = Boolean(body.create_account);
@@ -468,29 +515,78 @@ export async function POST(
 
     const cleaned = sanitizePayload(
       body,
-      new Set(["invoice_id", "create_account", "password"])
+      new Set(["invoice_id", "create_account", "password", "action"])
     );
     const insertPayload = enrichResourceRecord(resource, cleaned);
     insertPayload.school_id = targetSchool.schoolId;
 
-    // Optional real auth/profile provisioning for Parents / Guardians
-    if (
-      resource === "parent_guardians" &&
-      createAccount &&
-      insertPayload.email &&
-      parentPassword.length >= 6
-    ) {
-      const provisioned = await provisionLiveTenantUser({
-        email: String(insertPayload.email).toLowerCase(),
-        password: parentPassword,
-        fullName: String(insertPayload.full_name || "Parent / Guardian"),
-        phone: insertPayload.phone || null,
-        roleCode: "parent",
+    // Route manual parent creation through sibling-aware upsert helper
+    if (resource === "parent_guardians") {
+      if (!String(insertPayload.full_name || "").trim()) {
+        return NextResponse.json(
+          { error: "Parent / Guardian full name is required." },
+          { status: 400 }
+        );
+      }
+      if (parentPassword && parentPassword.length < 6) {
+        return NextResponse.json(
+          { error: "Initial portal password must be at least 6 characters long." },
+          { status: 400 }
+        );
+      }
+      if (createAccount && !String(insertPayload.email || "").trim()) {
+        return NextResponse.json(
+          { error: "An email address is required to create a Parent Portal login." },
+          { status: 400 }
+        );
+      }
+
+      let liveStudentExists = false;
+      if (insertPayload.student_id) {
+        const { data: matchedStudent } = await (directAdmin as any)
+          .from("students")
+          .select("id")
+          .eq("id", insertPayload.student_id)
+          .eq("school_id", targetSchool.schoolId)
+          .maybeSingle();
+        liveStudentExists = Boolean(matchedStudent?.id);
+      }
+
+      const pgRes = await upsertParentGuardianForStudent({
+        directAdmin,
+        virtualAdmin: createAdminClient(),
         schoolId: targetSchool.schoolId,
         schoolName: targetSchool.schoolName,
         schoolCode: targetSchool.schoolCode,
+        studentId: insertPayload.student_id || null,
+        liveStudentExists,
+        fullName: String(insertPayload.full_name || ""),
+        relationship: insertPayload.relationship || "Parent",
+        phone: insertPayload.phone || "",
+        email: insertPayload.email || "",
+        occupation: insertPayload.occupation || null,
+        address: insertPayload.address || null,
+        isPrimaryContact: insertPayload.is_primary_contact ?? true,
+        status: insertPayload.status || "active",
+        createPortalAccount: Boolean(createAccount && insertPayload.email),
+        parentPassword,
       });
-      insertPayload.user_id = provisioned.userId;
+
+      if (!pgRes.record) {
+        return NextResponse.json(
+          { error: pgRes.warning || "Failed to create Parent / Guardian record." },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          record: pgRes.record,
+          linked_existing_parent: pgRes.linkedExistingParent,
+          warning: pgRes.warning,
+        },
+        { status: 201 }
+      );
     }
 
     let { data, error } = await (directAdmin as any)
@@ -674,6 +770,11 @@ export async function PUT(
       delete mergedForCompute.updated_at;
     }
 
+    if (resource === "parent_guardians") {
+      mergedForCompute.phone = String(mergedForCompute.phone || "").trim();
+      delete mergedForCompute.linked_student_ids;
+    }
+
     let { data: updated, error: updateErr } = await (directAdmin as any)
       .from(resource)
       .update(mergedForCompute)
@@ -707,6 +808,23 @@ export async function PUT(
         { error: updateErr.message || `Failed to update ${resource}.` },
         { status: 400 }
       );
+    }
+
+    if (resource === "parent_guardians" && updated?.id && updated?.student_id) {
+      try {
+        await (directAdmin as any)
+          .from("parent_guardian_students")
+          .upsert(
+            {
+              school_id: existing.school_id,
+              parent_guardian_id: updated.id,
+              student_id: updated.student_id,
+              relationship: updated.relationship || "Parent",
+              is_primary_contact: Boolean(updated.is_primary_contact ?? true),
+            },
+            { onConflict: "school_id,parent_guardian_id,student_id" }
+          );
+      } catch {}
     }
 
     return NextResponse.json({ record: updated });

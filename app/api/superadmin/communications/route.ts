@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Resend } from "resend";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireSuperAdminApi } from "@/lib/superadmin/api-guard";
 
 export interface CommunicationRecord {
   id: string;
@@ -503,6 +504,8 @@ export async function persistCommunicationRecord(newRecord: CommunicationRecord)
 
 export async function GET(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const includeConfig = searchParams.get("config") === "true";
 
@@ -539,6 +542,8 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     // Handle marking inbound replies as read
@@ -634,6 +639,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
     const isInbound = body.direction === "inbound";
 
@@ -844,6 +851,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

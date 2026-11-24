@@ -12,6 +12,11 @@ import {
   scopeQueryBySchool,
   syncVirtualProfileAndRole,
 } from "@/lib/admin/tenant-provisioning";
+import {
+  normalizeStudentGender,
+  upsertLiveStudentRecord,
+  upsertParentGuardianForStudent,
+} from "@/lib/admin/parent-guardian-sync";
 
 function splitFullName(fullName: string): { first_name: string; last_name: string } {
   const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -183,6 +188,7 @@ export async function GET(req: NextRequest) {
         full_name: fullName,
         email: s.email || liveProf?.email || "",
         phone: s.phone || liveProf?.phone || "",
+        gender: s.gender || meta?.gender || "other",
         account_status: liveProf?.account_status || "active",
         programme_id: s.programme_id || null,
         programme_name: prog?.name || dept?.name || "",
@@ -226,6 +232,7 @@ export async function GET(req: NextRequest) {
         full_name: profile?.full_name || "",
         email: profile?.email || "",
         phone: profile?.phone || "",
+        gender: meta?.gender || "other",
         account_status: profile?.account_status || "active",
         programme_id: s.programme_id,
         programme_name: programme?.name || progLookup?.name || deptLookup?.name || "",
@@ -338,13 +345,25 @@ export async function POST(req: NextRequest) {
     const gpa = Math.min(4, Math.max(0, Number(body.gpa ?? 0) || 0));
     const cgpa = Math.min(4, Math.max(0, Number(body.cgpa ?? 0) || 0));
     const rawPassword = body.password ? String(body.password).trim() : "";
-    const metadata: Record<string, any> =
+    const rawMeta: Record<string, any> =
       body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-        ? { ...body.metadata, ...(intakeId ? { intake_id: intakeId } : {}) }
-        : intakeId
-        ? { intake_id: intakeId }
+        ? body.metadata
         : {};
-    const createParentRecord = Boolean(body.create_parent_record);
+    const gender = normalizeStudentGender(body.gender || rawMeta.gender);
+    const metadata: Record<string, any> = {
+      ...rawMeta,
+      gender,
+      ...(intakeId ? { intake_id: intakeId } : {}),
+    };
+    const guardianName = String(
+      metadata.guardian_name ||
+        metadata.parent_name ||
+        body.guardian_name ||
+        body.parent_name ||
+        ""
+    ).trim();
+    const createParentRecord =
+      guardianName.length > 0 && body.create_parent_record !== false;
     const createParentPortalAccount = Boolean(body.create_parent_portal_account);
     const parentPassword = body.parent_password ? String(body.parent_password).trim() : "";
 
@@ -423,7 +442,12 @@ export async function POST(req: NextRequest) {
       schoolCode: targetSchool.schoolCode,
       accountStatus,
       existingUserId: existingVProfile?.id || null,
-      extraMetadata: { student_profile: metadata },
+      extraMetadata: {
+        student_profile: {
+          ...metadata,
+          student_number: studentNumber,
+        },
+      },
     });
     const profileId = provisioned.userId;
     if (provisioned.createdNewAuthUser) {
@@ -494,101 +518,74 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: studentErr.message }, { status: 400 });
     }
 
-    // Mirror cleanly into live Postgres `public.students` with resilient migration fallback
+    // Mirror cleanly into live Postgres `public.students` and sync Parent/Guardian record
     const savedStudentId = createdStudent.id || newStudentId;
-    try {
-      const directAdmin = createDirectAdminClient();
-      const baseLivePayload = {
-        id: savedStudentId,
-        school_id: targetSchool.schoolId,
-        student_number: studentNumber,
-        first_name,
-        last_name,
-        status,
-        enrolled_at: admissionDate,
-      };
-      const midLivePayload = {
-        ...baseLivePayload,
-        profile_id: profileId,
-        email,
-        phone,
-        programme_id: programmeId,
-        department_id: departmentId,
-        intake_id: intakeId,
-        current_level: currentLevel,
-      };
-      const fullLivePayload = {
-        ...midLivePayload,
-        entry_term_id: resolvedTermId,
-        cohort_year: cohortYear,
-        metadata,
-      };
+    const directAdmin = createDirectAdminClient();
 
-      const { error: fullErr } = await (directAdmin as any)
-        .from("students")
-        .upsert(fullLivePayload, { onConflict: "id" });
+    const liveStuRes = await upsertLiveStudentRecord(directAdmin, {
+      id: savedStudentId,
+      school_id: targetSchool.schoolId,
+      profile_id: profileId,
+      student_number: studentNumber,
+      first_name,
+      last_name,
+      email,
+      phone,
+      gender,
+      programme_id: programmeId,
+      department_id: departmentId,
+      intake_id: intakeId,
+      current_level: currentLevel,
+      entry_term_id: resolvedTermId,
+      cohort_year: cohortYear,
+      status,
+      enrolled_at: admissionDate,
+      metadata,
+    });
 
-      if (
-        fullErr &&
-        (String(fullErr.code || "") === "42703" ||
-          String(fullErr.code || "") === "PGRST204" ||
-          String(fullErr.message || "").includes("column"))
-      ) {
-        const { error: midErr } = await (directAdmin as any)
-          .from("students")
-          .upsert(midLivePayload, { onConflict: "id" });
-        if (
-          midErr &&
-          (String(midErr.code || "") === "42703" ||
-            String(midErr.code || "") === "PGRST204" ||
-            String(midErr.message || "").includes("column"))
-        ) {
-          await (directAdmin as any)
-            .from("students")
-            .upsert(baseLivePayload, { onConflict: "id" });
-        }
-      }
-
-      // Optional High School Parent/Guardian Record + Optional Parent Portal Login
-      if (createParentRecord && metadata.guardian_name) {
-        try {
-          let parentUserId: string | null = null;
-          const guardianEmail = metadata.guardian_email
-            ? String(metadata.guardian_email).trim().toLowerCase()
-            : "";
-
-          if (createParentPortalAccount && guardianEmail) {
-            const pProv = await provisionLiveTenantUser({
-              email: guardianEmail,
-              password: parentPassword.length >= 6 ? parentPassword : undefined,
-              fullName: String(metadata.guardian_name).trim(),
-              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
-              roleCode: "parent",
-              schoolId: targetSchool.schoolId,
-              schoolName: targetSchool.schoolName,
-              schoolCode: targetSchool.schoolCode,
-            });
-            parentUserId = pProv.userId;
-          }
-
-          await (directAdmin as any).from("parent_guardians").insert({
-            school_id: targetSchool.schoolId,
-            student_id: savedStudentId,
-            user_id: parentUserId,
-            full_name: String(metadata.guardian_name).trim(),
-            relationship: String(metadata.guardian_relationship || "Parent").trim(),
-            phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
-            email: guardianEmail || null,
-            is_primary_contact: true,
-            status: "active",
-          });
-        } catch (parentErr) {
-          console.warn("Could not link High School parent_guardians record:", parentErr);
-        }
-      }
-    } catch (liveStuErr) {
-      console.warn("Could not mirror student insert to live public.students:", liveStuErr);
+    if (!liveStuRes.ok) {
+      console.warn("Could not mirror student insert to live public.students:", liveStuRes.error);
     }
+
+    let parentResult: {
+      record: any | null;
+      linkedExistingParent: boolean;
+      provisionedPortalAccount: boolean;
+      warning: string | null;
+    } | null = null;
+
+    if (createParentRecord && guardianName) {
+      parentResult = await upsertParentGuardianForStudent({
+        directAdmin,
+        virtualAdmin: supabase,
+        schoolId: targetSchool.schoolId,
+        schoolName: targetSchool.schoolName,
+        schoolCode: targetSchool.schoolCode,
+        studentId: savedStudentId,
+        liveStudentExists: liveStuRes.ok,
+        fullName: guardianName,
+        relationship:
+          metadata.guardian_relationship || metadata.parent_relationship || "Parent",
+        phone: metadata.guardian_phone || metadata.parent_phone || "",
+        email: metadata.guardian_email || metadata.parent_email || "",
+        isPrimaryContact: true,
+        status: "active",
+        createPortalAccount: createParentPortalAccount,
+        parentPassword,
+      });
+
+      if (parentResult.warning) {
+        console.warn("Parent/guardian sync warning on student create:", parentResult.warning);
+      }
+    }
+
+    const parentWarning =
+      [
+        !liveStuRes.ok ? `Live student sync issue: ${liveStuRes.error}` : null,
+        parentResult?.warning || null,
+      ]
+        .filter(Boolean)
+        .join("; ") || null;
 
     try {
       await (supabase as any).from("student_status_history").insert({
@@ -619,6 +616,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       student: createdStudent,
+      parent_guardian: parentResult?.record || null,
+      linked_existing_parent: Boolean(parentResult?.linkedExistingParent),
+      parent_warning: parentWarning,
     });
   } catch (err: any) {
     if (createdNewAuthUserId) {
@@ -668,13 +668,25 @@ export async function PUT(req: NextRequest) {
     const gpa = Math.min(4, Math.max(0, Number(body.gpa ?? 0) || 0));
     const cgpa = Math.min(4, Math.max(0, Number(body.cgpa ?? 0) || 0));
     const rawPassword = body.password ? String(body.password).trim() : "";
-    const metadata: Record<string, any> =
+    const rawMeta: Record<string, any> =
       body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-        ? { ...body.metadata, ...(intakeId ? { intake_id: intakeId } : {}) }
-        : intakeId
-        ? { intake_id: intakeId }
+        ? body.metadata
         : {};
-    const createParentRecord = Boolean(body.create_parent_record);
+    const gender = normalizeStudentGender(body.gender || rawMeta.gender);
+    const metadata: Record<string, any> = {
+      ...rawMeta,
+      gender,
+      ...(intakeId ? { intake_id: intakeId } : {}),
+    };
+    const guardianName = String(
+      metadata.guardian_name ||
+        metadata.parent_name ||
+        body.guardian_name ||
+        body.parent_name ||
+        ""
+    ).trim();
+    const createParentRecord =
+      guardianName.length > 0 && body.create_parent_record !== false;
     const createParentPortalAccount = Boolean(body.create_parent_portal_account);
     const parentPassword = body.parent_password ? String(body.parent_password).trim() : "";
 
@@ -783,7 +795,12 @@ export async function PUT(req: NextRequest) {
       schoolName: targetSchool.schoolName,
       schoolCode: targetSchool.schoolCode,
       accountStatus,
-      extraMetadata: { student_profile: metadata },
+      extraMetadata: {
+        student_profile: {
+          ...metadata,
+          student_number: studentNumber,
+        },
+      },
     });
 
     await syncVirtualProfileAndRole(supabase, {
@@ -834,123 +851,71 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    // Mirror update into live Postgres `public.students` with resilient fallback
-    try {
-      const baseLiveUpd = {
-        student_number: studentNumber,
-        first_name,
-        last_name,
-        status,
-        enrolled_at: admissionDate,
-        updated_at: new Date().toISOString(),
-      };
-      const midLiveUpd = {
-        ...baseLiveUpd,
-        email,
-        phone,
-        programme_id: programmeId,
-        department_id: departmentId,
-        intake_id: intakeId,
-        current_level: currentLevel,
-      };
-      const fullLiveUpd = {
-        ...midLiveUpd,
-        ...(entryTermId ? { entry_term_id: entryTermId } : {}),
-        cohort_year: cohortYear,
-        metadata,
-      };
+    // Mirror update into live Postgres `public.students` and sync Parent/Guardian
+    const liveUpdRes = await upsertLiveStudentRecord(directAdmin, {
+      id,
+      school_id: targetSchool.schoolId,
+      profile_id: existingStudent.profile_id || null,
+      student_number: studentNumber,
+      first_name,
+      last_name,
+      email,
+      phone,
+      gender,
+      programme_id: programmeId,
+      department_id: departmentId,
+      intake_id: intakeId,
+      current_level: currentLevel,
+      entry_term_id: entryTermId || undefined,
+      cohort_year: cohortYear,
+      status,
+      enrolled_at: admissionDate,
+      metadata,
+    });
 
-      const { error: fullUpdErr } = await (directAdmin as any)
-        .from("students")
-        .update(fullLiveUpd)
-        .eq("id", id)
-        .eq("school_id", targetSchool.schoolId);
+    if (!liveUpdRes.ok) {
+      console.warn("Could not mirror student update to live public.students:", liveUpdRes.error);
+    }
 
-      if (
-        fullUpdErr &&
-        (String(fullUpdErr.code || "") === "42703" ||
-          String(fullUpdErr.code || "") === "PGRST204" ||
-          String(fullUpdErr.message || "").includes("column"))
-      ) {
-        const { error: midUpdErr } = await (directAdmin as any)
-          .from("students")
-          .update(midLiveUpd)
-          .eq("id", id)
-          .eq("school_id", targetSchool.schoolId);
+    let parentResult: {
+      record: any | null;
+      linkedExistingParent: boolean;
+      provisionedPortalAccount: boolean;
+      warning: string | null;
+    } | null = null;
 
-        if (
-          midUpdErr &&
-          (String(midUpdErr.code || "") === "42703" ||
-            String(midUpdErr.code || "") === "PGRST204" ||
-            String(midUpdErr.message || "").includes("column"))
-        ) {
-          await (directAdmin as any)
-            .from("students")
-            .update(baseLiveUpd)
-            .eq("id", id)
-            .eq("school_id", targetSchool.schoolId);
-        }
+    if (createParentRecord && guardianName) {
+      parentResult = await upsertParentGuardianForStudent({
+        directAdmin,
+        virtualAdmin: supabase,
+        schoolId: targetSchool.schoolId,
+        schoolName: targetSchool.schoolName,
+        schoolCode: targetSchool.schoolCode,
+        studentId: id,
+        liveStudentExists: liveUpdRes.ok,
+        fullName: guardianName,
+        relationship:
+          metadata.guardian_relationship || metadata.parent_relationship || "Parent",
+        phone: metadata.guardian_phone || metadata.parent_phone || "",
+        email: metadata.guardian_email || metadata.parent_email || "",
+        isPrimaryContact: true,
+        status: "active",
+        createPortalAccount: createParentPortalAccount,
+        parentPassword,
+      });
+
+      if (parentResult.warning) {
+        console.warn("Parent/guardian upsert warning on student update:", parentResult.warning);
       }
+    }
 
-      // Optional High School Parent/Guardian Update or Insert
-      if (createParentRecord && metadata.guardian_name) {
-        try {
-          let parentUserId: string | null = null;
-          const guardianEmail = metadata.guardian_email
-            ? String(metadata.guardian_email).trim().toLowerCase()
-            : "";
-
-          if (createParentPortalAccount && guardianEmail) {
-            const pProv = await provisionLiveTenantUser({
-              email: guardianEmail,
-              password: parentPassword.length >= 6 ? parentPassword : undefined,
-              fullName: String(metadata.guardian_name).trim(),
-              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
-              roleCode: "parent",
-              schoolId: targetSchool.schoolId,
-              schoolName: targetSchool.schoolName,
-              schoolCode: targetSchool.schoolCode,
-            });
-            parentUserId = pProv.userId;
-          }
-
-          const { data: existingGuardian } = await (directAdmin as any)
-            .from("parent_guardians")
-            .select("id, user_id")
-            .eq("school_id", targetSchool.schoolId)
-            .eq("student_id", id)
-            .limit(1)
-            .maybeSingle();
-
-          if (existingGuardian?.id) {
-            await (directAdmin as any)
-              .from("parent_guardians")
-              .update({
-                full_name: String(metadata.guardian_name).trim(),
-                relationship: String(metadata.guardian_relationship || "Parent").trim(),
-                phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
-                email: guardianEmail || null,
-                ...(parentUserId ? { user_id: parentUserId } : {}),
-              })
-              .eq("id", existingGuardian.id);
-          } else {
-            await (directAdmin as any).from("parent_guardians").insert({
-              school_id: targetSchool.schoolId,
-              student_id: id,
-              user_id: parentUserId,
-              full_name: String(metadata.guardian_name).trim(),
-              relationship: String(metadata.guardian_relationship || "Parent").trim(),
-              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
-              email: guardianEmail || null,
-              is_primary_contact: true,
-              status: "active",
-            });
-          }
-        } catch (parentErr) {
-          console.warn("Could not upsert High School parent_guardians record:", parentErr);
-        }
-      }
-    } catch {}
+    const parentWarning =
+      [
+        !liveUpdRes.ok ? `Live student sync issue: ${liveUpdRes.error}` : null,
+        parentResult?.warning || null,
+      ]
+        .filter(Boolean)
+        .join("; ") || null;
 
     try {
       if (existingStudent.status !== status) {
@@ -989,7 +954,12 @@ export async function PUT(req: NextRequest) {
       // Non-blocking audit logging
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      parent_guardian: parentResult?.record || null,
+      linked_existing_parent: Boolean(parentResult?.linkedExistingParent),
+      parent_warning: parentWarning,
+    });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to update student." },

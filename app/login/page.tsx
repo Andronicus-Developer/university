@@ -56,29 +56,9 @@ export default function LoginPage() {
           (data.user.user_metadata as any)?.university_id ||
           null;
 
-        // Deletion & Blacklist Guard: Block deleted users and users of deleted schools immediately
+        // Live School & Account Status Guard: Block suspended/deleted accounts and suspended/inactive schools immediately
         if (!isRootSuperAdmin) {
           try {
-            // 1. Check deleted_users registry
-            const { data: delUsersRow } = await (supabase as any)
-              .from("system_settings")
-              .select("setting_value")
-              .eq("setting_key", "deleted_users")
-              .maybeSingle();
-
-            const delUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
-            const isBlacklisted = delUsersList.some(
-              (u: any) => u?.id === data.user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
-            );
-
-            if (isBlacklisted) {
-              await supabase.auth.signOut();
-              setErrorMessage("Access Denied: This user account has been permanently deleted from the system.");
-              setIsLoading(false);
-              return;
-            }
-
-            // 2. Check profile existence and status
             let { data: profile } = await (supabase as any)
               .from("profiles")
               .select("account_status, metadata, school_id, university_id")
@@ -96,14 +76,16 @@ export default function LoginPage() {
               } catch {}
             }
 
-            if (profile && (profile.account_status === "deleted" || profile.metadata?.university_status === "deleted")) {
+            if (
+              profile &&
+              ["suspended", "deleted"].includes(String(profile.account_status || "").toLowerCase())
+            ) {
               await supabase.auth.signOut();
-              setErrorMessage("Access Denied: Your account and associated institution have been decommissioned.");
+              setErrorMessage("Access Denied: Your user account has been suspended or decommissioned.");
               setIsLoading(false);
               return;
             }
 
-            // 3. Check deleted_universities registry
             const userSchoolId =
               profile?.school_id ||
               profile?.university_id ||
@@ -111,63 +93,27 @@ export default function LoginPage() {
               profile?.metadata?.university_id ||
               (data.user.user_metadata as any)?.school_id ||
               (data.user.user_metadata as any)?.university_id;
+
             if (userSchoolId) {
               resolvedUserSchoolId = String(userSchoolId);
-            }
-            const userSchoolCode =
-              profile?.metadata?.university_code ||
-              (data.user.user_metadata as any)?.university_code;
+              const { data: schoolRow } = await (supabase as any)
+                .from("schools")
+                .select("id, status, name")
+                .eq("id", resolvedUserSchoolId)
+                .maybeSingle();
 
-            if (userSchoolId || userSchoolCode) {
-              let isActuallyActive = false;
-              try {
-                const { data: activeUnivsRow } = await (supabase as any)
-                  .from("system_settings")
-                  .select("setting_value")
-                  .eq("setting_key", "superadmin_universities")
-                  .maybeSingle();
-                const activeList = Array.isArray(activeUnivsRow?.setting_value) ? activeUnivsRow.setting_value : [];
-                isActuallyActive = activeList.some((u: any) => {
-                  if (u.status !== "active") return false;
-                  const uId = String(u.id || "").toLowerCase();
-                  const uCode = String(u.code || "").toLowerCase();
-                  const targetId = String(userSchoolId || "").toLowerCase();
-                  const targetCode = String(userSchoolCode || "").toLowerCase();
-                  return (targetId && (uId === targetId || uCode === targetId)) ||
-                         (targetCode && (uCode === targetCode || uId === targetCode));
-                });
-              } catch {}
-
-              if (!isActuallyActive) {
-                const { data: delUnivsRow } = await (supabase as any)
-                  .from("system_settings")
-                  .select("setting_value")
-                  .eq("setting_key", "deleted_universities")
-                  .maybeSingle();
-
-                const delUnivsList = Array.isArray(delUnivsRow?.setting_value) ? delUnivsRow.setting_value : [];
-                const isSchoolDeleted = delUnivsList.some((d: any) => {
-                  const delId = String(d?.id || "").trim().toLowerCase();
-                  const delCode = String(d?.code || "").trim().toLowerCase();
-                  const targetId = String(userSchoolId || "").trim().toLowerCase();
-                  const targetCode = String(userSchoolCode || "").trim().toLowerCase();
-
-                  if (targetId && delId && targetId === delId) return true;
-                  if (targetId && delCode && targetId === delCode) return true;
-                  if (targetCode && delCode && targetCode === delCode) return true;
-                  return false;
-                });
-
-                if (isSchoolDeleted) {
-                  await supabase.auth.signOut();
-                  setErrorMessage("Access Denied: Your school has been decommissioned by the Super Administrator. Access is revoked.");
-                  setIsLoading(false);
-                  return;
-                }
+              const schoolStatus = String(schoolRow?.status || "").toLowerCase();
+              if (["suspended", "inactive", "deleted"].includes(schoolStatus)) {
+                await supabase.auth.signOut();
+                setErrorMessage(
+                  `Access Denied: ${schoolRow?.name || "Your school"} is currently ${schoolStatus}. Contact your Super Administrator.`
+                );
+                setIsLoading(false);
+                return;
               }
             }
           } catch (guardErr) {
-            console.warn("Could not check deletion status during sign in:", guardErr);
+            console.warn("Could not check school/account status during sign in:", guardErr);
           }
         }
 
@@ -228,9 +174,14 @@ export default function LoginPage() {
           targetPath = "/superadmin/dashboard";
         } else if (isFinanceStaff && !isSystemAdmin) {
           targetPath = "/finance/dashboard";
+        } else if (
+          !isSystemAdmin &&
+          (roles.includes("registrar") || roles.includes("academic_affairs_officer"))
+        ) {
+          targetPath = "/registrar/dashboard";
         } else if (isAdminStaff) {
           targetPath = "/admin/dashboard";
-        } else if (roles.includes("teacher")) {
+        } else if (roles.includes("teacher") || roles.includes("instructor")) {
           targetPath = "/teacher/dashboard";
         } else if (roles.includes("parent") || roles.includes("parent_sponsor") || roles.includes("guardian")) {
           targetPath = "/parent/dashboard";

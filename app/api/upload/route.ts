@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { updateSession } from "@/lib/supabase/middleware";
+import { resolveTenantContextFromHeaders } from "@/lib/saas/tenant-context";
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif"] as const;
 
 export async function POST(req: NextRequest) {
   try {
+    const cookies = req.cookies
+      .getAll()
+      .map((c) => ({ name: c.name, value: c.value }));
+    const tenantCtx = resolveTenantContextFromHeaders(req.headers, cookies);
+    const { user } = await updateSession(req).catch(() => ({ user: null as any }));
+    if (!user?.id && !tenantCtx.isAuthenticated) {
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const rawFolder = (formData.get("folder") as string) || "avatars";

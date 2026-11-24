@@ -1,204 +1,255 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import React from "react";
+import { CheckCircle2, CreditCard, Printer, Receipt } from "lucide-react";
+import { useStudentPortalSection } from "@/lib/student/useStudentPortalData";
 import {
-  Receipt,
-  CreditCard,
-  Download,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Printer,
-} from "lucide-react";
+  formatMoney,
+  StudentEmptyState,
+  StudentPageError,
+  StudentPageLoading,
+  UnlinkedStudentProfileCard,
+} from "@/components/student/StudentPortalPrimitives";
 
 export default function StudentFeeStatementPage() {
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [student, setStudent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadFinance() {
-      setLoading(true);
-      const supabase = createClient();
-      const db = supabase as any;
-
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-
-        let stu = null;
-        if (user) {
-          const { data: s } = await db
-            .from("students")
-            .select("*, programme:programme_id(*), profile:profile_id(*)")
-            .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-            .maybeSingle();
-          stu = s;
-        }
-
-        if (!stu) {
-          const { data: firstStu } = await db
-            .from("students")
-            .select("*, programme:programme_id(*), profile:profile_id(*)")
-            .limit(1)
-            .maybeSingle();
-          stu = firstStu;
-        }
-
-        if (stu) {
-          setStudent(stu);
-
-          const { data: invs } = await db
-            .from("student_invoices")
-            .select("*, lines:invoice_lines(*)")
-            .eq("student_id", stu.id)
-            .order("issue_date", { ascending: false });
-
-          setInvoices(invs || []);
-
-          const { data: pays } = await db
-            .from("payments")
-            .select("*")
-            .eq("student_id", stu.id)
-            .order("verified_at", { ascending: false });
-
-          setPayments(pays || []);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadFinance();
-  }, []);
+  const { data, loading, error, reload } = useStudentPortalSection("fees");
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-semibold text-slate-500">Loading student fee statement...</p>
-      </div>
-    );
+    return <StudentPageLoading label="Loading fee statement & payment history..." />;
+  }
+  if (error) {
+    return <StudentPageError error={error} onRetry={reload} />;
+  }
+  if (!data || data.unlinkedStudent) {
+    return <UnlinkedStudentProfileCard schoolName={data?.school?.name} />;
   }
 
-  const totalInvoiced = invoices.reduce((s, i) => s + Number(i.total_amount || 0), 0);
-  const totalPaid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const balanceDue = totalInvoiced - totalPaid;
+  const schoolType = data.school?.schoolType || "university";
+  const symbol = data.school?.currencySymbol || "$";
+  const currency = data.school?.currency || "USD";
+  const summary = data.summary || { totalInvoiced: 0, totalPaid: 0, balanceDue: 0 };
+  const invoices = data.invoices || [];
+  const payments = data.payments || [];
+  const feeStructures = data.feeStructures || [];
+
+  const title =
+    schoolType === "vocational"
+      ? "Fees & Workshop Materials Statement"
+      : schoolType === "high_school"
+      ? "School Fees & Term Levies"
+      : "Tuition & Fee Statement";
+
+  const subtitle =
+    schoolType === "vocational"
+      ? "Live breakdown of training tuition, toolkit levies, workshop material charges, and receipts."
+      : schoolType === "high_school"
+      ? "Live breakdown of term tuition, boarding/day levies, payment receipts, and balance."
+      : "Live breakdown of billed semester tuition, institutional levies, payments, and account balance.";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Official Student Fee Statement</h1>
-          <p className="text-xs text-slate-500">Itemized financial billing ledger and payments history</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            {title}
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 transition"
-          >
-            <Printer className="h-3.5 w-3.5" /> Print Statement
-          </button>
-          <Link
-            href="/student/invoices"
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
-          >
-            <CreditCard className="h-3.5 w-3.5" /> Make a Payment
-          </Link>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer self-start"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          <span>Print Statement</span>
+        </button>
       </div>
 
-      {/* Financial Summary Cards */}
+      {/* KPI Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Billed (Debits)</span>
-          <p className="text-2xl font-black text-slate-900">
-            GHS {totalInvoiced.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-slate-400">Semester tuition, laboratory, and levies</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Paid (Credits)</span>
-          <p className="text-2xl font-black text-emerald-600">
-            GHS {totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-slate-400">Confirmed & receipted payments</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Net Balance Due</span>
-          <p className="text-2xl font-black text-slate-900">
-            GHS {balanceDue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-amber-600 font-semibold">Payment deadline: 30 Nov 2026</p>
-        </div>
-      </div>
-
-      {/* Statement Ledger Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Receipt className="h-4 w-4 text-blue-600" />
-            <h2 className="text-sm font-bold text-slate-900">Account Transactions & Ledger</h2>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500">Total Billed</div>
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
+            {formatMoney(summary.totalInvoiced, symbol, currency)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Across {invoices.length} issued invoice(s)
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50/70 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-100">
-                <th className="py-3.5 px-6">Date</th>
-                <th className="py-3.5 px-6">Reference No</th>
-                <th className="py-3.5 px-6">Description</th>
-                <th className="py-3.5 px-6">Debit (Billed)</th>
-                <th className="py-3.5 px-6">Credit (Paid)</th>
-                <th className="py-3.5 px-6">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {invoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-slate-50/50 transition">
-                  <td className="py-4 px-6 text-slate-600">{inv.issue_date}</td>
-                  <td className="py-4 px-6 font-bold text-blue-700">{inv.invoice_number}</td>
-                  <td className="py-4 px-6 font-semibold text-slate-800">First Semester Academic Fees Billing</td>
-                  <td className="py-4 px-6 font-bold text-slate-900">
-                    GHS {Number(inv.total_amount).toFixed(2)}
-                  </td>
-                  <td className="py-4 px-6 text-slate-400">-</td>
-                  <td className="py-4 px-6">
-                    <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold text-[10px] uppercase">
-                      {inv.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500">Total Paid</div>
+          <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
+            {formatMoney(summary.totalPaid, symbol, currency)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {payments.length} verified payment record(s)
+          </div>
+        </div>
 
-              {payments.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition bg-emerald-50/20">
-                  <td className="py-4 px-6 text-slate-600">{new Date(p.verified_at).toLocaleDateString()}</td>
-                  <td className="py-4 px-6 font-bold text-emerald-700">{p.provider_reference}</td>
-                  <td className="py-4 px-6 font-semibold text-slate-800">Payment via {p.payment_method || p.provider}</td>
-                  <td className="py-4 px-6 text-slate-400">-</td>
-                  <td className="py-4 px-6 font-bold text-emerald-600">
-                    GHS {Number(p.amount).toFixed(2)}
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] uppercase">
-                      {p.status}
-                    </span>
-                  </td>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500">Outstanding Balance</div>
+          <div
+            className={`text-2xl font-extrabold mt-1 ${
+              Number(summary.balanceDue) > 0
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}
+          >
+            {formatMoney(summary.balanceDue, symbol, currency)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 inline-flex items-center gap-1">
+            {Number(summary.balanceDue) <= 0 ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Cleared</span>
+              </>
+            ) : (
+              <span>Payable at School Bursar / Finance Desk</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Invoices Table */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+          <Receipt className="h-4 w-4 text-blue-600" />
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            Invoices &amp; Billing Ledger
+          </h2>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div className="p-6">
+            <StudentEmptyState
+              icon={Receipt}
+              title="No Invoices Issued Yet"
+              description="Fee invoices billed by the Bursar / Finance Office for your account will appear here automatically."
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] font-bold">
+                <tr>
+                  <th className="px-5 py-3 text-left">Invoice #</th>
+                  <th className="px-4 py-3 text-right">Billed</th>
+                  <th className="px-4 py-3 text-right">Paid</th>
+                  <th className="px-4 py-3 text-right">Balance</th>
+                  <th className="px-4 py-3 text-left">Due Date</th>
+                  <th className="px-5 py-3 text-right">Status</th>
                 </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {invoices.map((inv: any) => {
+                  const bal =
+                    inv.balance != null
+                      ? Number(inv.balance)
+                      : Math.max(0, Number(inv.total_amount ?? 0) - Number(inv.paid_amount ?? 0));
+                  return (
+                    <tr key={inv.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                      <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-white">
+                        {inv.invoice_number || inv.id.slice(0, 8)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-semibold">
+                        {formatMoney(inv.total_amount, symbol, currency)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right text-emerald-600 font-semibold">
+                        {formatMoney(inv.paid_amount, symbol, currency)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-bold">
+                        {formatMoney(bal, symbol, currency)}
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-500">
+                        {inv.due_date || "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold capitalize bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                          {inv.status || "unpaid"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Payment Receipts History & Applicable Fee Schedule */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-3">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-emerald-600" />
+            <span>Payment History &amp; Receipts</span>
+          </h2>
+          {payments.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3">No payment receipts recorded yet.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {payments.map((p: any) => (
+                <div
+                  key={p.id}
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700/70 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white">
+                      {p.provider_reference || "Payment Receipt"}
+                    </div>
+                    <div className="text-[11px] text-slate-500 capitalize">
+                      {String(p.payment_method || "manual").replace(/_/g, " ")} ·{" "}
+                      {(p.verified_at || p.created_at || "").slice(0, 10)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-extrabold text-emerald-600">
+                      {formatMoney(p.amount, symbol, p.currency || currency)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">
+                      {p.status || "completed"}
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-3">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            Applicable Fee Schedule Breakdown
+          </h2>
+          {feeStructures.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3">
+              No institutional fee structures configured for your cohort yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {feeStructures.map((fs: any) => (
+                <div
+                  key={fs.id}
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700/70 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white">
+                      {fs.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500 capitalize">
+                      {fs.code} · {String(fs.category || "tuition").replace(/_/g, " ")}
+                    </div>
+                  </div>
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    {formatMoney(fs.amount, symbol, fs.currency || currency)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-

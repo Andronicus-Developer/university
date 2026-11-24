@@ -1,24 +1,29 @@
-import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { NextRequest, NextResponse } from "next/server";
+import { createDirectAdminClient } from "@/lib/supabase/admin";
+import { requireSuperAdminApi } from "@/lib/superadmin/api-guard";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
-    const { data: events, error } = await (supabase as any)
-      .from("audit_events")
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
+
+    const db = createDirectAdminClient() as any;
+    const { data: logs, error } = await db
+      .from("audit_logs")
       .select("*")
-      .order("event_time", { ascending: false })
-      .limit(50);
+      .order("created_at", { ascending: false })
+      .limit(100);
 
     if (error) {
-      console.warn("Could not query audit_events table:", error);
       return NextResponse.json([]);
     }
 
-    return NextResponse.json(events || []);
+    return NextResponse.json(logs || []);
   } catch (error: any) {
     console.error("Error fetching audit logs:", error);
-    return NextResponse.json({ error: error.message || "Failed to fetch audit logs" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Failed to fetch audit logs" },
+      { status: 500 }
+    );
   }
 }
-

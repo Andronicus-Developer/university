@@ -1,34 +1,26 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { getSchoolFormConfig } from "@/config/schoolFormConfig";
 import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
-import {
-  BookMarked,
-  Plus,
-  Search,
-  Filter,
-  CheckCircle,
-  Book,
-  Clock,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { AlertTriangle, BookMarked, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 
 interface LibraryItem {
   id: string;
   title: string;
   author: string;
-  isbn: string;
+  isbn: string | null;
   category: string;
-  publisher: string;
+  publisher: string | null;
   publication_year: number;
+  total_copies: number;
 }
 
 export default function LibraryManagementPage() {
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [missingTables, setMissingTables] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,44 +55,27 @@ export default function LibraryManagementPage() {
     ];
   }, [schoolType]);
 
-  const [newItem, setNewItem] = useState({
-    title: "",
-    author: "",
-    isbn: "978-0131103627",
-    category: "Computer Science",
-    publisher: "University Press",
-    publicationYear: 2024,
-  });
+  const [title, setTitle] = useState("");
+  const [author, setAuthor] = useState("");
+  const [isbn, setIsbn] = useState("");
+  const [category, setCategory] = useState("General");
+  const [publisher, setPublisher] = useState("");
+  const [totalCopies, setTotalCopies] = useState("1");
 
   const fetchLibrary = async () => {
     setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
+    setErrorMsg(null);
     try {
-      const { data, error } = await db
-        .from("library_items")
-        .select("*")
-        .order("title", { ascending: true });
-
-      if (data && data.length > 0) {
-        setItems(
-          data.map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            author: item.author || "Faculty Author",
-            isbn: item.isbn || "N/A",
-            category: item.category || "General",
-            publisher: item.publisher || "Academic Publisher",
-            publication_year: item.publication_year || 2024,
-          }))
-        );
+      const res = await fetch("/api/admin/ops?resource=library", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMsg(data?.error || "Failed to load library catalog.");
       } else {
-        setItems([]);
+        setItems(data.items || []);
+        setMissingTables(data.missingTables || []);
       }
-    } catch (err) {
-      console.error(err);
-      setItems([]);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Network error.");
     } finally {
       setLoading(false);
     }
@@ -111,231 +86,256 @@ export default function LibraryManagementPage() {
     fetch("/api/settings/institution", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.institution?.school_type) {
-          const st = toPortalSchoolType(data.institution.school_type);
-          setSchoolType(st);
-          setNewItem((prev) => ({
-            ...prev,
-            publisher: getSchoolFormConfig(st).auxiliary.libraryPublisherPlaceholder,
-          }));
+        if (data?.school_type || data?.institution?.school_type) {
+          setSchoolType(toPortalSchoolType(data.school_type || data.institution.school_type));
         }
       })
       .catch(() => {});
   }, []);
 
-  const handleCreateBook = async (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
+    setErrorMsg(null);
     try {
-      await db.from("library_items").insert({
-        title: newItem.title,
-        author: newItem.author,
-        isbn: newItem.isbn,
-        category: newItem.category,
-        publisher: newItem.publisher,
-        publication_year: Number(newItem.publicationYear),
+      const res = await fetch("/api/admin/ops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resource: "library",
+          title,
+          author,
+          isbn,
+          category: category || libraryCategories[0],
+          publisher: publisher || auxSpec.libraryPublisherPlaceholder,
+          total_copies: Number(totalCopies || 1),
+        }),
       });
-
-      setShowAddModal(false);
-      fetchLibrary();
-    } catch (err) {
-      console.error(err);
-      setShowAddModal(false);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMsg(json?.error || "Failed to catalog library item.");
+      } else {
+        setShowAddModal(false);
+        setTitle("");
+        setAuthor("");
+        setIsbn("");
+        await fetchLibrary();
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const filtered = items.filter(
-    (b) =>
-      b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.isbn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleDelete = async (id: string) => {
+    const res = await fetch(`/api/admin/ops?resource=library&id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (res.ok) await fetchLibrary();
+  };
+
+  const filtered = items.filter((i) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      i.title.toLowerCase().includes(q) ||
+      i.author.toLowerCase().includes(q) ||
+      (i.isbn || "").toLowerCase().includes(q)
+    );
+  });
 
   return (
-    <div className="space-y-6 max-w-[1580px] mx-auto pb-10">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs text-[#64748B] font-medium">
-            <span className="text-[#3B82F6] hover:underline cursor-pointer">Dashboard</span>
-            <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Library & Resources</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
             {auxSpec.libraryTitle}
           </h1>
-          <p className="text-xs text-[#64748B]">{auxSpec.librarySubtitle}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {auxSpec.librarySubtitle}
+          </p>
         </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-600 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Add Catalog Item</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchLibrary}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCategory(libraryCategories[0]);
+              setShowAddModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add Catalog Item</span>
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94A3B8]" />
+      {missingTables.length > 0 && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Run migration `20261124000010_audit_remediation_tables_and_rls.sql` in Supabase SQL Editor to enable library catalog persistence.</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-xs font-semibold text-rose-800 dark:text-rose-200">
+          {errorMsg}
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+        <div className="relative max-w-sm">
+          <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by book title, author, ISBN, or subject category..."
-            className="w-full pl-9 pr-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#2563EB]"
+            placeholder="Search title, author, or ISBN..."
+            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
           />
         </div>
-        <button
-          onClick={fetchLibrary}
-          className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#64748B]"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              <th className="py-3 px-4">Book Title</th>
-              <th className="py-3 px-4">Author</th>
-              <th className="py-3 px-4">ISBN</th>
-              <th className="py-3 px-4">Category</th>
-              <th className="py-3 px-4">Publisher</th>
-              <th className="py-3 px-4 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#F1F5F9] text-xs">
-            {filtered.length > 0 ? (
-              filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                  <td className="py-3.5 px-4 font-bold text-[#1E293B]">{b.title}</td>
-                  <td className="py-3.5 px-4 text-[#475569]">{b.author}</td>
-                  <td className="py-3.5 px-4 font-mono text-[#64748B]">{b.isbn}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#2563EB]">
-                      {b.category}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-[#64748B]">{b.publisher} ({b.publication_year})</td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => alert(`Issue book loan for: ${b.title}`)}
-                      className="px-2.5 py-1 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs font-semibold text-[#334155]"
-                    >
-                      Issue Loan
-                    </button>
-                  </td>
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        {loading ? (
+          <div className="p-10 text-center text-xs text-slate-500">Loading library catalog...</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-10 text-center space-y-2">
+            <BookMarked className="h-7 w-7 mx-auto text-slate-400" />
+            <p className="text-sm font-semibold">No Catalog Items Found</p>
+            <p className="text-xs text-slate-500">Add textbooks, trade manuals, or guides above.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 text-[11px] font-bold uppercase text-slate-500">
+                  <th className="py-3 px-4">Title</th>
+                  <th className="py-3 px-4">Author</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Copies</th>
+                  <th className="py-3 px-4 text-right">Remove</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6} className="py-12 text-center text-xs text-[#94A3B8]">
-                  {loading
-                    ? "Reading library database records..."
-                    : "No resources found in database. Click 'Add Catalog Item' to register books."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filtered.map((item) => (
+                  <tr key={item.id}>
+                    <td className="py-3 px-4">
+                      <span className="font-semibold">{item.title}</span>
+                      {item.isbn && (
+                        <span className="block text-[11px] font-mono text-slate-500">
+                          ISBN: {item.isbn}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300">{item.author}</td>
+                    <td className="py-3 px-4">{item.category}</td>
+                    <td className="py-3 px-4">{item.total_copies || 1}</td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item.id)}
+                        className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Add Book Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-[#E2E8F0] overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
-              <h3 className="text-sm font-bold text-[#1E293B]">Register New Catalog Item</h3>
-              <button onClick={() => setShowAddModal(false)}>
-                <X className="h-4 w-4 text-[#94A3B8]" />
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold">Add Library Resource</h3>
+              <button type="button" onClick={() => setShowAddModal(false)} className="cursor-pointer">
+                <X className="h-4 w-4 text-slate-400" />
               </button>
             </div>
-            <form onSubmit={handleCreateBook} className="p-6 space-y-4">
+            <form onSubmit={handleAdd} className="space-y-3 text-xs">
               <div>
-                <label className="block text-xs font-bold text-[#334155] mb-1">Book Title</label>
+                <label className="block font-semibold mb-1">Title *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Operating Systems: Three Easy Pieces"
-                  value={newItem.title}
-                  onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Author(s)</label>
+                  <label className="block font-semibold mb-1">Author *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Remzi Arpaci-Dusseau"
-                    value={newItem.author}
-                    onChange={(e) => setNewItem({ ...newItem, author: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
+                    value={author}
+                    onChange={(e) => setAuthor(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">ISBN Number</label>
+                  <label className="block font-semibold mb-1">ISBN</label>
                   <input
                     type="text"
-                    required
-                    value={newItem.isbn}
-                    onChange={(e) => setNewItem({ ...newItem, isbn: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono"
+                    value={isbn}
+                    onChange={(e) => setIsbn(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                   />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Discipline Category</label>
+                  <label className="block font-semibold mb-1">Category</label>
                   <select
-                    value={newItem.category}
-                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                   >
-                    {libraryCategories.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
+                    {libraryCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Publication Year</label>
+                  <label className="block font-semibold mb-1">Copies</label>
                   <input
                     type="number"
-                    required
-                    value={newItem.publicationYear}
-                    onChange={(e) => setNewItem({ ...newItem, publicationYear: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
+                    min={1}
+                    value={totalCopies}
+                    onChange={(e) => setTotalCopies(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                   />
                 </div>
               </div>
-
-              <div className="pt-3 border-t border-[#F1F5F9] flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#64748B]"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer"
                 >
-                  {saving ? "Saving..." : "Add to Catalog"}
+                  {saving ? "Saving..." : "Add Resource"}
                 </button>
               </div>
             </form>

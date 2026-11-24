@@ -214,16 +214,16 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
   ];
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white select-none">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 select-none">
       {/* Brand Header */}
-      <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100 bg-white">
+      <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
         <Link href="/superadmin/dashboard" className="flex items-center gap-3 min-w-0">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-blue-500/20 shrink-0">
             <Building2 className="h-5 w-5" />
           </div>
           <div className="flex flex-col min-w-0">
             <span
-              className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
+              className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
               Erudian360
@@ -278,13 +278,13 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
                   className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                     isActive
                       ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25 font-semibold"
-                      : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2.5 truncate">
                     <Icon
                       className={`h-4 w-4 shrink-0 ${
-                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"
+                        isActive ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
                       }`}
                     />
                     <span className="truncate">{item.label}</span>
@@ -295,7 +295,7 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
                       className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                         isActive
                           ? "bg-white/25 text-white"
-                          : "bg-blue-50 text-blue-600 border border-blue-200"
+                          : "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
                       }`}
                     >
                       {item.badge}
@@ -342,20 +342,20 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
       </nav>
 
       {/* Sidebar Footer with Super Admin Details and Logout Button */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/60">
+      <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/80">
         {/* User Card */}
-        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 mb-2.5 shadow-2xs">
+        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 mb-2.5 shadow-2xs">
           <div className="relative">
             <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
               {userName.slice(0, 2).toUpperCase()}
             </div>
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-slate-800 truncate leading-snug">
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate leading-snug">
               {userName}
             </div>
-            <div className="text-[10px] text-blue-600 font-medium truncate">
+            <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium truncate">
               {userRole}
             </div>
           </div>
@@ -365,17 +365,17 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
         <button
           onClick={handleSignOut}
           disabled={isSigningOut}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100/90 text-red-600 hover:text-red-700 text-xs font-semibold transition-all border border-red-200/80 shadow-2xs active:scale-[0.98] cursor-pointer disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-red-50 dark:bg-red-950/50 hover:bg-red-100/90 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-xs font-semibold transition-all border border-red-200/80 dark:border-red-900/70 shadow-2xs active:scale-[0.98] cursor-pointer disabled:opacity-50"
           title="Sign out of Super Admin Console"
         >
           {isSigningOut ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+              <Loader2 className="h-4 w-4 animate-spin text-red-600 dark:text-red-400" />
               <span>Signing out...</span>
             </>
           ) : (
             <>
-              <LogOut className="h-4 w-4 text-red-600" />
+              <LogOut className="h-4 w-4 text-red-600 dark:text-red-400" />
               <span>Log Out</span>
             </>
           )}
@@ -385,7 +385,7 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex text-slate-800 font-sans antialiased">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex text-slate-800 dark:text-slate-100 font-sans antialiased">
       {/* Mobile Drawer Backdrop */}
       {mobileOpen && (
         <div
@@ -404,14 +404,14 @@ function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
       </div>
 
       {/* Desktop Sidebar: Permanent fixed width w-64 */}
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 lg:z-40 border-r border-slate-200/80 shadow-xs">
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 lg:z-40 border-r border-slate-200/80 dark:border-slate-800 shadow-xs">
         {sidebarContent}
       </aside>
 
       {/* Main Viewport Container */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen lg:pl-64">
         {/* Top App Bar matching Admin Portal */}
-        <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
+        <header className="h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
           {/* Left: Mobile hamburger + Search input */}
           <div className="flex items-center gap-3 flex-1 max-w-xs sm:max-w-md">
             <button
@@ -571,7 +571,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   return (
     <React.Suspense
       fallback={
-        <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-500 text-xs font-medium">
+        <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs font-medium">
           Loading Super Admin Console...
         </div>
       }

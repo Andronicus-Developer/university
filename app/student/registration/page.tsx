@@ -1,301 +1,295 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import React, { useMemo, useState } from "react";
 import {
-  ClipboardList,
-  CheckCircle2,
-  Plus,
-  Trash2,
   AlertCircle,
   BookOpen,
-  Calendar,
-  Clock,
-  ShieldCheck,
-  Check,
-  RefreshCw,
+  CheckCircle2,
+  ClipboardList,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
 } from "lucide-react";
+import { useStudentPortalSection } from "@/lib/student/useStudentPortalData";
+import {
+  StudentEmptyState,
+  StudentPageError,
+  StudentPageLoading,
+  UnlinkedStudentProfileCard,
+} from "@/components/student/StudentPortalPrimitives";
 
-export default function StudentRegistrationPage() {
-  const [offerings, setOfferings] = useState<any[]>([]);
-  const [enrolments, setEnrolments] = useState<any[]>([]);
-  const [student, setStudent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [registering, setRegistering] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+export default function UniversityCourseRegistrationPage() {
+  const { data, loading, error, reload, mutate } =
+    useStudentPortalSection("registration");
 
-  const loadData = async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [onlyMyProgram, setOnlyMyProgram] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
+  const enrolments = useMemo(() => data?.enrolments || [], [data?.enrolments]);
+  const courses = useMemo(() => data?.courses || [], [data?.courses]);
+  const registeredIds = useMemo(
+    () => new Set(enrolments.map((e: any) => String(e.course_id))),
+    [enrolments]
+  );
 
-      let stu = null;
-      if (user) {
-        const { data: s } = await db
-          .from("students")
-          .select("*, programme:programme_id(*)")
-          .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-          .maybeSingle();
-        stu = s;
+  const availableCourses = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const stuDept = data?.student?.department_id
+      ? String(data.student.department_id)
+      : null;
+    const stuProg = data?.student?.programme_id
+      ? String(data.student.programme_id)
+      : null;
+
+    return courses.filter((c: any) => {
+      if (registeredIds.has(String(c.id))) return false;
+      if (onlyMyProgram && (stuDept || stuProg)) {
+        const matchesProg =
+          !c.programme_id || (stuProg && String(c.programme_id) === stuProg);
+        const matchesDept =
+          !c.department_id || (stuDept && String(c.department_id) === stuDept);
+        if (!matchesProg && !matchesDept) return false;
       }
-
-      if (!stu) {
-        const { data: firstStu } = await db
-          .from("students")
-          .select("*, programme:programme_id(*)")
-          .limit(1)
-          .maybeSingle();
-        stu = firstStu;
-      }
-
-      if (stu) {
-        setStudent(stu);
-
-        // Fetch current enrolments
-        const { data: enrs } = await db
-          .from("course_enrolments")
-          .select(`
-            id,
-            course_offering_id,
-            enrolment_status,
-            registered_at,
-            course_offering:course_offering_id(
-              id,
-              section,
-              delivery_mode,
-              course:course_id(id, code, name, credits)
-            )
-          `)
-          .eq("student_id", stu.id);
-
-        setEnrolments(enrs || []);
-
-        // Fetch all available course offerings
-        const { data: offs } = await db
-          .from("course_offerings")
-          .select(`
-            id,
-            section,
-            delivery_mode,
-            capacity,
-            enrolled_count,
-            status,
-            course:course_id(id, code, name, credits, description)
-          `)
-          .in("status", ["open", "published"]);
-
-        setOfferings(offs || []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleRegister = async (offeringId: string) => {
-    setRegistering(offeringId);
-    setFeedback(null);
-
-    try {
-      const res = await fetch("/api/student/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offeringId }),
-      });
-
-      const resData = await res.json();
-      if (!res.ok) {
-        throw new Error(resData.error || "Failed to register");
-      }
-
-      setFeedback({ type: "success", message: "Course registered successfully!" });
-      await loadData();
-    } catch (err: any) {
-      setFeedback({ type: "error", message: err.message || "Failed to register" });
-    } finally {
-      setRegistering(null);
-    }
-  };
-
-  const handleDrop = async (enrolmentId: string) => {
-    if (!confirm("Are you sure you want to drop this registered course? It will be ready for enrollment immediately.")) return;
-    setFeedback(null);
-
-    try {
-      const res = await fetch("/api/student/courses", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enrolmentId }),
-      });
-
-      const resData = await res.json();
-      if (!res.ok) {
-        throw new Error(resData.error || "Failed to drop course");
-      }
-
-      setFeedback({ type: "success", message: "Course dropped successfully! It is ready for enrollment immediately below." });
-      await loadData();
-    } catch (err: any) {
-      setFeedback({ type: "error", message: err.message || "Failed to drop course" });
-    }
-  };
+      if (!q) return true;
+      return `${c.code} ${c.name} ${c.department_name} ${c.programme_name}`
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [courses, registeredIds, onlyMyProgram, searchQuery, data?.student]);
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-semibold text-slate-500">Loading course registration window...</p>
-      </div>
-    );
+    return <StudentPageLoading label="Loading semester course registration..." />;
+  }
+  if (error) {
+    return <StudentPageError error={error} onRetry={reload} />;
+  }
+  if (!data || data.unlinkedStudent) {
+    return <UnlinkedStudentProfileCard schoolName={data?.school?.name} />;
   }
 
-  const enrolledOfferingIds = enrolments.map((e) => e.course_offering_id);
-  const totalEnrolledCredits = enrolments.reduce((sum, e) => sum + (e.course_offering?.course?.credits || 3), 0);
+  const registeredCredits = Number(data.registeredCredits ?? 0);
+  const maxCredits = Number(data.maxCredits ?? 24);
+  const creditPct = Math.min(100, Math.round((registeredCredits / maxCredits) * 100));
+
+  const handleRegister = async (courseId: string) => {
+    setBusyId(`add-${courseId}`);
+    setToast(null);
+    const res = await mutate("register_course", { courseId });
+    setBusyId(null);
+    setToast({
+      type: res.ok ? "success" : "error",
+      text: res.ok
+        ? res.message || "Course registered successfully."
+        : res.error || "Unable to register course.",
+    });
+  };
+
+  const handleDrop = async (enrolmentId: string, courseCode: string) => {
+    setBusyId(`drop-${enrolmentId}`);
+    setToast(null);
+    const res = await mutate("drop_course", { enrolmentId });
+    setBusyId(null);
+    setToast({
+      type: res.ok ? "success" : "error",
+      text: res.ok
+        ? `${courseCode} dropped from your registration.`
+        : res.error || "Unable to drop course.",
+    });
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Course Registration Portal</h1>
-          <p className="text-xs text-slate-500">Academic Year 2026/2027 • First Semester Regular Registration</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            Semester Course Registration
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Add or drop courses for {data.activeTerm?.name || "Current Semester"} within your institutional credit limit.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold">
-            Total Registered: {totalEnrolledCredits} / 18 Credits
-          </span>
-          <button
-            onClick={loadData}
-            className="p-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl transition"
-            title="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </button>
+
+        {/* Credit Load Indicator */}
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3 min-w-[230px]">
+          <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+            <span className="text-slate-600 dark:text-slate-300">Credit Load</span>
+            <span className="text-blue-600 dark:text-blue-400">
+              {registeredCredits} / {maxCredits} Credits
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all"
+              style={{ width: `${creditPct}%` }}
+            />
+          </div>
         </div>
       </div>
 
-      {feedback && (
+      {toast && (
         <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 ${
-            feedback.type === "success"
-              ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
-              : "bg-red-50 border border-red-200 text-red-800"
+          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+            toast.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-rose-50 border-rose-200 text-rose-800"
           }`}
         >
-          {feedback.type === "success" ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          {toast.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
           ) : (
-            <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+            <AlertCircle className="h-4 w-4 shrink-0" />
           )}
-          <span>{feedback.message}</span>
+          <span>{toast.text}</span>
         </div>
       )}
 
-      {/* Enrolled Courses Summary */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      {/* Registered Courses Section */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ClipboardList className="h-4 w-4 text-blue-600" />
-            <h2 className="text-sm font-bold text-slate-900">Currently Registered Courses ({enrolments.length})</h2>
-          </div>
+            <span>Registered Courses ({enrolments.length})</span>
+          </h2>
+          <span className="text-xs font-semibold text-slate-500">
+            Total Credits: {registeredCredits}
+          </span>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {enrolments.length > 0 ? (
-            enrolments.map((enr) => {
-              const c = enr.course_offering?.course;
-              return (
-                <div key={enr.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-xs">
-                        {c?.code}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900">{c?.name}</span>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold">
-                        Enrolled
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Credits: {c?.credits || 3} • Section: {enr.course_offering?.section || "A"} • Mode: {enr.course_offering?.delivery_mode || "in-person"}
-                    </p>
+        {enrolments.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            You have not registered any courses yet. Browse available semester courses below to add them.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {enrolments.map((enr: any) => (
+              <div
+                key={enr.id}
+                className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white">
+                    {enr.course?.code || "COURSE"} — {enr.course?.name || "Registered Course"}
                   </div>
+                  <div className="text-[11px] text-slate-500">
+                    {enr.course?.credits ?? 3} Credit Hours · {enr.course?.department_name || data.student.department_name || "Academic Unit"}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold capitalize">
+                    {enr.status || "registered"}
+                  </span>
                   <button
-                    onClick={() => handleDrop(enr.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold transition self-start sm:self-center"
+                    type="button"
+                    disabled={busyId === `drop-${enr.id}`}
+                    onClick={() => handleDrop(enr.id, enr.course?.code || "course")}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Drop Course
+                    {busyId === `drop-${enr.id}` ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                    <span>Drop</span>
                   </button>
                 </div>
-              );
-            })
-          ) : (
-            <p className="p-6 text-center text-xs text-slate-400">No courses registered yet. Select from available offerings below.</p>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Available Offerings to Register */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      {/* Available Course Catalog */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-indigo-600" />
-            <h2 className="text-sm font-bold text-slate-900">Available Course Offerings</h2>
+            <span>Available Semester Courses ({availableCourses.length})</span>
+          </h2>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyMyProgram}
+                onChange={(e) => setOnlyMyProgram(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600"
+              />
+              <span>My Department / Program only</span>
+            </label>
+
+            <div className="relative">
+              <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search code or course title..."
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
-          <span className="text-xs text-slate-400">Click register to enroll</span>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {offerings.map((off) => {
-            const isEnrolled = enrolledOfferingIds.includes(off.id);
-            return (
-              <div key={off.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-xs">
-                      {off.course?.code}
+        {availableCourses.length === 0 ? (
+          <StudentEmptyState
+            title="No Additional Courses Available"
+            description="All matching semester courses from your institution are already registered or filtered out."
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {availableCourses.map((course: any) => (
+              <div
+                key={course.id}
+                className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-4 flex flex-col justify-between gap-3"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                      {course.code}
                     </span>
-                    <span className="text-sm font-bold text-slate-900">{off.course?.name}</span>
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">
-                      Section {off.section}
+                    <span className="text-[11px] font-bold text-slate-500">
+                      {course.credits ?? 3} Credits
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 max-w-xl">{off.course?.description}</p>
-                  <p className="text-[11px] text-slate-400">
-                    Credits: {off.course?.credits} • Mode: {off.delivery_mode} • Capacity: {off.capacity || 50}
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                    {course.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 line-clamp-2">
+                    {course.description ||
+                      `${course.department_name || "General"} · ${course.programme_name || "All Programs"}`}
                   </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {isEnrolled ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xs">
-                      <Check className="h-3.5 w-3.5" /> Registered
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleRegister(off.id)}
-                      disabled={registering === off.id}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition shadow-xs"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      {registering === off.id ? "Registering..." : "Register"}
-                    </button>
+                  {course.lecturer_name && (
+                    <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                      Lecturer: {course.lecturer_name}
+                    </div>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  disabled={busyId === `add-${course.id}`}
+                  onClick={() => handleRegister(course.id)}
+                  className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  {busyId === `add-${course.id}` ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  <span>Add Course</span>
+                </button>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
-

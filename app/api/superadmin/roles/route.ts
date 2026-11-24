@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireSuperAdminApi } from "@/lib/superadmin/api-guard";
 import {
   getRoles,
   createRole,
@@ -6,8 +7,10 @@ import {
   deleteRole,
 } from "@/lib/superadmin/service";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const roles = await getRoles();
     return NextResponse.json(roles);
   } catch (error: any) {
@@ -21,6 +24,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     if (!body.code || !body.name) {
@@ -51,6 +56,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const body = await request.json();
 
     if (!body.id) {
@@ -80,6 +87,8 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const denied = await requireSuperAdminApi(request);
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     let roleId = searchParams.get("id");
 

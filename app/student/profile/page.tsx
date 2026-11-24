@@ -3,258 +3,452 @@
 import React, { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  User,
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
   Mail,
   Phone,
-  MapPin,
-  Calendar,
-  GraduationCap,
-  ShieldCheck,
-  Building,
-  Edit3,
-  CheckCircle2,
-  RefreshCw,
-  AlertCircle,
-  Hash,
-  School,
   Save,
+  ShieldCheck,
+  User,
+  Users,
 } from "lucide-react";
+import { useStudentPortalSection } from "@/lib/student/useStudentPortalData";
+import {
+  StudentPageError,
+  StudentPageLoading,
+  UnlinkedStudentProfileCard,
+} from "@/components/student/StudentPortalPrimitives";
 
-export default function StudentProfilePage() {
-  const [student, setStudent] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
+export default function StudentProfileAndSettingsPage() {
+  const { data, loading, error, reload, mutate } =
+    useStudentPortalSection("profile");
+
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [emergencyContactName, setEmergencyContactName] = useState("");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const [savingContact, setSavingContact] = useState(false);
+  const [contactToast, setContactToast] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-  const fetchProfile = async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      let stuRecord = null;
-      if (user) {
-        const { data: stu } = await db
-          .from("students")
-          .select("*, profile:profile_id(*), programme:programme_id(*, department:department_id(name))")
-          .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-          .maybeSingle();
-        stuRecord = stu;
-      }
-
-      if (!stuRecord) {
-        const { data: firstStu } = await db
-          .from("students")
-          .select("*, profile:profile_id(*), programme:programme_id(*, department:department_id(name))")
-          .limit(1)
-          .maybeSingle();
-        stuRecord = firstStu;
-      }
-
-      if (stuRecord) {
-        setStudent(stuRecord);
-        setProfile(stuRecord.profile || {});
-        setPhone(stuRecord.profile?.phone || "+233 24 555 0192");
-        setAddress(stuRecord.profile?.address || "University Hall Annex, Room B-204, Main Campus");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [savingPw, setSavingPw] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    if (data?.student) {
+      setPhone(data.student.phone || "");
+      setAddress(data.student.address || "");
+      setEmergencyContactName(data.student.emergency_contact_name || "");
+      setEmergencyContactPhone(data.student.emergency_contact_phone || "");
+    }
+  }, [data?.student]);
 
-  const handleSaveContact = async () => {
-    if (!profile?.id) return;
-    setSaving(true);
-    setSuccessMsg("");
+  if (loading) {
+    return <StudentPageLoading label="Loading your profile & settings..." />;
+  }
+  if (error) {
+    return <StudentPageError error={error} onRetry={reload} />;
+  }
+  if (!data || data.unlinkedStudent) {
+    return <UnlinkedStudentProfileCard schoolName={data?.school?.name} />;
+  }
+
+  const schoolType = data.school?.schoolType || "university";
+  const s = data.student;
+  const meta = s.metadata || {};
+  const guardians = data.guardians || [];
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingContact(true);
+    setContactToast(null);
+    const res = await mutate("update_profile_contact", {
+      phone,
+      address,
+      emergencyContactName,
+      emergencyContactPhone,
+    });
+    setSavingContact(false);
+    setContactToast({
+      type: res.ok ? "success" : "error",
+      text: res.ok
+        ? res.message || "Contact details updated."
+        : res.error || "Unable to update contact details.",
+    });
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password || password.length < 8) {
+      setPwMsg({
+        type: "error",
+        text: "New password must be at least 8 characters.",
+      });
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPwMsg({ type: "error", text: "Passwords do not match." });
+      return;
+    }
+    setSavingPw(true);
+    setPwMsg(null);
     try {
       const supabase = createClient();
-      const db = supabase as any;
-
-      await db
-        .from("profiles")
-        .update({
-          phone: phone,
-          address: address,
-        })
-        .eq("id", profile.id);
-
-      setSuccessMsg("Contact information updated successfully.");
-      setEditing(false);
-      fetchProfile();
-    } catch (err) {
-      console.error(err);
+      const { error: pwErr } = await supabase.auth.updateUser({ password });
+      if (pwErr) throw pwErr;
+      setPwMsg({ type: "success", text: "Account password updated successfully." });
+      setPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setPwMsg({
+        type: "error",
+        text: err?.message || "Failed to update password.",
+      });
     } finally {
-      setSaving(false);
+      setSavingPw(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-semibold text-slate-500">Loading student profile...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Student Profile & Biodata</h1>
-          <p className="text-xs text-slate-500">Official student registry record, contact details and academic status</p>
-        </div>
-        <button
-          onClick={() => setEditing(!editing)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition shadow-xs self-start"
-        >
-          <Edit3 className="h-3.5 w-3.5" />
-          {editing ? "Cancel Edit" : "Update Contact Info"}
-        </button>
+    <div className="space-y-6 max-w-5xl">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+          {schoolType === "vocational"
+            ? "Trainee Profile & Settings"
+            : "Profile & Account Settings"}
+        </h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {schoolType === "vocational"
+            ? "View your Trainee ID, Trade Class, Intake Cohort, contact info, and security credentials."
+            : schoolType === "high_school"
+            ? "View your admission index, Class/Form, House/Dormitory, linked Parent/Guardian contacts, and password."
+            : "View your matriculation details, department, program, level, emergency contact, and security credentials."}
+        </p>
       </div>
 
-      {successMsg && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-          {successMsg}
+      {/* Institutional Identity Card */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3.5">
+            <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-extrabold text-base">
+              {(s.full_name || "S").slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {s.full_name}
+              </h2>
+              <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                <Mail className="h-3.5 w-3.5" />
+                <span>{s.email}</span>
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold capitalize w-fit">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>{s.status || "active"}</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          {schoolType === "university" && (
+            <>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Matric / Index Number</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.student_number}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Faculty / Department</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.department_name || "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Program</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.programme_name || "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Academic Level &amp; Entry</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  Level {s.current_level || 100} · {meta.entry_mode || "Regular"}
+                </div>
+              </div>
+            </>
+          )}
+
+          {schoolType === "high_school" && (
+            <>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Admission / Index #</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.student_number}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Class / Form &amp; Stream</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  {s.programme_name || "—"}{meta.stream ? ` · ${meta.stream}` : ""}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Boarding / Day Status</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  {meta.boarding_status || meta.residential_status || "Day Student"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">House / Dormitory</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  {meta.house_name || "Not Assigned"}
+                </div>
+              </div>
+            </>
+          )}
+
+          {schoolType === "vocational" && (
+            <>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Trainee ID</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.student_number}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Trade Class / Workshop</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.department_name || "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Intake / Cohort</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">{s.intake_name || "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">NVTI / Trade Level</div>
+                <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  {meta.trade_level || meta.training_stage || `Level ${s.current_level || 100}`}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* High School Linked Parent / Guardian Info */}
+      {schoolType === "high_school" && (
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-3">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Users className="h-4 w-4 text-emerald-600" />
+            <span>Linked Parent / Guardian Contacts</span>
+          </h2>
+          {guardians.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              {meta.guardian_name
+                ? `${meta.guardian_name} (${meta.guardian_relationship || "Guardian"}) · ${meta.guardian_phone || "No phone listed"}`
+                : "No parent or guardian contact has been linked yet."}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {guardians.map((g: any) => (
+                <div
+                  key={g.id}
+                  className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700/70 text-xs space-y-1"
+                >
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    {g.full_name} ·{" "}
+                    <span className="text-emerald-600">{g.relationship}</span>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                    <Phone className="h-3 w-3" />
+                    <span>{g.phone || "—"}</span>
+                  </div>
+                  {g.email && (
+                    <div className="text-slate-500 flex items-center gap-1.5">
+                      <Mail className="h-3 w-3" />
+                      <span>{g.email}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Main Profile Info Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Identity Card */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-6 flex flex-col items-center text-center">
-          <div className="relative">
-            <div className="h-24 w-24 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-3xl font-extrabold shadow-lg shadow-blue-500/20">
-              {profile?.full_name ? profile.full_name.charAt(0) : "S"}
+      {/* Forms: Update Contact & Password */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <form
+          onSubmit={handleSaveContact}
+          className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4"
+        >
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <User className="h-4 w-4 text-blue-600" />
+            <span>Contact &amp; Emergency Details</span>
+          </h2>
+
+          {contactToast && (
+            <div
+              className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                contactToast.type === "success"
+                  ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                  : "bg-rose-50 border border-rose-200 text-rose-800"
+              }`}
+            >
+              {contactToast.type === "success" ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{contactToast.text}</span>
             </div>
-            <span className="absolute bottom-0 right-1 h-6 w-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-white" title="Active Standing">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-            </span>
+          )}
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+233 ..."
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+            />
           </div>
 
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold text-slate-900">{profile?.full_name || "Ama Johnson"}</h2>
-            <p className="text-xs font-semibold text-blue-600">{student?.student_number || "STU20260001"}</p>
-            <p className="text-xs text-slate-500">{student?.programme?.name || "BSc Computer Science"}</p>
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Residential Address
+            </label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Current residential address"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+            />
           </div>
 
-          <div className="w-full pt-4 border-t border-slate-100 space-y-2.5 text-xs text-left">
-            <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-400">Enrolment Status:</span>
-              <span className="font-bold text-emerald-600 capitalize">{student?.status || "Enrolled"}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Emergency Contact Name
+              </label>
+              <input
+                type="text"
+                value={emergencyContactName}
+                onChange={(e) => setEmergencyContactName(e.target.value)}
+                placeholder="Full name"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+              />
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-400">Academic Level:</span>
-              <span className="font-bold text-slate-800">Level {student?.current_level || 100}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-400">Cumulative GPA:</span>
-              <span className="font-bold text-slate-800">{student?.cgpa ? Number(student.cgpa).toFixed(2) : "3.84"}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-400">Total Credits:</span>
-              <span className="font-bold text-slate-800">{student?.total_credits_earned || 36} Credits</span>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Emergency Contact Phone
+              </label>
+              <input
+                type="tel"
+                value={emergencyContactPhone}
+                onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                placeholder="+233 ..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+              />
             </div>
           </div>
-        </div>
 
-        {/* Right: Bio & Contact Details */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100 font-bold text-slate-900 text-sm">
-              <User className="h-4 w-4 text-blue-600" />
-              <span>Bio & Contact Information</span>
-            </div>
-
-            {editing ? (
-              <div className="space-y-4 text-xs">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Residential Address / Hall</label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-                <button
-                  onClick={handleSaveContact}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition shadow-xs"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  {saving ? "Saving Changes..." : "Save Contact Info"}
-                </button>
-              </div>
+          <button
+            type="submit"
+            disabled={savingContact}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-bold cursor-pointer"
+          >
+            {savingContact ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                  <span className="text-slate-400 block">Institutional Email</span>
-                  <p className="font-bold text-slate-800">{profile?.email || "ama.johnson@university.edu.gh"}</p>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                  <span className="text-slate-400 block">Phone Number</span>
-                  <p className="font-bold text-slate-800">{phone}</p>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1 sm:col-span-2">
-                  <span className="text-slate-400 block">Residential Campus Address</span>
-                  <p className="font-bold text-slate-800">{address}</p>
-                </div>
-              </div>
+              <Save className="h-3.5 w-3.5" />
             )}
+            <span>{savingContact ? "Saving..." : "Save Contact Info"}</span>
+          </button>
+        </form>
+
+        {/* Change Password */}
+        <form
+          onSubmit={handleUpdatePassword}
+          className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4"
+        >
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <KeyRound className="h-4 w-4 text-indigo-600" />
+            <span>Change Account Password</span>
+          </h2>
+
+          {pwMsg && (
+            <div
+              className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                pwMsg.type === "success"
+                  ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                  : "bg-rose-50 border border-rose-200 text-rose-800"
+              }`}
+            >
+              {pwMsg.type === "success" ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{pwMsg.text}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              New Password
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className="w-full pl-3 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100 font-bold text-slate-900 text-sm">
-              <School className="h-4 w-4 text-indigo-600" />
-              <span>Academic Programme Information</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 block">Faculty / School</span>
-                <p className="font-bold text-slate-800">School of Physical & Mathematical Sciences</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 block">Academic Department</span>
-                <p className="font-bold text-slate-800">{student?.programme?.department?.name || "Department of Computer Science"}</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 block">Degree Award</span>
-                <p className="font-bold text-slate-800">Bachelor of Science (Honours)</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 block">Admitted Academic Year</span>
-                <p className="font-bold text-slate-800">2026 / 2027 (Regular)</p>
-              </div>
-            </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Confirm New Password
+            </label>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter password"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+            />
           </div>
-        </div>
+
+          <button
+            type="submit"
+            disabled={savingPw}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold cursor-pointer"
+          >
+            {savingPw ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <KeyRound className="h-3.5 w-3.5" />
+            )}
+            <span>{savingPw ? "Updating..." : "Update Password"}</span>
+          </button>
+        </form>
       </div>
     </div>
   );
 }
-

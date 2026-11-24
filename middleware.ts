@@ -32,10 +32,13 @@ function getTargetDashboardForRoles(roles: string[], email?: string): string {
   if (!isSysAdmin && (roles.includes("finance_officer") || roles.includes("bursar") || roles.includes("accountant"))) {
     return "/finance/dashboard";
   }
+  if (!isSysAdmin && (roles.includes("registrar") || roles.includes("academic_affairs_officer"))) {
+    return "/registrar/dashboard";
+  }
   if (roles.some((r) => ADMIN_STAFF_ROLES.includes(r))) {
     return "/admin/dashboard";
   }
-  if (roles.includes("teacher")) {
+  if (roles.includes("teacher") || roles.includes("instructor")) {
     return "/teacher/dashboard";
   }
   if (roles.includes("parent") || roles.includes("parent_sponsor") || roles.includes("guardian")) {
@@ -271,180 +274,79 @@ export async function middleware(request: NextRequest) {
     (user.user_metadata as any)?.university_id ||
     null;
 
-  // 4.2. University Deletion & User Blacklist Barrier (Must run BEFORE login page redirect)
-  // If user is NOT superadmin, verify their university and account have not been deleted
-  if (!isSuperAdmin) {
+  // 4.2. Live School & Account Status Barrier (Must run BEFORE login page redirect)
+  // Exempt superadmin; block suspended/deleted accounts and suspended/inactive/deleted schools.
+  if (!isSuperAdmin && supabase) {
     try {
-      if (supabase) {
-        // 1. Check deleted_users blacklist in system_settings
-        const { data: delUsersRow } = await (supabase
-          .from("system_settings" as any)
-          .select("setting_value")
-          .eq("setting_key", "deleted_users")
-          .maybeSingle() as any);
+      let { data: profile } = await (supabase as any)
+        .from("profiles")
+        .select("account_status, metadata, school_id, university_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-        const deletedUsersList = Array.isArray(delUsersRow?.setting_value) ? delUsersRow.setting_value : [];
-        const isUserBlacklisted = deletedUsersList.some(
-          (u: any) => u?.id === user.id || (u?.email && u.email.toLowerCase() === normalizedEmail)
-        );
+      if (!profile && normalizedEmail) {
+        try {
+          const { data: profByEmail } = await (supabase as any)
+            .from("profiles")
+            .select("account_status, metadata, school_id, university_id")
+            .ilike("email", normalizedEmail)
+            .maybeSingle();
+          if (profByEmail) profile = profByEmail;
+        } catch {}
+      }
 
-        if (isUserBlacklisted) {
-          if (pathname.startsWith("/api/")) {
-            return NextResponse.json(
-              { error: "Access Denied: Your account has been permanently deleted from the database." },
-              { status: 403 }
-            );
-          }
-          const url = new URL("/unauthorized", request.url);
-          url.searchParams.set("reason", "university_deleted");
-          return NextResponse.redirect(url);
+      const metadata = (profile?.metadata || {}) as Record<string, any>;
+      const accountStatus = String(profile?.account_status || "").toLowerCase();
+      const isAccountBlocked =
+        accountStatus === "suspended" ||
+        accountStatus === "deleted" ||
+        metadata.university_status === "deleted";
+
+      if (isAccountBlocked) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Access Denied: Your account has been suspended or deactivated." },
+            { status: 403 }
+          );
         }
+        const url = new URL("/unauthorized", request.url);
+        url.searchParams.set("reason", "account_suspended");
+        return createRedirectWithCookies(url, supabaseResponse);
+      }
 
-        // 2. Query profile from database (first by ID, then fallback by email)
-        let { data: profile } = await (supabase as any)
-          .from("profiles")
-          .select("account_status, metadata, school_id, university_id")
-          .eq("id", user.id)
+      const userSchoolId =
+        (profile as any)?.school_id ||
+        (profile as any)?.university_id ||
+        metadata.school_id ||
+        metadata.university_id ||
+        resolvedSchoolId;
+
+      if (userSchoolId) {
+        resolvedSchoolId = String(userSchoolId);
+        const { data: schoolRow } = await (supabase as any)
+          .from("schools")
+          .select("id, status")
+          .eq("id", resolvedSchoolId)
           .maybeSingle();
 
-        if (!profile && normalizedEmail) {
-          try {
-            const { data: profByEmail } = await (supabase as any)
-              .from("profiles")
-              .select("account_status, metadata, school_id, university_id")
-              .ilike("email", normalizedEmail)
-              .maybeSingle();
-            if (profByEmail) {
-              profile = profByEmail;
-            }
-          } catch {}
-        }
-
-        const metadata = (profile?.metadata || {}) as Record<string, any>;
-        const accountStatus = (profile?.account_status as string) || "";
-        const isBlocked =
-          accountStatus === "suspended" ||
-          accountStatus === "deleted" ||
-          metadata.university_status === "deleted";
-
-        if (isBlocked) {
+        const schoolStatus = String(schoolRow?.status || "").toLowerCase();
+        if (["suspended", "inactive", "deleted"].includes(schoolStatus)) {
           if (pathname.startsWith("/api/")) {
             return NextResponse.json(
-              { error: "Access Denied: Your institution and account have been deleted or deactivated." },
+              {
+                error:
+                  "Access Denied: This school account is currently suspended or inactive. Contact your Super Administrator.",
+              },
               { status: 403 }
             );
           }
           const url = new URL("/unauthorized", request.url);
-          url.searchParams.set("reason", "university_deleted");
-          return NextResponse.redirect(url);
-        }
-
-        // 3. Check if user's university is in deleted_universities registry
-        const userUnivId =
-          (profile as any)?.school_id ||
-          (profile as any)?.university_id ||
-          metadata.school_id ||
-          metadata.university_id ||
-          (user.user_metadata as any)?.school_id ||
-          (user.user_metadata as any)?.university_id ||
-          (user.app_metadata as any)?.school_id ||
-          (user.app_metadata as any)?.university_id;
-
-        if (userUnivId) {
-          resolvedSchoolId = String(userUnivId);
-        }
-
-        const userUnivCode =
-          metadata.university_code ||
-          (user.user_metadata as any)?.university_code ||
-          (user.app_metadata as any)?.university_code;
-
-        if (userUnivId || userUnivCode) {
-          // Check if the school is currently registered and active in superadmin_universities
-          let isActuallyActive = false;
-          try {
-            const { data: activeUnivsRow } = await (supabase
-              .from("system_settings" as any)
-              .select("setting_value")
-              .eq("setting_key", "superadmin_universities")
-              .maybeSingle() as any);
-            const activeList = Array.isArray(activeUnivsRow?.setting_value) ? activeUnivsRow.setting_value : [];
-            isActuallyActive = activeList.some((u: any) => {
-              if (u.status !== "active") return false;
-              const uId = String(u.id || "").toLowerCase();
-              const uCode = String(u.code || "").toLowerCase();
-              const targetId = String(userUnivId || "").toLowerCase();
-              const targetCode = String(userUnivCode || "").toLowerCase();
-              return (targetId && (uId === targetId || uCode === targetId)) ||
-                     (targetCode && (uCode === targetCode || uId === targetCode));
-            });
-          } catch {}
-
-          if (!isActuallyActive) {
-            const { data: settingRow } = await (supabase
-              .from("system_settings" as any)
-              .select("setting_value")
-              .eq("setting_key", "deleted_universities")
-              .maybeSingle() as any);
-
-            const deletedList = Array.isArray(settingRow?.setting_value) ? settingRow.setting_value : [];
-            const isSchoolDeleted = deletedList.some((d: any) => {
-              const delId = String(d?.id || "").trim().toLowerCase();
-              const delCode = String(d?.code || "").trim().toLowerCase();
-              const targetId = String(userUnivId || "").trim().toLowerCase();
-              const targetCode = String(userUnivCode || "").trim().toLowerCase();
-
-              if (targetId && delId && targetId === delId) return true;
-              if (targetId && delCode && targetId === delCode) return true;
-              if (targetCode && delCode && targetCode === delCode) return true;
-              return false;
-            });
-
-            if (isSchoolDeleted) {
-              if (pathname.startsWith("/api/")) {
-                return NextResponse.json(
-                  { error: "Access Denied: Your institution has been deleted." },
-                  { status: 403 }
-                );
-              }
-              const url = new URL("/unauthorized", request.url);
-              url.searchParams.set("reason", "university_deleted");
-              return NextResponse.redirect(url);
-            }
-          }
-        }
-
-        // 4. Auto-provision profile if missing so future queries find it immediately
-        if (!profile && user.id && normalizedEmail) {
-          try {
-            const role =
-              (user.user_metadata as any)?.role ||
-              (user.app_metadata as any)?.role ||
-              "system_admin";
-            const schoolId = userUnivId || null;
-            await (supabase as any).from("profiles").upsert(
-              {
-                id: user.id,
-                email: normalizedEmail,
-                full_name: (user.user_metadata as any)?.full_name || normalizedEmail,
-                account_status: "active",
-                school_id: schoolId,
-                university_id: schoolId,
-                metadata: {
-                  role,
-                  default_role: role,
-                  school_id: schoolId,
-                  university_id: schoolId,
-                  university_name: (user.user_metadata as any)?.university_name || "",
-                },
-              },
-              { onConflict: "id" }
-            );
-          } catch {}
+          url.searchParams.set("reason", "account_suspended");
+          return createRedirectWithCookies(url, supabaseResponse);
         }
       }
-    } catch (univCheckErr) {
-      console.warn("Could not perform university deletion check in middleware:", univCheckErr);
+    } catch (schoolCheckErr) {
+      console.warn("Could not perform live school status check in middleware:", schoolCheckErr);
     }
   }
 
@@ -643,10 +545,21 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  if (pathname.startsWith("/finance") || pathname.startsWith("/api/finance")) {
-    const hasFinanceAccess =
-      roles.some((r) => ["bursar", "finance_officer", "accountant", "auditor"].includes(r));
+  if (pathname.startsWith("/finance") || pathname.startsWith("/bursar") || pathname.startsWith("/api/finance")) {
+    const hasFinanceAccess = roles.some((r) =>
+      ["bursar", "finance_officer", "accountant", "auditor", "system_admin", "admin", "administrator", "superadmin"].includes(r)
+    );
     if (!hasFinanceAccess) {
+      return respondNotFound(request, supabaseResponse);
+    }
+    return supabaseResponse;
+  }
+
+  if (pathname.startsWith("/registrar") || pathname.startsWith("/api/registrar")) {
+    const hasRegistrarAccess = roles.some((r) =>
+      ["registrar", "admissions_officer", "academic_affairs_officer", "system_admin", "admin", "administrator", "superadmin"].includes(r)
+    );
+    if (!hasRegistrarAccess) {
       return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
@@ -655,11 +568,29 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/teacher") || pathname.startsWith("/api/teacher")) {
     const hasTeacherAccess =
       roles.includes("teacher") ||
+      roles.includes("instructor") ||
       roles.includes("lecturer") ||
       roles.includes("system_admin") ||
       roles.includes("admin") ||
       roles.includes("superadmin");
     if (!hasTeacherAccess) {
+      return respondNotFound(request, supabaseResponse);
+    }
+    return supabaseResponse;
+  }
+
+  if (pathname.startsWith("/api/staff")) {
+    const hasAcademicStaffAccess =
+      roles.includes("teacher") ||
+      roles.includes("instructor") ||
+      roles.includes("lecturer") ||
+      roles.includes("academic_advisor") ||
+      roles.includes("head_of_department") ||
+      roles.includes("dean") ||
+      roles.includes("system_admin") ||
+      roles.includes("admin") ||
+      roles.includes("superadmin");
+    if (!hasAcademicStaffAccess) {
       return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;

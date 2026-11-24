@@ -1,224 +1,205 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import React, { useMemo, useState } from "react";
+import { Award, CheckCircle2, Printer, TrendingUp } from "lucide-react";
+import { useStudentPortalSection } from "@/lib/student/useStudentPortalData";
 import {
-  Award,
-  Download,
-  CheckCircle2,
-  TrendingUp,
-  FileText,
-  Sparkles,
-  School,
-} from "lucide-react";
+  StudentEmptyState,
+  StudentPageError,
+  StudentPageLoading,
+  UnlinkedStudentProfileCard,
+} from "@/components/student/StudentPortalPrimitives";
 
-export default function StudentResultsPage() {
-  const [results, setResults] = useState<any[]>([]);
-  const [student, setStudent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+export default function UniversityResultsTranscriptPage() {
+  const { data, loading, error, reload } = useStudentPortalSection("results");
+  const [selectedTerm, setSelectedTerm] = useState<string>("all");
 
-  useEffect(() => {
-    async function loadResults() {
-      setLoading(true);
-      const supabase = createClient();
-      const db = supabase as any;
+  const grades = useMemo(() => data?.grades || [], [data?.grades]);
+  const terms = useMemo(() => data?.terms || [], [data?.terms]);
 
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
+  const filteredGrades = useMemo(() => {
+    if (selectedTerm === "all") return grades;
+    return grades.filter((g: any) => String(g.term_id) === selectedTerm);
+  }, [grades, selectedTerm]);
 
-        let stu = null;
-        if (user) {
-          const { data: s } = await db
-            .from("students")
-            .select("*, programme:programme_id(*), profile:profile_id(*)")
-            .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-            .maybeSingle();
-          stu = s;
-        }
-
-        if (!stu) {
-          const { data: firstStu } = await db
-            .from("students")
-            .select("*, programme:programme_id(*), profile:profile_id(*)")
-            .limit(1)
-            .maybeSingle();
-          stu = firstStu;
-        }
-
-        if (stu) {
-          setStudent(stu);
-
-          const { data: enrs } = await db
-            .from("course_enrolments")
-            .select("id")
-            .eq("student_id", stu.id);
-
-          const enrIds = (enrs || []).map((e: any) => e.id);
-
-          if (enrIds.length > 0) {
-            const { data: pubResults } = await db
-              .from("published_results")
-              .select(`
-                id,
-                total_marks,
-                letter_grade,
-                grade_points,
-                published_at,
-                enrolment:enrolment_id(
-                  course_offering:course_offering_id(
-                    course:course_id(code, name, credits)
-                  )
-                )
-              `)
-              .in("enrolment_id", enrIds);
-
-            setResults(pubResults || []);
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  const termGpa = useMemo(() => {
+    let pts = 0;
+    let cr = 0;
+    for (const g of filteredGrades) {
+      const c = Number(g.course?.credits ?? 3);
+      pts += Number(g.grade_point ?? 0) * c;
+      cr += c;
     }
-
-    loadResults();
-  }, []);
-
-  const handlePrintSlip = () => {
-    window.print();
-  };
+    return cr > 0 ? Number((pts / cr).toFixed(2)) : 0;
+  }, [filteredGrades]);
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-semibold text-slate-500">Loading semester results & GPA...</p>
-      </div>
-    );
+    return <StudentPageLoading label="Loading semester results & transcript..." />;
   }
+  if (error) {
+    return <StudentPageError error={error} onRetry={reload} />;
+  }
+  if (!data || data.unlinkedStudent) {
+    return <UnlinkedStudentProfileCard schoolName={data?.school?.name} />;
+  }
+
+  const cumulativeGpa = Number(data.summary?.cumulativeGpa ?? 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Academic Results & GPA Summary</h1>
-          <p className="text-xs text-slate-500">Authoritative published marks, letter grades, and academic standing</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            Semester Results &amp; Transcript
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Official examination grades, semester GPA, cumulative CGPA, and printable statement of results.
+          </p>
         </div>
-        <button
-          onClick={handlePrintSlip}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition shadow-xs self-start"
-        >
-          <Download className="h-3.5 w-3.5" />
-          <span>Download Result Slip (PDF)</span>
-        </button>
+
+        <div className="flex items-center gap-2.5">
+          {terms.length > 0 && (
+            <select
+              value={selectedTerm}
+              onChange={(e) => setSelectedTerm(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold"
+            >
+              <option value="all">All Semesters</option>
+              {terms.map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.name || t.code}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>Print Transcript</span>
+          </button>
+        </div>
       </div>
 
-      {/* GPA KPI Banner */}
+      {/* Summary KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Cumulative GPA (CGPA)</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-slate-900">{student?.cgpa ? Number(student.cgpa).toFixed(2) : "3.84"}</span>
-            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-              First Class Honours
-            </span>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+            <span>Cumulative CGPA</span>
+            <Award className="h-4 w-4 text-indigo-600" />
           </div>
-          <p className="text-[11px] text-slate-400">Scale: 4.00 Max</p>
+          <div className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-1.5">
+            {cumulativeGpa.toFixed(2)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">Out of 4.00 scale</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Current Term GPA</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-blue-600">{student?.gpa ? Number(student.gpa).toFixed(2) : "3.82"}</span>
-            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-              Semester 1
-            </span>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+            <span>Filtered Semester GPA</span>
+            <TrendingUp className="h-4 w-4 text-blue-600" />
           </div>
-          <p className="text-[11px] text-slate-400">Academic Year 2026/2027</p>
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5">
+            {termGpa.toFixed(2)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {filteredGrades.length} graded courses shown
+          </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Credits Completed</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-slate-900">{student?.total_credits_earned || 36}</span>
-            <span className="text-xs font-bold text-slate-500">/ 130 Required</span>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
+          <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+            <span>Credits Evaluated</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
-          <p className="text-[11px] text-slate-400">All graduation credit prerequisites passed</p>
+          <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1.5">
+            {data.summary?.totalCreditsEvaluated ?? 0}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {data.student?.student_number} · {data.student?.programme_name}
+          </div>
         </div>
       </div>
 
-      {/* Official Published Results Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Award className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-bold text-slate-900">Semester 1 Published Grades ({results.length})</h2>
+      {filteredGrades.length === 0 ? (
+        <StudentEmptyState
+          icon={Award}
+          title="No Exam Grades Published Yet"
+          description="Once your lecturers and academic office record exam scores for your enrolled courses, your transcript statement will populate here."
+        />
+      ) : (
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs">
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {data.school?.name} — Statement of Results
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                {data.student?.full_name} ({data.student?.student_number}) · {data.student?.programme_name}
+              </p>
+            </div>
           </div>
-          <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-            <CheckCircle2 className="h-3.5 w-3.5" /> Official & Certified
-          </span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50/70 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-100">
-                <th className="py-3.5 px-6">Course Code</th>
-                <th className="py-3.5 px-6">Course Title</th>
-                <th className="py-3.5 px-6">Credits</th>
-                <th className="py-3.5 px-6">Total Mark</th>
-                <th className="py-3.5 px-6">Letter Grade</th>
-                <th className="py-3.5 px-6">Grade Points</th>
-                <th className="py-3.5 px-6">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {results.length > 0 ? (
-                results.map((r) => {
-                  const course = r.enrolment?.course_offering?.course;
-                  return (
-                    <tr key={r.id} className="hover:bg-slate-50/50 transition">
-                      <td className="py-4 px-6 font-bold text-slate-800">
-                        {course?.code}
-                      </td>
-                      <td className="py-4 px-6 font-semibold text-slate-800">
-                        {course?.name}
-                      </td>
-                      <td className="py-4 px-6 font-semibold text-slate-600">
-                        {course?.credits || 3}
-                      </td>
-                      <td className="py-4 px-6 font-black text-slate-900">
-                        {r.total_marks}%
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 font-extrabold text-xs">
-                          {r.letter_grade}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 font-bold text-slate-700">
-                        {Number(r.grade_points).toFixed(2)}
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px]">
-                          Passed
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase font-bold text-[10px] tracking-wider">
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
-                    No semester marks published yet.
-                  </td>
+                  <th className="px-5 py-3 text-left">Course</th>
+                  <th className="px-4 py-3 text-left">Semester</th>
+                  <th className="px-4 py-3 text-right">Credits</th>
+                  <th className="px-4 py-3 text-right">CA</th>
+                  <th className="px-4 py-3 text-right">Exam</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-center">Grade</th>
+                  <th className="px-4 py-3 text-right">GP</th>
+                  <th className="px-5 py-3 text-right">Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredGrades.map((g: any) => (
+                  <tr key={g.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                    <td className="px-5 py-3.5">
+                      <div className="font-bold text-slate-900 dark:text-white">
+                        {g.course?.code || "COURSE"}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {g.course?.name || "Course Unit"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300">
+                      {g.term?.name || g.term?.code || "—"}
+                    </td>
+                    <td className="px-4 py-3.5 text-right font-semibold">
+                      {g.course?.credits ?? 3}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">{Number(g.ca_score ?? 0)}</td>
+                    <td className="px-4 py-3.5 text-right">{Number(g.exam_score ?? 0)}</td>
+                    <td className="px-4 py-3.5 text-right font-bold text-slate-900 dark:text-white">
+                      {Number(g.total_score ?? 0)}
+                    </td>
+                    <td className="px-4 py-3.5 text-center">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 font-bold">
+                        {g.grade_letter}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right font-bold">
+                      {Number(g.grade_point ?? 0).toFixed(2)}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {g.status || "published"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
-

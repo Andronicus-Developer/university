@@ -97,6 +97,39 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
+      // 1d. Live public.students
+      if (!resolvedSchoolId) {
+        try {
+          const { data: liveStudentRow } = await (directAdmin as any)
+            .from("students")
+            .select("school_id")
+            .or(`profile_id.eq.${activeUserId},id.eq.${activeUserId}`)
+            .limit(1)
+            .maybeSingle();
+          if (liveStudentRow?.school_id) {
+            resolvedSchoolId = String(liveStudentRow.school_id);
+          }
+        } catch {}
+      }
+
+      // 1e. Live public.parent_guardians
+      if (!resolvedSchoolId) {
+        try {
+          let parentQuery = (directAdmin as any)
+            .from("parent_guardians")
+            .select("school_id");
+          if (activeEmail) {
+            parentQuery = parentQuery.or(`user_id.eq.${activeUserId},email.eq.${activeEmail}`);
+          } else {
+            parentQuery = parentQuery.eq("user_id", activeUserId);
+          }
+          const { data: liveParentRow } = await parentQuery.limit(1).maybeSingle();
+          if (liveParentRow?.school_id) {
+            resolvedSchoolId = String(liveParentRow.school_id);
+          }
+        } catch {}
+      }
+
       // 1c. Authenticated user metadata / JWT claims
       if (!resolvedSchoolId) {
         resolvedSchoolId =

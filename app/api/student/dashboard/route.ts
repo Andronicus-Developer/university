@@ -1,445 +1,107 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { supabaseFetchWithRetry, extractUserFromCookies } from "@/lib/supabase/fetch";
+import { createDirectAdminClient } from "@/lib/supabase/admin";
+import {
+  resolveStudentRequestContext,
+  safeStudentQuery,
+} from "@/lib/student/student-context";
 
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(supabaseUrl, serviceRoleKey, {
-    global: {
-      fetch: (input, init) => supabaseFetchWithRetry(input, init, 2, 8000),
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
-
-async function getStudentContext(db: any, request: NextRequest) {
-  const user = extractUserFromCookies(request.cookies.getAll());
-
-  let student = null;
-  if (user && user.id) {
-    const { data: stuByAuth } = await db
-      .from("students")
-      .select("*, profile:profile_id(*), programme:programme_id(*, department:department_id(name))")
-      .or(`profile_id.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle();
-
-    student = stuByAuth;
-  }
-
-  if (!student) {
-    const { data: firstStu } = await db
-      .from("students")
-      .select("*, profile:profile_id(*), programme:programme_id(*, department:department_id(name))")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    student = firstStu;
-  }
-
-  return { user, student };
-}
-
+/**
+ * Hardened multi-tenant endpoint delegating to strict authenticated `(school_id, student_id)` resolution.
+ * Never falls back to another student's record.
+ */
 export async function GET(request: NextRequest) {
   try {
-    const db = getAdminClient() as any;
-    const { student } = await getStudentContext(db, request);
+    const { ctx, errorResponse } = await resolveStudentRequestContext(request);
+    if (errorResponse) return errorResponse;
 
-    if (!student) {
-      return NextResponse.json({ error: "Student not found" }, { status: 404 });
+    if (!ctx.student) {
+      return NextResponse.json(
+        { error: "Student profile not linked to this account." },
+        { status: 404 }
+      );
     }
 
-    const studentId = student.id;
+    const db = createDirectAdminClient();
+    const schoolId = ctx.schoolId;
+    const studentId = String(ctx.student.id);
 
-    // 0. Active Term & Academic Year
-    const { data: activeTerm } = await db
-      .from("terms")
-      .select("*, academic_year:academic_year_id(*)")
-      .eq("is_active", true)
-      .maybeSingle();
+    const [coursesRes, enrolsRes, gradesRes, invoicesRes, paymentsRes] =
+      await Promise.all([
+        safeStudentQuery<any[]>(
+          (db as any).from("courses").select("*").eq("school_id", schoolId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("course_enrolments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("exam_grades")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("invoices")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+        safeStudentQuery<any[]>(
+          (db as any)
+            .from("payments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+        ),
+      ]);
 
-    // 1. Grade Scale Items
-    const { data: scaleItems } = await db
-      .from("grade_scale_items")
-      .select("*")
-      .order("min_percentage", { ascending: false });
-
-    // 2. Course Enrolments
-    const { data: enrolments } = await db
-      .from("course_enrolments")
-      .select(`
-        id,
-        course_offering_id,
-        enrolment_status,
-        registered_at,
-        final_grade,
-        grade_points,
-        course_offering:course_offering_id(
-          id,
-          section,
-          delivery_mode,
-          capacity,
-          enrolled_count,
-          course:course_id(id, code, name, credits, description)
-        )
-      `)
-      .eq("student_id", studentId)
-      .eq("enrolment_status", "enrolled");
-
-    const enrolledOfferingIds = (enrolments || []).map((e: any) => e.course_offering_id);
-    const enrolmentIds = (enrolments || []).map((e: any) => e.id);
-
-    // 3. All Enrolments (including completed for cumulative stats)
-    const { data: allEnrolments } = await db
-      .from("course_enrolments")
-      .select(`
-        id,
-        enrolment_status,
-        final_grade,
-        grade_points,
-        course_offering:course_offering_id(
-          course:course_id(id, code, credits)
-        )
-      `)
-      .eq("student_id", studentId);
-
-    const allEnrolmentIds = (allEnrolments || []).map((e: any) => e.id);
-
-    // 4. Published Results from database
-    let publishedResults: any[] = [];
-    if (allEnrolmentIds.length > 0) {
-      const { data: pubRes } = await db
-        .from("published_results")
-        .select(`
-          id,
-          enrolment_id,
-          total_marks,
-          letter_grade,
-          grade_points,
-          published_at
-        `)
-        .in("enrolment_id", allEnrolmentIds);
-      publishedResults = pubRes || [];
-    }
-
-    // 5. Assessment Marks from database
-    let recentMarks: any[] = [];
-    if (allEnrolmentIds.length > 0) {
-      const { data: marks } = await db
-        .from("assessment_marks")
-        .select(`
-          id,
-          enrolment_id,
-          marks_obtained,
-          is_absent,
-          remarks,
-          assessment_component:assessment_component_id(
-            id,
-            name,
-            component_type,
-            max_marks,
-            weight_percentage,
-            course_offering:course_offering_id(
-              course:course_id(code, name, credits)
-            )
-          )
-        `)
-        .in("enrolment_id", allEnrolmentIds)
-        .order("entered_at", { ascending: false });
-
-      recentMarks = marks || [];
-    }
-
-    // 6. Dynamic GPA & CGPA Calculation directly from Database
-    const pubResultByEnr = new Map<string, any>();
-    for (const pr of publishedResults) {
-      pubResultByEnr.set(pr.enrolment_id, pr);
-    }
-
-    const marksByEnrolment = new Map<string, any[]>();
-    for (const rm of recentMarks) {
-      if (!marksByEnrolment.has(rm.enrolment_id)) {
-        marksByEnrolment.set(rm.enrolment_id, []);
-      }
-      marksByEnrolment.get(rm.enrolment_id)!.push(rm);
-    }
-
-    let termPoints = 0;
-    let termCreditsEvaluated = 0;
-    let earnedCreditsCount = Number(student.total_credits_earned || 0);
-
-    for (const enr of (allEnrolments || [])) {
-      const credits = Number(enr.course_offering?.course?.credits || 3);
-      const pub = pubResultByEnr.get(enr.id);
-
-      if (pub && pub.grade_points !== null) {
-        const gp = Number(pub.grade_points);
-        termPoints += gp * credits;
-        termCreditsEvaluated += credits;
-        if (gp >= 1.00) {
-          earnedCreditsCount += credits;
-        }
-      } else {
-        // Continuous assessment marks projection
-        const courseMarks = marksByEnrolment.get(enr.id) || [];
-        if (courseMarks.length > 0) {
-          let obtainedWeight = 0;
-          let totalWeight = 0;
-          for (const m of courseMarks) {
-            const comp = m.assessment_component;
-            if (comp && Number(comp.max_marks) > 0 && Number(comp.weight_percentage) > 0) {
-              obtainedWeight += (Number(m.marks_obtained) / Number(comp.max_marks)) * Number(comp.weight_percentage);
-              totalWeight += Number(comp.weight_percentage);
-            }
-          }
-
-          if (totalWeight > 0 && scaleItems && scaleItems.length > 0) {
-            const coursePct = (obtainedWeight / totalWeight) * 100;
-            const matchedItem = scaleItems.find(
-              (it: any) => coursePct >= Number(it.min_percentage) && coursePct <= Number(it.max_percentage)
-            );
-            const gp = matchedItem ? Number(matchedItem.grade_points) : 0;
-            termPoints += gp * credits;
-            termCreditsEvaluated += credits;
-            if (gp >= 1.00) {
-              earnedCreditsCount += credits;
-            }
-          }
-        }
-      }
-    }
-
-    // Determine live calculated GPA and CGPA
-    const calculatedTermGpa = termCreditsEvaluated > 0
-      ? Number((termPoints / termCreditsEvaluated).toFixed(2))
-      : Number(student.gpa || 0.00);
-
-    const liveCgpa = Number(student.cgpa) > 0
-      ? Number(student.cgpa)
-      : (calculatedTermGpa > 0 ? calculatedTermGpa : 0.00);
-
-    // Ghana Tertiary Academic Classification
-    let academicClass = "First Class Honours";
-    if (liveCgpa >= 3.60) {
-      academicClass = "First Class Honours";
-    } else if (liveCgpa >= 3.00) {
-      academicClass = "Second Class (Upper Division)";
-    } else if (liveCgpa >= 2.50) {
-      academicClass = "Second Class (Lower Division)";
-    } else if (liveCgpa >= 2.00) {
-      academicClass = "Third Class Division";
-    } else if (liveCgpa >= 1.50) {
-      academicClass = "Pass";
-    } else {
-      academicClass = "Ineligible / Fail";
-    }
-
-    // 7. Available Course Offerings (for instant enrollment)
-    const { data: allOfferings } = await db
-      .from("course_offerings")
-      .select(`
-        id,
-        section,
-        delivery_mode,
-        capacity,
-        enrolled_count,
-        status,
-        course:course_id(id, code, name, credits, description)
-      `)
-      .order("created_at", { ascending: true });
-
-    // Available offerings are those NOT already enrolled by this student
-    const availableOfferings = (allOfferings || []).filter(
-      (off: any) => !enrolledOfferingIds.includes(off.id)
+    const totalInvoiced = (invoicesRes.data || []).reduce(
+      (sum: number, inv: any) => sum + Number(inv.total_amount ?? 0),
+      0
     );
-
-    // 8. Timetable Events
-    let timetableEvents: any[] = [];
-    if (enrolledOfferingIds.length > 0) {
-      const { data: events } = await db
-        .from("timetable_events")
-        .select(`
-          id,
-          day_of_week,
-          start_time,
-          end_time,
-          course_offering:course_offering_id(
-            course:course_id(code, name)
-          ),
-          room:room_id(name, building:building_id(name))
-        `)
-        .in("course_offering_id", enrolledOfferingIds);
-
-      timetableEvents = events || [];
-    }
-
-    // 9. Attendance Records
-    const { data: attendanceRecords } = await db
-      .from("attendance_records")
-      .select("id, status, recorded_at, class_session:class_session_id(session_date, topic)")
-      .eq("student_id", studentId);
-
-    const totalSessions = attendanceRecords?.length || 0;
-    const attendedSessions = (attendanceRecords || []).filter(
-      (a: any) => a.status === "present" || a.status === "late"
-    ).length;
-    const attendancePercentage = totalSessions > 0 ? Math.round((attendedSessions / totalSessions) * 100) : 100;
-    const attendanceStanding = attendancePercentage >= 75
-      ? "Good Standing"
-      : attendancePercentage >= 60
-      ? "Attendance Warning"
-      : "At Risk";
-
-    // 10. Invoices, Payments, Receipts
-    const { data: invoices } = await db
-      .from("student_invoices")
-      .select("*, lines:invoice_lines(*)")
-      .eq("student_id", studentId)
-      .order("issue_date", { ascending: false });
-
-    let totalInvoiced = 0;
-    let totalPaid = 0;
-    let balanceDue = 0;
-    let earliestDueDate: string | null = null;
-
-    (invoices || []).forEach((inv: any) => {
-      const bAmount = Number(inv.balance_amount || 0);
-      totalInvoiced += Number(inv.total_amount || 0);
-      totalPaid += Number(inv.paid_amount || 0);
-      balanceDue += bAmount;
-      if (bAmount > 0 && inv.due_date && (!earliestDueDate || inv.due_date < earliestDueDate)) {
-        earliestDueDate = inv.due_date;
-      }
-    });
-
-    const { data: receipts } = await db
-      .from("receipts")
-      .select("*, payment:payment_id(*)")
-      .eq("student_id", studentId)
-      .order("issued_at", { ascending: false });
-
-    // 11. Service Requests
-    const { data: serviceRequests } = await db
-      .from("service_requests")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("submitted_at", { ascending: false });
-
-    // 12. Support Cases
-    const { data: supportCases } = await db
-      .from("support_cases")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("created_at", { ascending: false });
-
-    // 13. Hostel Accommodation
-    const { data: accommodation } = await db
-      .from("allocations")
-      .select(`
-        id,
-        status,
-        check_in_at,
-        bed:bed_id(
-          bed_number,
-          room:hostel_room_id(
-            room_number,
-            floor_number,
-            residence:residence_id(name, address)
+    const totalPaid =
+      (paymentsRes.data || []).length > 0
+        ? (paymentsRes.data || []).reduce(
+            (sum: number, pay: any) => sum + Number(pay.amount ?? 0),
+            0
           )
-        )
-      `)
-      .eq("student_id", studentId)
-      .eq("status", "active")
-      .maybeSingle();
-
-    // 14. Library Loans
-    let activeLoans: any[] = [];
-    if (student.profile_id) {
-      const { data: loans } = await db
-        .from("loans")
-        .select(`
-          id,
-          borrowed_at,
-          due_date,
-          status,
-          copy:copy_id(
-            barcode,
-            item:library_item_id(title, author, call_number)
-          )
-        `)
-        .eq("user_id", student.profile_id)
-        .order("due_date", { ascending: true });
-
-      activeLoans = loans || [];
-    }
-
-    // 15. Announcements & Notifications
-    const { data: announcements } = await db
-      .from("announcements")
-      .select("*")
-      .order("is_pinned", { ascending: false })
-      .order("published_at", { ascending: false })
-      .limit(5);
-
-    const { data: notifications } = await db
-      .from("notifications")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(10);
+        : (invoicesRes.data || []).reduce(
+            (sum: number, inv: any) => sum + Number(inv.paid_amount ?? 0),
+            0
+          );
 
     return NextResponse.json({
-      activeTerm: activeTerm || {
-        name: "First Semester 2026/2027",
-        code: "2026-SEM1",
-        academic_year: { code: "2026/2027", name: "2026/2027 Academic Year" }
-      },
+      activeTerm: ctx.activeTerm,
       student: {
-        id: student.id,
-        profileId: student.profile_id,
-        studentNumber: student.student_number,
-        fullName: student.profile?.full_name || "Ama Johnson",
-        email: student.profile?.email || "ama.johnson@university.edu.gh",
-        phone: student.profile?.phone || "+233 24 555 0192",
-        address: student.profile?.address || "University Hall Annex, Room B-204",
-        level: student.current_level || 100,
-        gpa: calculatedTermGpa,
-        cgpa: liveCgpa,
-        academicClass,
-        creditsEarned: earnedCreditsCount,
-        programme: student.programme?.name || "BSc Computer Science",
-        programmeCode: student.programme?.code || "CS-BS",
-        department: student.programme?.department?.name || "Department of Computer Science",
+        id: ctx.student.id,
+        profileId: ctx.student.profile_id,
+        studentNumber: ctx.student.student_number,
+        fullName: ctx.student.full_name,
+        email: ctx.student.email,
+        phone: ctx.student.phone,
+        address: ctx.student.address,
+        level: ctx.student.current_level || 100,
+        gpa: Number(ctx.student.gpa ?? 0),
+        cgpa: Number(ctx.student.cgpa ?? 0),
+        programme: ctx.programme?.name || "",
+        programmeCode: ctx.programme?.code || "",
+        department: ctx.department?.name || "",
       },
-      enrolments: enrolments || [],
-      availableOfferings: availableOfferings || [],
-      timetableEvents,
-      attendance: {
-        percentage: attendancePercentage,
-        totalSessions,
-        attendedSessions,
-        standing: attendanceStanding,
-        records: attendanceRecords || [],
-      },
+      courses: coursesRes.data || [],
+      enrolments: enrolsRes.data || [],
+      grades: gradesRes.data || [],
       finance: {
         totalInvoiced,
         totalPaid,
-        balanceDue,
-        dueDate: earliestDueDate,
-        invoices: invoices || [],
-        receipts: receipts || [],
+        balanceDue: Math.max(0, totalInvoiced - totalPaid),
+        invoices: invoicesRes.data || [],
+        payments: paymentsRes.data || [],
       },
-      publishedResults,
-      recentMarks,
-      serviceRequests: serviceRequests || [],
-      supportCases: supportCases || [],
-      announcements: announcements || [],
-      notifications: notifications || [],
-      accommodation,
-      activeLoans,
     });
   } catch (error: any) {
     console.error("Student dashboard GET error:", error);
@@ -452,307 +114,34 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const db = getAdminClient() as any;
-    const { student } = await getStudentContext(db, request);
+    const { ctx, errorResponse } = await resolveStudentRequestContext(request);
+    if (errorResponse) return errorResponse;
 
-    if (!student) {
-      return NextResponse.json({ error: "Unauthorized / Student not found" }, { status: 401 });
+    if (!ctx.student) {
+      return NextResponse.json({ error: "Student profile not found" }, { status: 404 });
     }
 
-    const studentId = student.id;
-    const body = await request.json();
-    const { action } = body;
-
-    // ----------------------------------------------------
-    // 1. ENROLL COURSE (Create)
-    // ----------------------------------------------------
-    if (action === "enroll_course") {
-      const { offeringId } = body;
-      if (!offeringId) {
-        return NextResponse.json({ error: "Missing offeringId" }, { status: 400 });
-      }
-
-      // Find current term
-      const { data: term } = await db.from("terms").select("id").limit(1).single();
-      const termId = term ? term.id : null;
-
-      // Check existing enrolment
-      const { data: existing } = await db
-        .from("course_enrolments")
-        .select("id")
-        .eq("student_id", studentId)
-        .eq("course_offering_id", offeringId)
-        .maybeSingle();
-
-      if (existing) {
-        return NextResponse.json({ error: "Already enrolled in this course" }, { status: 400 });
-      }
-
-      // Insert enrolment
-      const { data: newEnrolment, error: enrError } = await db
-        .from("course_enrolments")
-        .insert({
-          student_id: studentId,
-          course_offering_id: offeringId,
-          term_id: termId,
-          enrolment_status: "enrolled",
+    const db = createDirectAdminClient();
+    const body = await request.json().catch(() => ({}));
+    if (body.action === "update_contact") {
+      await (db as any)
+        .from("students")
+        .update({
+          phone: String(body.phone || "").trim(),
+          address: String(body.address || "").trim(),
         })
-        .select()
-        .single();
-
-      if (enrError) throw enrError;
-
-      // Add notification
-      if (student.profile_id) {
-        await db.from("notifications").insert({
-          user_id: student.profile_id,
-          title: "Course Registration Confirmed",
-          message: "You have successfully enrolled in your chosen course module.",
-          type: "academic",
-          is_read: false,
-        });
-      }
-
-      return NextResponse.json({ success: true, enrolment: newEnrolment });
-    }
-
-    // ----------------------------------------------------
-    // 2. DROP COURSE (Delete)
-    // ----------------------------------------------------
-    if (action === "drop_course") {
-      const { enrolmentId, offeringId } = body;
-
-      if (!enrolmentId && !offeringId) {
-        return NextResponse.json({ error: "Missing enrolmentId or offeringId" }, { status: 400 });
-      }
-
-      let deleteQuery = db.from("course_enrolments").delete();
-      if (enrolmentId) {
-        deleteQuery = deleteQuery.eq("id", enrolmentId);
-      } else if (offeringId) {
-        deleteQuery = deleteQuery.eq("course_offering_id", offeringId).eq("student_id", studentId);
-      }
-
-      const { data: deletedRows, error: dropError } = await deleteQuery.select();
-      if (dropError) throw dropError;
-
-      // Add notification
-      if (student.profile_id) {
-        await db.from("notifications").insert({
-          user_id: student.profile_id,
-          title: "Course Dropped",
-          message: "The course was dropped successfully and is immediately ready for re-enrollment.",
-          type: "academic",
-          is_read: false,
-        });
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: "Course dropped successfully and is immediately ready for enrollment.",
-        deleted: deletedRows,
-      });
-    }
-
-    // ----------------------------------------------------
-    // 3. CREATE SERVICE REQUEST (Create)
-    // ----------------------------------------------------
-    if (action === "create_service_request") {
-      const { requestType, purpose } = body;
-      const feeAmount = requestType === "transcript" ? 50.00 : 25.00;
-
-      const { data: newReq, error: reqErr } = await db
-        .from("service_requests")
-        .insert({
-          student_id: studentId,
-          request_type: requestType || "enrollment_letter",
-          status: "pending",
-          fee_amount: feeAmount,
-          is_paid: true,
-          details: {
-            purpose: purpose || "Student Registry Verification",
-            submitted_via: "student_dashboard",
-          },
-        })
-        .select()
-        .single();
-
-      if (reqErr) throw reqErr;
-      return NextResponse.json({ success: true, request: newReq });
-    }
-
-    // ----------------------------------------------------
-    // 4. CANCEL SERVICE REQUEST (Delete)
-    // ----------------------------------------------------
-    if (action === "delete_service_request") {
-      const { requestId } = body;
-      const { error: delErr } = await db
-        .from("service_requests")
-        .delete()
-        .eq("id", requestId)
-        .eq("student_id", studentId);
-
-      if (delErr) throw delErr;
+        .eq("school_id", ctx.schoolId)
+        .eq("id", ctx.student.id);
       return NextResponse.json({ success: true });
     }
 
-    // ----------------------------------------------------
-    // 5. CREATE SUPPORT TICKET (Create)
-    // ----------------------------------------------------
-    if (action === "create_support_ticket") {
-      const { category, priority, subject, description } = body;
-      const { data: newTicket, error: ticketErr } = await db
-        .from("support_cases")
-        .insert({
-          student_id: studentId,
-          category: category || "academic",
-          priority: priority || "normal",
-          subject: subject || "Student Query",
-          description: description || "Inquiry submitted via dashboard",
-          status: "open",
-          assigned_team: category === "finance" ? "Finance Help Desk" : "Student Affairs",
-        })
-        .select()
-        .single();
-
-      if (ticketErr) throw ticketErr;
-      return NextResponse.json({ success: true, ticket: newTicket });
-    }
-
-    // ----------------------------------------------------
-    // 6. DELETE SUPPORT TICKET (Delete)
-    // ----------------------------------------------------
-    if (action === "delete_support_ticket") {
-      const { ticketId } = body;
-      const { error: delTicketErr } = await db
-        .from("support_cases")
-        .delete()
-        .eq("id", ticketId)
-        .eq("student_id", studentId);
-
-      if (delTicketErr) throw delTicketErr;
-      return NextResponse.json({ success: true });
-    }
-
-    // ----------------------------------------------------
-    // 7. UPDATE PROFILE CONTACT (Update)
-    // ----------------------------------------------------
-    if (action === "update_contact") {
-      const { phone, address } = body;
-      if (student.profile_id) {
-        const { error: profErr } = await db
-          .from("profiles")
-          .update({ phone, address })
-          .eq("id", student.profile_id);
-
-        if (profErr) throw profErr;
-      }
-      return NextResponse.json({ success: true });
-    }
-
-    // ----------------------------------------------------
-    // 8. PAY FEES (Create Payment & Receipt, Update Invoice)
-    // ----------------------------------------------------
-    if (action === "pay_fee") {
-      const { invoiceId, amount, paymentMethod } = body;
-      const payVal = parseFloat(amount || "0");
-      if (payVal <= 0) {
-        return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
-      }
-
-      const ref = `PAY-${Date.now().toString().slice(-8)}`;
-
-      // 1. Payment
-      const { data: payment, error: pErr } = await db
-        .from("payments")
-        .insert({
-          student_id: studentId,
-          amount: payVal,
-          currency: "GHS",
-          provider: "paystack",
-          provider_reference: ref,
-          payment_method: paymentMethod || "Mobile Money (MTN)",
-          status: "successful",
-        })
-        .select()
-        .single();
-
-      if (pErr) throw pErr;
-
-      // 2. Allocation
-      if (invoiceId) {
-        await db.from("payment_allocations").insert({
-          payment_id: payment.id,
-          invoice_id: invoiceId,
-          allocated_amount: payVal,
-        });
-
-        // 3. Update invoice balance
-        const { data: inv } = await db.from("student_invoices").select("*").eq("id", invoiceId).single();
-        if (inv) {
-          const newPaid = Number(inv.paid_amount || 0) + payVal;
-          const newBalance = Math.max(0, Number(inv.total_amount || 0) - newPaid);
-          const newStatus = newBalance <= 0 ? "paid" : "partially_paid";
-
-          await db
-            .from("student_invoices")
-            .update({
-              paid_amount: newPaid,
-              balance_amount: newBalance,
-              status: newStatus,
-            })
-            .eq("id", invoiceId);
-        }
-      }
-
-      // 4. Receipt
-      const receiptNum = `REC-${Date.now().toString().slice(-6)}`;
-      const { data: receipt } = await db
-        .from("receipts")
-        .insert({
-          payment_id: payment.id,
-          receipt_number: receiptNum,
-          student_id: studentId,
-          amount: payVal,
-          currency: "GHS",
-          receipt_data: {
-            channel: paymentMethod || "Mobile Money",
-            student_name: student.profile?.full_name || "Ama Johnson",
-            ref: ref,
-          },
-        })
-        .select()
-        .single();
-
-      return NextResponse.json({
-        success: true,
-        payment,
-        receipt,
-        message: `Payment of GHS ${payVal.toFixed(2)} recorded. Receipt ${receiptNum} issued.`,
-      });
-    }
-
-    // ----------------------------------------------------
-    // 9. RENEW LIBRARY LOAN (Update)
-    // ----------------------------------------------------
-    if (action === "renew_loan") {
-      const { loanId } = body;
-      const { data: loan } = await db.from("loans").select("*").eq("id", loanId).single();
-      if (loan) {
-        const currentDue = new Date(loan.due_date || Date.now());
-        currentDue.setDate(currentDue.getDate() + 14);
-        const newDueDate = currentDue.toISOString().split("T")[0];
-
-        await db.from("loans").update({ due_date: newDueDate }).eq("id", loanId);
-        return NextResponse.json({ success: true, newDueDate });
-      }
-    }
-
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-  } catch (error: any) {
-    console.error("Student dashboard POST error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to process student dashboard action" },
+      { error: "Use /api/student/portal for tenant-scoped actions." },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to process request" },
       { status: 500 }
     );
   }
