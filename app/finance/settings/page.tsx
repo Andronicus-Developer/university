@@ -8,6 +8,7 @@ import {
   ClassicLoading,
   ClassicPageHeader,
 } from "@/components/portals/ClassicPortalPrimitives";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
 
 interface SettingsData {
   school: { id: string; name: string; currency: string };
@@ -124,6 +125,8 @@ export default function FinanceSettingsPage() {
           </button>
         </div>
       )}
+
+      <AvatarUpload name={data.profile.full_name} />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs p-5 space-y-4">

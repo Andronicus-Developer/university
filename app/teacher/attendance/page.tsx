@@ -46,8 +46,9 @@ function HighSchoolAttendanceView() {
   }, [classId, data?.classes]);
 
   const roster: any[] = useMemo(() => {
-    if (activeClassId && data?.studentsByClass?.[activeClassId]) {
-      return data.studentsByClass[activeClassId];
+    const classList = activeClassId ? data?.studentsByClass?.[activeClassId] : null;
+    if (Array.isArray(classList) && classList.length > 0) {
+      return classList;
     }
     return data?.allStudents || [];
   }, [data?.studentsByClass, data?.allStudents, activeClassId]);

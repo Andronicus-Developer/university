@@ -30,6 +30,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
 
 type SettingsTab = "account" | "school" | "academics" | "display";
 
@@ -614,67 +615,14 @@ export default function SettingsPage() {
             </div>
 
             {/* Avatar Section */}
-            <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-2xl bg-slate-50 border border-slate-200/70">
-              <div className="relative">
-                {accountForm.avatarUrl ? (
-                  <img
-                    src={accountForm.avatarUrl}
-                    alt="Admin Avatar"
-                    className="h-20 w-20 rounded-2xl object-cover border-2 border-white shadow-xs"
-                  />
-                ) : (
-                  <div className="h-20 w-20 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xl font-bold shadow-xs">
-                    {accountForm.fullName.slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-                <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white" />
-              </div>
-
-              <div className="flex-1 space-y-1 text-center sm:text-left">
-                <div className="text-xs font-bold text-slate-900">Administrator Avatar Photo</div>
-                <div className="text-[11px] text-slate-500">
-                  Upload a high-resolution PNG, JPEG, or WebP. Stored securely in Supabase storage (`public-assets/avatars`).
-                </div>
-                <div className="flex items-center gap-2.5 pt-2 justify-center sm:justify-start">
-                  <input
-                    ref={avatarInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    disabled={uploadingAvatar}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold transition-colors cursor-pointer"
-                  >
-                    {uploadingAvatar ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>Uploading...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-3 w-3" />
-                        <span>Upload New Photo</span>
-                      </>
-                    )}
-                  </button>
-
-                  {accountForm.avatarUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setAccountForm({ ...accountForm, avatarUrl: "" })}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-rose-600 hover:bg-rose-50 text-[11px] font-semibold transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      <span>Remove</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+            <AvatarUpload
+              name={accountForm.fullName}
+              initialUrl={accountForm.avatarUrl}
+              subtitle="JPG, PNG, or WebP up to 2 MB · Stored securely in Supabase avatars bucket"
+              onUpdated={(url) =>
+                setAccountForm((prev) => ({ ...prev, avatarUrl: url || "" }))
+              }
+            />
 
             {/* Profile Fields Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

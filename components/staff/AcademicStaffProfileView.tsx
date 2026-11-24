@@ -9,6 +9,8 @@ import {
   StaffPageLoading,
   UnlinkedStaffProfileCard,
 } from "@/components/staff/StaffPortalPrimitives";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
+import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
 import {
   Award,
   BookOpen,
@@ -40,6 +42,7 @@ interface StaffProfilePayload {
 export default function AcademicStaffProfileView() {
   const { data, loading, error, reload, mutate } =
     useStaffPortalSection<StaffProfilePayload>("profile");
+  const liveAvatarUrl = useCurrentUserAvatar();
 
   const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
@@ -139,15 +142,18 @@ export default function AcademicStaffProfileView() {
         </div>
       )}
 
+      <AvatarUpload name={sp.full_name} initialUrl={sp.avatar_url} />
+
       {/* Credential Summary Card */}
       <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3.5">
-            <div
-              className={`h-14 w-14 rounded-2xl bg-gradient-to-tr ${cfg.accentGradient} text-white flex items-center justify-center text-lg font-extrabold shrink-0 shadow-sm`}
-            >
-              {(sp.full_name || "ST").slice(0, 2).toUpperCase()}
-            </div>
+            <UserAvatar
+              src={liveAvatarUrl || sp.avatar_url}
+              name={sp.full_name}
+              size="lg"
+              shape="rounded"
+            />
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                 {sp.full_name}

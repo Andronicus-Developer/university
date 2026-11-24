@@ -122,6 +122,10 @@ export async function upsertLiveStudentRecord(
       department_id: input.department_id || null,
       intake_id: input.intake_id || null,
       current_level: input.current_level ?? 100,
+      metadata: {
+        ...(input.metadata || {}),
+        gender: safeGender,
+      },
     };
     if (tier === "mid") return mid;
 
@@ -129,10 +133,6 @@ export async function upsertLiveStudentRecord(
       ...mid,
       ...(input.entry_term_id !== undefined ? { entry_term_id: input.entry_term_id } : {}),
       ...(input.cohort_year !== undefined ? { cohort_year: input.cohort_year } : {}),
-      metadata: {
-        ...(input.metadata || {}),
-        gender: safeGender,
-      },
     };
   };
 

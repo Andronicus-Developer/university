@@ -11,6 +11,7 @@ import {
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
 import {
   getStudentPortalConfig,
   isStudentRouteAllowedForSchoolType,
@@ -95,6 +96,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const [studentSchoolId, setStudentSchoolId] = useState<string | null>(null);
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
   const [quickSearch, setQuickSearch] = useState<string>("");
+  const avatarUrl = useCurrentUserAvatar();
 
   const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
     useFeatureFlags(studentSchoolId);
@@ -400,11 +402,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       {/* Learner Profile Card Footer */}
       <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
         <div className="flex items-center gap-3 p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-xs">
-          <div
-            className={`h-9 w-9 rounded-full bg-gradient-to-tr ${portalConfig.accentGradient} flex items-center justify-center text-white text-xs font-bold uppercase shrink-0`}
-          >
-            {(studentName || "S").slice(0, 2)}
-          </div>
+          <UserAvatar src={avatarUrl} name={studentName} size="md" />
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-1">
               <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
@@ -502,11 +500,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
                 onClick={() => setShowProfileMenu((v) => !v)}
                 className="flex items-center gap-2.5 pl-2 pr-2.5 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-slate-200/70 dark:hover:border-slate-700 cursor-pointer"
               >
-                <div
-                  className={`h-8 w-8 rounded-full bg-gradient-to-tr ${portalConfig.accentGradient} flex items-center justify-center text-white text-xs font-bold`}
-                >
-                  {(studentName || "S").slice(0, 2).toUpperCase()}
-                </div>
+                <UserAvatar src={avatarUrl} name={studentName} size="sm" />
                 <div className="hidden sm:flex flex-col text-left">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight max-w-[130px] truncate">
                     {studentName}

@@ -9,6 +9,7 @@ import { signOutUser } from "@/lib/auth/signout";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
 
 export interface ClassicNavItem {
   id: string;
@@ -49,6 +50,7 @@ export function ClassicPortalShell({
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
   const [tenantError, setTenantError] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const avatarUrl = useCurrentUserAvatar();
 
   const { loaded: flagsLoaded, findDisabledForPath } = useFeatureFlags(schoolId);
 
@@ -204,9 +206,7 @@ export function ClassicPortalShell({
       <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/90">
         <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 mb-2.5 shadow-2xs">
           <div className="relative shrink-0">
-            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-xs">
-              {(userName || "US").slice(0, 2).toUpperCase()}
-            </div>
+            <UserAvatar src={avatarUrl} name={userName} size="md" />
             <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
           </div>
           <div className="flex-1 min-w-0">
@@ -271,8 +271,14 @@ export function ClassicPortalShell({
             </div>
             {headerSlot}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             <ThemeToggle />
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-700">
+              <UserAvatar src={avatarUrl} name={userName} size="sm" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-[120px] truncate">
+                {userName}
+              </span>
+            </div>
           </div>
         </header>
 

@@ -457,9 +457,14 @@ export default function StudentsManagementPage() {
         emergency_contact_phone: formData.emergency_contact_phone.trim(),
       };
     } else if (schoolType === "high_school") {
+      const selectedProg = formData.programme_id
+        ? programmes.find((p) => p.id === formData.programme_id)
+        : null;
       metadataPayload = {
         school_type: "high_school",
         gender: cleanGender,
+        programme_id: formData.programme_id || null,
+        class_name: selectedProg?.name || "",
         stream_track: formData.stream_track,
         boarding_status: formData.boarding_status,
         house_dormitory: formData.house_dormitory.trim(),

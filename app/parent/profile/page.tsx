@@ -10,6 +10,7 @@ import {
   ClassicStatusBadge,
 } from "@/components/portals/ClassicPortalPrimitives";
 import { getPortalTerminology } from "@/lib/portals/school-type-labels";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
 
 interface ProfileData {
   school: { id: string; name: string; school_type: string };
@@ -114,6 +115,8 @@ export default function ParentProfilePage() {
           </button>
         </div>
       )}
+
+      <AvatarUpload name={data.parent.full_name} />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs p-5 space-y-4">

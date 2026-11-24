@@ -217,6 +217,13 @@ export const ACADEMIC_STAFF_PORTAL_CONFIG: Record<PortalSchoolType, AcademicStaf
             iconKey: "FileCheck2",
           },
           {
+            id: "grades",
+            label: "Grades & Assessments",
+            href: "/teacher/grades",
+            iconKey: "Award",
+            badge: "CA",
+          },
+          {
             id: "report-cards",
             label: "Term Exams & Report Card Entry",
             href: "/teacher/report-cards",
@@ -259,6 +266,7 @@ export const ACADEMIC_STAFF_PORTAL_CONFIG: Record<PortalSchoolType, AcademicStaf
       "/teacher/classes",
       "/teacher/attendance",
       "/teacher/homework",
+      "/teacher/grades",
       "/teacher/report-cards",
       "/teacher/timetable",
       "/teacher/messages",

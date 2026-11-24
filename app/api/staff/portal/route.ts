@@ -136,12 +136,135 @@ async function resolveScopedHighSchoolUnits(
       ? allProgs
       : [];
 
+  const resolvedClasses = scopedClasses.length > 0 ? scopedClasses : allProgs;
+
   const assignedClass =
     ctx.assignedClassId
       ? allProgs.find((p) => String(p.id) === String(ctx.assignedClassId)) || null
       : null;
 
-  return { classes: scopedClasses, allClasses: allProgs, subjects: scopedSubjects, assignedClass };
+  return {
+    classes: resolvedClasses,
+    allClasses: allProgs,
+    subjects: scopedSubjects.length > 0 ? scopedSubjects : allSubjects,
+    assignedClass,
+  };
+}
+
+function resolveStudentClassId(student: any, validClassIds: Set<string>): string {
+  const candidates = [
+    student?.programme_id,
+    student?.metadata?.programme_id,
+    student?.metadata?.class_id,
+    student?.class_group_id,
+  ];
+  for (const c of candidates) {
+    if (c && validClassIds.has(String(c))) return String(c);
+  }
+  return "";
+}
+
+function assignStudentsToClasses(
+  allStudents: any[],
+  classes: any[],
+  allClasses: any[],
+  assignedClassId: string | null,
+  parentsByStudent?: Map<string, any[]>
+) {
+  const validAllIds = new Set(allClasses.map((c) => String(c.id)));
+  const validScopedIds = new Set(classes.map((c) => String(c.id)));
+  const fallbackClassId =
+    (assignedClassId && validScopedIds.has(String(assignedClassId))
+      ? String(assignedClassId)
+      : "") ||
+    (classes[0]?.id ? String(classes[0].id) : "");
+
+  const studentsByClass: Record<string, any[]> = {};
+  for (const c of classes) studentsByClass[String(c.id)] = [];
+  const unassignedStudents: any[] = [];
+
+  for (const s of allStudents) {
+    const matchedAll = resolveStudentClassId(s, validAllIds);
+    const guardian = parentsByStudent?.get(String(s.id))?.[0];
+    const guardianName =
+      guardian?.full_name || s.metadata?.guardian_name || s.metadata?.parent_name || "";
+    const guardianPhone =
+      guardian?.phone || s.metadata?.guardian_phone || s.metadata?.parent_phone || "";
+    const guardianEmail =
+      guardian?.email || s.metadata?.guardian_email || s.metadata?.parent_email || "";
+
+    const formatted = {
+      id: s.id,
+      full_name: studentDisplayName(s),
+      student_number: s.student_number,
+      email: s.email || "",
+      phone: s.phone || "",
+      programme_id: matchedAll || fallbackClassId || null,
+      boarding_status: s.metadata?.boarding_status || "Day",
+      stream_track: s.metadata?.stream_track || "",
+      guardian_name: guardianName,
+      guardian_phone: guardianPhone,
+      guardian_email: guardianEmail,
+      class_unassigned: !matchedAll,
+    };
+
+    if (matchedAll && studentsByClass[matchedAll]) {
+      studentsByClass[matchedAll].push(formatted);
+    } else if (!matchedAll) {
+      unassignedStudents.push(formatted);
+      if (fallbackClassId && studentsByClass[fallbackClassId]) {
+        studentsByClass[fallbackClassId].push(formatted);
+      }
+    }
+  }
+
+  return { studentsByClass, unassignedStudents };
+}
+
+function buildParentLookupForStudents(
+  students: any[],
+  pgRows: any[],
+  joinRows: any[]
+) {
+  const pgById = new Map((pgRows || []).map((p) => [String(p.id), p]));
+  const parentsByStu = new Map<string, any[]>();
+  const pushGuardian = (sid: string, g: any) => {
+    if (!sid || !g) return;
+    if (!parentsByStu.has(sid)) parentsByStu.set(sid, []);
+    const arr = parentsByStu.get(sid)!;
+    if (!arr.some((x) => String(x.id) === String(g.id))) arr.push(g);
+  };
+
+  for (const p of pgRows || []) {
+    if (p.student_id) pushGuardian(String(p.student_id), p);
+  }
+  for (const j of joinRows || []) {
+    const p = pgById.get(String(j.parent_guardian_id));
+    if (p && j.student_id) pushGuardian(String(j.student_id), p);
+  }
+
+  // Fallback: synthesize parent entries from student.metadata when no dedicated row exists yet
+  for (const s of students || []) {
+    const sid = String(s.id);
+    if ((parentsByStu.get(sid) || []).length > 0) continue;
+    const meta = s.metadata || {};
+    const gName = String(meta.guardian_name || meta.parent_name || "").trim();
+    const gPhone = String(meta.guardian_phone || meta.parent_phone || "").trim();
+    const gEmail = String(meta.guardian_email || meta.parent_email || "").trim().toLowerCase();
+    if (!gName && !gPhone && !gEmail) continue;
+
+    pushGuardian(sid, {
+      id: `meta:${sid}`,
+      student_id: sid,
+      full_name: gName || "Parent / Guardian",
+      phone: gPhone,
+      email: gEmail,
+      relationship: String(meta.guardian_relationship || meta.parent_relationship || "Parent"),
+      from_metadata: true,
+    });
+  }
+
+  return { pgById, parentsByStu };
 }
 
 async function resolveScopedVocationalModules(
@@ -379,23 +502,30 @@ export async function GET(req: NextRequest) {
       }
 
       if (ctx.schoolType === "high_school") {
-        const { classes, subjects, assignedClass } = await resolveScopedHighSchoolUnits(db, ctx);
+        const { classes, allClasses, subjects, assignedClass } = await resolveScopedHighSchoolUnits(db, ctx);
         const classIds = classes.map((c) => String(c.id));
         const subjIds = subjects.map((s) => String(s.id));
 
         const [stuRes, ttRes, asgRes, conductRes] = await Promise.all([
-          safeStaffQuery<any[]>(db.from("students").select("id, programme_id").eq("school_id", ctx.schoolId)),
+          safeStaffQuery<any[]>(db.from("students").select("id, programme_id, class_group_id, metadata").eq("school_id", ctx.schoolId)),
           safeStaffQuery<any[]>(db.from("timetable_entries").select("*").eq("school_id", ctx.schoolId)),
           safeStaffQuery<any[]>(db.from("assignments").select("id, programme_id, subject_id, status").eq("school_id", ctx.schoolId)),
           safeStaffQuery<any[]>(db.from("student_conduct_records").select("id").eq("school_id", ctx.schoolId)),
         ]);
 
-        const classSet = new Set(classIds);
-        const scopedStudents =
-          classSet.size > 0
-            ? (stuRes.data || []).filter((s) => classSet.has(String(s.programme_id)))
-            : stuRes.data || [];
+        const { studentsByClass, unassignedStudents } = assignStudentsToClasses(
+          stuRes.data || [],
+          classes,
+          allClasses,
+          ctx.assignedClassId
+        );
+        const scopedStuSet = new Set<string>();
+        for (const list of Object.values(studentsByClass)) {
+          for (const st of list) scopedStuSet.add(String(st.id));
+        }
+        for (const st of unassignedStudents) scopedStuSet.add(String(st.id));
 
+        const classSet = new Set(classIds);
         const subjSet = new Set(subjIds);
         const subjMap = new Map(subjects.map((s) => [String(s.id), s]));
         const classMap = new Map(classes.map((c) => [String(c.id), c]));
@@ -425,7 +555,7 @@ export async function GET(req: NextRequest) {
             ...base,
             kpis: {
               assignedUnitsCount: subjects.length || classes.length,
-              totalStudentsCount: scopedStudents.length,
+              totalStudentsCount: scopedStuSet.size,
               todaysPeriodsCount: todaySchedule.length,
               pendingAssessmentsCount: activeAssignments.length,
             },
@@ -434,7 +564,7 @@ export async function GET(req: NextRequest) {
               id: c.id,
               name: c.name,
               code: c.code,
-              studentCount: (stuRes.data || []).filter((s) => String(s.programme_id) === String(c.id)).length,
+              studentCount: (studentsByClass[String(c.id)] || []).length,
             })),
             subjectsSummary: subjects.slice(0, 6),
             todaySchedule,
@@ -864,42 +994,26 @@ export async function GET(req: NextRequest) {
         ]);
 
         const allStu = stuRes.data || [];
-        const pgById = new Map((pgRes.data || []).map((p) => [String(p.id), p]));
-        const parentsByStudent = new Map<string, any>();
-        for (const p of pgRes.data || []) {
-          if (p.student_id && !parentsByStudent.has(String(p.student_id))) {
-            parentsByStudent.set(String(p.student_id), p);
-          }
-        }
-        for (const j of joinRes.data || []) {
-          const p = pgById.get(String(j.parent_guardian_id));
-          if (p && j.student_id && !parentsByStudent.has(String(j.student_id))) {
-            parentsByStudent.set(String(j.student_id), p);
-          }
-        }
+        const { parentsByStu } = buildParentLookupForStudents(
+          allStu,
+          pgRes.data || [],
+          joinRes.data || []
+        );
+        const { studentsByClass, unassignedStudents } = assignStudentsToClasses(
+          allStu,
+          classes,
+          allClasses,
+          ctx.assignedClassId,
+          parentsByStu
+        );
 
-        const formClassRoster = assignedClass
+        const targetFormClass = assignedClass || classes[0] || null;
+        const formClassRoster = targetFormClass
           ? {
-              id: assignedClass.id,
-              name: assignedClass.name,
-              code: assignedClass.code,
-              students: allStu
-                .filter((s) => String(s.programme_id) === String(assignedClass.id))
-                .map((s) => {
-                  const guardian = parentsByStudent.get(String(s.id));
-                  return {
-                    id: s.id,
-                    full_name: studentDisplayName(s),
-                    student_number: s.student_number,
-                    email: s.email || "",
-                    phone: s.phone || "",
-                    boarding_status: s.metadata?.boarding_status || "Day",
-                    stream_track: s.metadata?.stream_track || "",
-                    guardian_name: guardian?.full_name || s.metadata?.guardian_name || "",
-                    guardian_phone: guardian?.phone || s.metadata?.guardian_phone || "",
-                    guardian_email: guardian?.email || s.metadata?.guardian_email || "",
-                  };
-                }),
+              id: targetFormClass.id,
+              name: targetFormClass.name,
+              code: targetFormClass.code,
+              students: studentsByClass[String(targetFormClass.id)] || [],
             }
           : null;
 
@@ -910,13 +1024,15 @@ export async function GET(req: NextRequest) {
               id: c.id,
               name: c.name,
               code: c.code,
-              studentCount: allStu.filter((s) => String(s.programme_id) === String(c.id)).length,
+              studentCount: (studentsByClass[String(c.id)] || []).length,
               isAssignedClass: Boolean(ctx.assignedClassId && String(c.id) === String(ctx.assignedClassId)),
             })),
             subjects: subjects.map((s) => ({
               ...s,
               programme_name: classMap.get(String(s.programme_id))?.name || "",
             })),
+            studentsByClass,
+            unassignedStudents,
             formClass: formClassRoster,
           },
           { headers: { "Cache-Control": "no-store" } }
@@ -937,19 +1053,12 @@ export async function GET(req: NextRequest) {
 
         const allStu = stuRes.data || [];
         const stuMap = new Map(allStu.map((s) => [String(s.id), s]));
-        const studentsByClass: Record<string, any[]> = {};
-        for (const c of classes) studentsByClass[String(c.id)] = [];
-        for (const s of allStu) {
-          const pid = String(s.programme_id || "");
-          if (pid && studentsByClass[pid]) {
-            studentsByClass[pid].push({
-              id: s.id,
-              full_name: studentDisplayName(s),
-              student_number: s.student_number,
-              programme_id: pid,
-            });
-          }
-        }
+        const { studentsByClass } = assignStudentsToClasses(
+          allStu,
+          classes,
+          allClasses,
+          ctx.assignedClassId
+        );
 
         const recsBySess = new Map<string, any[]>();
         for (const r of recRes.data || []) {
@@ -1072,32 +1181,64 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      if (section === "hs_report_cards") {
-        const [stuRes, scoreRes] = await Promise.all([
+      if (section === "hs_grades") {
+        const [stuRes, assessRes, scoreRes, termsRes, yearsRes] = await Promise.all([
           safeStaffQuery<any[]>(db.from("students").select("*").eq("school_id", ctx.schoolId).order("first_name", { ascending: true })),
+          safeStaffQuery<any[]>(db.from("student_assessments").select("*").eq("school_id", ctx.schoolId)),
           safeStaffQuery<any[]>(db.from("report_card_scores").select("*").eq("school_id", ctx.schoolId)),
+          safeStaffQuery<any[]>(db.from("terms").select("*").eq("school_id", ctx.schoolId).order("term_number", { ascending: true })),
+          safeStaffQuery<any[]>(db.from("academic_years").select("*").eq("school_id", ctx.schoolId).order("start_date", { ascending: false })),
         ]);
 
-        const allStu = stuRes.data || [];
-        const studentsByClass: Record<string, any[]> = {};
-        for (const c of classes) studentsByClass[String(c.id)] = [];
-        for (const s of allStu) {
-          const pid = String(s.programme_id || "");
-          if (pid && studentsByClass[pid]) {
-            studentsByClass[pid].push({
-              id: s.id,
-              full_name: studentDisplayName(s),
-              student_number: s.student_number,
-            });
-          }
-        }
+        const missingTables: string[] = [];
+        if (assessRes.missing) missingTables.push("student_assessments");
+
+        const { studentsByClass, unassignedStudents } = assignStudentsToClasses(
+          stuRes.data || [],
+          classes,
+          allClasses,
+          ctx.assignedClassId
+        );
 
         return NextResponse.json(
           {
             ...base,
             classes,
             subjects,
+            terms: termsRes.data || [],
+            academicYears: yearsRes.data || [],
             studentsByClass,
+            unassignedStudents,
+            assessments: assessRes.data || [],
+            scores: scoreRes.data || [],
+            missingTables,
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        );
+      }
+
+      if (section === "hs_report_cards") {
+        const [stuRes, scoreRes, termsRes] = await Promise.all([
+          safeStaffQuery<any[]>(db.from("students").select("*").eq("school_id", ctx.schoolId).order("first_name", { ascending: true })),
+          safeStaffQuery<any[]>(db.from("report_card_scores").select("*").eq("school_id", ctx.schoolId)),
+          safeStaffQuery<any[]>(db.from("terms").select("*").eq("school_id", ctx.schoolId).order("term_number", { ascending: true })),
+        ]);
+
+        const { studentsByClass, unassignedStudents } = assignStudentsToClasses(
+          stuRes.data || [],
+          classes,
+          allClasses,
+          ctx.assignedClassId
+        );
+
+        return NextResponse.json(
+          {
+            ...base,
+            classes,
+            subjects,
+            terms: termsRes.data || [],
+            studentsByClass,
+            unassignedStudents,
             scores: scoreRes.data || [],
           },
           { headers: { "Cache-Control": "no-store" } }
@@ -1142,37 +1283,39 @@ export async function GET(req: NextRequest) {
         const missingTables: string[] = [];
         if (msgRes.missing) missingTables.push("parent_teacher_messages");
 
-        const classIdSet = new Set(classes.map((c) => String(c.id)));
-        const scopedStu = (stuRes.data || []).filter(
-          (s) => classIdSet.size === 0 || classIdSet.has(String(s.programme_id))
+        const allStu = stuRes.data || [];
+        const validAllIds = new Set(allClasses.map((c) => String(c.id)));
+        const validScopedIds = new Set(classes.map((c) => String(c.id)));
+        const scopedStu = allStu.filter((s) => {
+          const cid = resolveStudentClassId(s, validAllIds);
+          if (!cid) return true; // Keep school students without class assignment visible
+          return validScopedIds.size === 0 || validScopedIds.has(cid);
+        });
+
+        const { pgById, parentsByStu } = buildParentLookupForStudents(
+          scopedStu,
+          pgRes.data || [],
+          joinRes.data || []
         );
-        const pgList = pgRes.data || [];
-        const pgById = new Map(pgList.map((p) => [String(p.id), p]));
-        const parentsByStu = new Map<string, any[]>();
-        const pushGuardian = (sid: string, g: any) => {
-          if (!parentsByStu.has(sid)) parentsByStu.set(sid, []);
-          const arr = parentsByStu.get(sid)!;
-          if (!arr.some((x) => String(x.id) === String(g.id))) arr.push(g);
-        };
-        for (const p of pgList) if (p.student_id) pushGuardian(String(p.student_id), p);
-        for (const j of joinRes.data || []) {
-          const p = pgById.get(String(j.parent_guardian_id));
-          if (p && j.student_id) pushGuardian(String(j.student_id), p);
-        }
 
         const stuMap = new Map(scopedStu.map((s) => [String(s.id), s]));
 
         return NextResponse.json(
           {
             ...base,
-            students: scopedStu.map((s) => ({
-              id: s.id,
-              full_name: studentDisplayName(s),
-              student_number: s.student_number,
-              programme_id: s.programme_id,
-              class_name: classMap.get(String(s.programme_id))?.name || "",
-              parents: parentsByStu.get(String(s.id)) || [],
-            })),
+            students: scopedStu.map((s) => {
+              const cid = resolveStudentClassId(s, validAllIds);
+              return {
+                id: s.id,
+                full_name: studentDisplayName(s),
+                student_number: s.student_number,
+                programme_id: cid || null,
+                class_name: cid
+                  ? classMap.get(cid)?.name || ""
+                  : classes[0]?.name || "Unassigned Class",
+                parents: parentsByStu.get(String(s.id)) || [],
+              };
+            }),
             messages: (msgRes.data || []).map((m) => ({
               ...m,
               parent_name: pgById.get(String(m.parent_guardian_id))?.full_name || "Parent / Guardian",
@@ -1865,11 +2008,172 @@ export async function POST(req: NextRequest) {
     }
 
     // ----------------------------------------------------------------------
-    // 7. High School Term Report Card Scores (`report_card_scores`)
+    // 7. High School Term Report Card Scores & Continuous Assessments
     // ----------------------------------------------------------------------
+    if (action === "save_hs_grades") {
+      const classId = body.classId ? String(body.classId).trim() : null;
+      const subjectId = String(body.subjectId || "").trim();
+      const termId = (body.termId ? String(body.termId).trim() : null) || ctx.activeTerm?.id || null;
+      const academicYearId =
+        (body.academicYearId ? String(body.academicYearId).trim() : null) ||
+        ctx.activeYear?.id ||
+        null;
+
+      const entries: Array<{
+        studentId: string;
+        classwork?: number;
+        assignment?: number;
+        quiz?: number;
+        exam?: number;
+        maxClasswork?: number;
+        maxAssignment?: number;
+        maxQuiz?: number;
+        maxExam?: number;
+        remarks?: string;
+      }> = Array.isArray(body.entries) ? body.entries : [];
+
+      if (!subjectId || entries.length === 0) {
+        return NextResponse.json(
+          { error: "Subject and at least one student score row are required." },
+          { status: 400 }
+        );
+      }
+
+      const now = new Date().toISOString();
+      let savedCount = 0;
+      let assessmentsTableMissing = false;
+
+      for (const entry of entries) {
+        if (!entry.studentId) continue;
+
+        const maxCw = Math.max(1, Number(entry.maxClasswork ?? 20));
+        const maxAsg = Math.max(1, Number(entry.maxAssignment ?? 20));
+        const maxQz = Math.max(0, Number(entry.maxQuiz ?? 10));
+        const maxEx = Math.max(1, Number(entry.maxExam ?? 50));
+
+        const cw = Math.min(maxCw, Math.max(0, Number(entry.classwork || 0)));
+        const asg = Math.min(maxAsg, Math.max(0, Number(entry.assignment || 0)));
+        const qz = maxQz > 0 ? Math.min(maxQz, Math.max(0, Number(entry.quiz || 0))) : 0;
+        const ex = Math.min(maxEx, Math.max(0, Number(entry.exam || 0)));
+
+        const assessmentItems: Array<{
+          type: "classwork" | "assignment" | "quiz" | "exam";
+          score: number;
+          max: number;
+        }> = [
+          { type: "classwork", score: cw, max: maxCw },
+          { type: "assignment", score: asg, max: maxAsg },
+          { type: "quiz", score: qz, max: maxQz || 10 },
+          { type: "exam", score: ex, max: maxEx },
+        ];
+
+        for (const item of assessmentItems) {
+          if (assessmentsTableMissing) break;
+          let exQ = db
+            .from("student_assessments")
+            .select("id")
+            .eq("school_id", ctx.schoolId)
+            .eq("student_id", entry.studentId)
+            .eq("subject_id", subjectId)
+            .eq("assessment_type", item.type);
+          exQ = termId ? exQ.eq("term_id", termId) : exQ.is("term_id", null);
+          const { data: exRow, error: selErr } = await exQ.maybeSingle();
+
+          if (selErr && isMissingTableError(selErr)) {
+            assessmentsTableMissing = true;
+            break;
+          }
+
+          const assessPayload = {
+            school_id: ctx.schoolId,
+            student_id: entry.studentId,
+            subject_id: subjectId,
+            class_id: classId,
+            term_id: termId,
+            academic_year_id: academicYearId,
+            assessment_type: item.type,
+            score: item.score,
+            max_score: item.max,
+            remarks: entry.remarks ? String(entry.remarks).trim() : null,
+            graded_by: ctx.staffId,
+            updated_at: now,
+          };
+
+          const writeRes = exRow?.id
+            ? await db.from("student_assessments").update(assessPayload).eq("id", exRow.id)
+            : await db.from("student_assessments").insert(assessPayload);
+          if (writeRes.error && isMissingTableError(writeRes.error)) {
+            assessmentsTableMissing = true;
+            break;
+          }
+          if (writeRes.error) {
+            return NextResponse.json({ error: writeRes.error.message }, { status: 400 });
+          }
+        }
+
+        // Sync total to report_card_scores so Term Report Cards, Student Portal, and Parent Portal stay in sync
+        const caTotal = Number(Math.min(100, cw + asg + qz).toFixed(2));
+        const examTotal = Number(Math.min(100, ex).toFixed(2));
+        const grandTotal = Number(Math.min(100, caTotal + examTotal).toFixed(2));
+        const grade = computeWaecGrade(grandTotal);
+
+        let rcQ = db
+          .from("report_card_scores")
+          .select("id")
+          .eq("school_id", ctx.schoolId)
+          .eq("student_id", entry.studentId)
+          .eq("subject_id", subjectId);
+        rcQ = termId ? rcQ.eq("term_id", termId) : rcQ.is("term_id", null);
+        const { data: rcExisting } = await rcQ.maybeSingle();
+
+        const baseRcPayload = {
+          school_id: ctx.schoolId,
+          student_id: entry.studentId,
+          programme_id: classId,
+          subject_id: subjectId,
+          term_id: termId,
+          ca_score: caTotal,
+          exam_score: examTotal,
+          total_score: grandTotal,
+          grade,
+          teacher_remarks: entry.remarks ? String(entry.remarks).trim() : null,
+          updated_at: now,
+        };
+        const fullRcPayload = {
+          ...baseRcPayload,
+          classwork_score: cw,
+          assignment_score: asg,
+          quiz_score: qz,
+          graded_by: ctx.staffId,
+        };
+
+        let rcRes = rcExisting?.id
+          ? await db.from("report_card_scores").update(fullRcPayload).eq("id", rcExisting.id)
+          : await db.from("report_card_scores").insert(fullRcPayload);
+        if (rcRes.error && isMissingColumnError(rcRes.error)) {
+          rcRes = rcExisting?.id
+            ? await db.from("report_card_scores").update(baseRcPayload).eq("id", rcExisting.id)
+            : await db.from("report_card_scores").insert(baseRcPayload);
+        }
+        if (rcRes.error) {
+          return NextResponse.json({ error: rcRes.error.message }, { status: 400 });
+        }
+        savedCount++;
+      }
+
+      return NextResponse.json({
+        success: true,
+        assessmentsTableMissing,
+        message: assessmentsTableMissing
+          ? `Synced ${savedCount} student score(s) to Term Report Cards (apply migration 20261124000012 for itemized Classwork/Assignment/Quiz storage).`
+          : `Saved & synced ${savedCount} student assessment breakdown(s) to Report Cards.`,
+      });
+    }
+
     if (action === "save_report_card_scores") {
       const programmeId = body.programmeId ? String(body.programmeId).trim() : null;
       const subjectId = String(body.subjectId || "").trim();
+      const termId = (body.termId ? String(body.termId).trim() : null) || ctx.activeTerm?.id || null;
       const entries: Array<{ studentId: string; caScore: number; examScore: number; teacherRemarks?: string }> =
         Array.isArray(body.entries) ? body.entries : [];
 
@@ -1877,7 +2181,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Subject and student score entries are required." }, { status: 400 });
       }
 
-      const termId = ctx.activeTerm?.id || null;
       let savedCount = 0;
 
       for (const entry of entries) {
@@ -1993,7 +2296,7 @@ export async function POST(req: NextRequest) {
     // 9. High School Parent Messages (`parent_teacher_messages`)
     // ----------------------------------------------------------------------
     if (action === "send_parent_message") {
-      const parentGuardianId = String(body.parentGuardianId || "").trim();
+      let parentGuardianId = String(body.parentGuardianId || "").trim();
       const studentId = body.studentId ? String(body.studentId).trim() : null;
       const category = String(body.category || "academic").trim();
       const subject = String(body.subject || "").trim();
@@ -2001,6 +2304,79 @@ export async function POST(req: NextRequest) {
 
       if (!parentGuardianId || !subject || !msgBody) {
         return NextResponse.json({ error: "Parent contact, subject, and message are required." }, { status: 400 });
+      }
+
+      // If parent came from student.metadata fallback (`meta:{studentId}`), persist a dedicated parent_guardians row first
+      if (parentGuardianId.startsWith("meta:") && studentId) {
+        const { data: stuRow } = await db
+          .from("students")
+          .select("id, metadata")
+          .eq("id", studentId)
+          .eq("school_id", ctx.schoolId)
+          .maybeSingle();
+
+        const sMeta = stuRow?.metadata || {};
+        const gName = String(sMeta.guardian_name || sMeta.parent_name || "Parent / Guardian").trim();
+        const gPhone = String(sMeta.guardian_phone || sMeta.parent_phone || "").trim();
+        const gEmail = String(sMeta.guardian_email || sMeta.parent_email || "").trim().toLowerCase() || null;
+        const gRel = String(sMeta.guardian_relationship || sMeta.parent_relationship || "Parent");
+
+        let resolvedParentId: string | null = null;
+        if (gEmail) {
+          const { data: byEmail } = await db
+            .from("parent_guardians")
+            .select("id")
+            .eq("school_id", ctx.schoolId)
+            .ilike("email", gEmail)
+            .maybeSingle();
+          if (byEmail?.id) resolvedParentId = byEmail.id;
+        }
+        if (!resolvedParentId && gPhone) {
+          const { data: byPhone } = await db
+            .from("parent_guardians")
+            .select("id")
+            .eq("school_id", ctx.schoolId)
+            .eq("phone", gPhone)
+            .maybeSingle();
+          if (byPhone?.id) resolvedParentId = byPhone.id;
+        }
+        if (!resolvedParentId) {
+          const { data: insertedPg, error: pgErr } = await db
+            .from("parent_guardians")
+            .insert({
+              school_id: ctx.schoolId,
+              full_name: gName,
+              phone: gPhone || "Not provided",
+              email: gEmail,
+              relationship: ["Mother", "Father", "Guardian", "Sponsor", "Parent"].includes(gRel)
+                ? gRel
+                : "Parent",
+              student_id: studentId,
+              is_primary_contact: true,
+              status: "active",
+            })
+            .select("id")
+            .single();
+          if (pgErr) return NextResponse.json({ error: pgErr.message }, { status: 400 });
+          resolvedParentId = insertedPg.id;
+        }
+
+        if (resolvedParentId) {
+          await db
+            .from("parent_guardian_students")
+            .upsert(
+              {
+                school_id: ctx.schoolId,
+                parent_guardian_id: resolvedParentId,
+                student_id: studentId,
+                relationship: gRel,
+                is_primary: true,
+              },
+              { onConflict: "parent_guardian_id,student_id" }
+            )
+            .then(() => null, () => null);
+          parentGuardianId = resolvedParentId;
+        }
       }
 
       const { data: created, error } = await db

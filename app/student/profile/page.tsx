@@ -22,10 +22,13 @@ import {
   StudentPageLoading,
   UnlinkedStudentProfileCard,
 } from "@/components/student/StudentPortalPrimitives";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
+import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
 
 export default function StudentProfileAndSettingsPage() {
   const { data, loading, error, reload, mutate } =
     useStudentPortalSection("profile");
+  const liveAvatarUrl = useCurrentUserAvatar();
 
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -138,13 +141,18 @@ export default function StudentProfileAndSettingsPage() {
         </p>
       </div>
 
+      <AvatarUpload name={s.full_name} initialUrl={s.avatar_url} />
+
       {/* Institutional Identity Card */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3.5">
-            <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-extrabold text-base">
-              {(s.full_name || "S").slice(0, 2).toUpperCase()}
-            </div>
+            <UserAvatar
+              src={liveAvatarUrl || s.avatar_url}
+              name={s.full_name}
+              size="lg"
+              shape="rounded"
+            />
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {s.full_name}

@@ -15,6 +15,7 @@ export type StaffPortalSection =
   | "hs_classes"
   | "hs_attendance"
   | "hs_homework"
+  | "hs_grades"
   | "hs_report_cards"
   | "hs_timetable"
   | "hs_messages"

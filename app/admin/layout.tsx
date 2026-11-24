@@ -16,6 +16,7 @@ import {
 } from "@/config/schoolPortalConfig";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
 import {
   LayoutGrid,
   GraduationCap,
@@ -135,6 +136,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const avatarUrl = useCurrentUserAvatar();
 
   // Live date & time
   useEffect(() => {
@@ -622,9 +624,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         {/* User Card */}
         <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 mb-2.5 shadow-2xs">
           <div className="relative">
-            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-              {(userName || "SA").slice(0, 2).toUpperCase()}
-            </div>
+            <UserAvatar src={avatarUrl} name={userName} size="md" />
             <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
           </div>
           <div className="flex-1 min-w-0">
@@ -773,9 +773,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
-                  <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
-                    {(userName || "SA").slice(0, 2).toUpperCase()}
-                  </div>
+                  <UserAvatar src={avatarUrl} name={userName} size="sm" />
                   <ChevronDown className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400 hidden sm:block" />
                 </button>
 

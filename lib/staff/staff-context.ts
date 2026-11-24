@@ -37,6 +37,7 @@ export interface StaffResolvedContext {
   schoolAbbr: string;
   schoolLogo: string;
   schoolType: PortalSchoolType;
+  avatarUrl: string;
   staffProfile: any | null;
   staffId: string | null;
   department: any | null;
@@ -162,13 +163,23 @@ export async function resolveAcademicStaffContext(
 
   // 1. Resolve authoritative profile & school_id
   if (activeUserId) {
-    const { data: prof } = await safeStaffQuery<any>(
+    let { data: prof, missing: profMissing } = await safeStaffQuery<any>(
       (directAdmin as any)
         .from("profiles")
-        .select("id, school_id, university_id, full_name, email, phone, role, metadata")
+        .select("id, school_id, university_id, full_name, email, phone, role, avatar_url, metadata")
         .eq("id", activeUserId)
         .maybeSingle()
     );
+    if (!prof && profMissing) {
+      const fb = await safeStaffQuery<any>(
+        (directAdmin as any)
+          .from("profiles")
+          .select("id, school_id, university_id, full_name, email, phone, role, metadata")
+          .eq("id", activeUserId)
+          .maybeSingle()
+      );
+      prof = fb.data;
+    }
     if (prof) {
       profileRow = prof;
       pushRole(prof.role);
@@ -346,7 +357,7 @@ export async function resolveAcademicStaffContext(
 
   const staffProfileId = ownStaffRow?.id ? String(ownStaffRow.id) : null;
 
-  const [deptRes, yearsRes, termsRes, directCoursesRes, directSubjectsRes, directModulesRes, vAssignmentsRes] =
+  const [deptRes, yearsRes, termsRes, directCoursesRes, directSubjectsRes, directModulesRes, vAssignmentsRes, timetableAssignRes] =
     await Promise.all([
       ownStaffRow?.department_id
         ? safeStaffQuery<any>(
@@ -387,7 +398,7 @@ export async function resolveAcademicStaffContext(
         ? safeStaffQuery<any[]>(
             (directAdmin as any)
               .from("subjects")
-              .select("id")
+              .select("id, programme_id")
               .eq("school_id", schoolId)
               .eq("teacher_id", staffProfileId)
           )
@@ -410,6 +421,15 @@ export async function resolveAcademicStaffContext(
               .eq("staff_id", activeUserId)
           )
         : Promise.resolve({ data: [], missing: false, error: null }),
+      staffProfileId
+        ? safeStaffQuery<any[]>(
+            (directAdmin as any)
+              .from("timetable_entries")
+              .select("subject_id, programme_id")
+              .eq("school_id", schoolId)
+              .eq("teacher_id", staffProfileId)
+          )
+        : Promise.resolve({ data: [], missing: false, error: null }),
     ]);
 
   const activeYear =
@@ -430,9 +450,17 @@ export async function resolveAcademicStaffContext(
   }
 
   const subjectSet = new Set<string>();
-  for (const s of directSubjectsRes.data || []) if (s?.id) subjectSet.add(String(s.id));
+  const timetableClassIds: string[] = [];
+  for (const s of directSubjectsRes.data || []) {
+    if (s?.id) subjectSet.add(String(s.id));
+    if (s?.programme_id) timetableClassIds.push(String(s.programme_id));
+  }
   if (Array.isArray(spMeta.teaching_subject_ids)) {
     for (const id of spMeta.teaching_subject_ids) if (id) subjectSet.add(String(id));
+  }
+  for (const tt of timetableAssignRes.data || []) {
+    if (tt?.subject_id) subjectSet.add(String(tt.subject_id));
+    if (tt?.programme_id) timetableClassIds.push(String(tt.programme_id));
   }
 
   const moduleSet = new Set<string>();
@@ -440,6 +468,17 @@ export async function resolveAcademicStaffContext(
   if (Array.isArray(spMeta.assigned_module_ids)) {
     for (const id of spMeta.assigned_module_ids) if (id) moduleSet.add(String(id));
   }
+
+  const resolvedAssignedClassId = spMeta.assigned_class_id
+    ? String(spMeta.assigned_class_id)
+    : timetableClassIds[0] || null;
+
+  const avatarUrl = String(
+    ownStaffRow?.avatar_url ||
+      profileRow?.avatar_url ||
+      user?.user_metadata?.avatar_url ||
+      ""
+  );
 
   const fullName =
     (ownStaffRow ? staffDisplayName(ownStaffRow) : null) ||
@@ -472,10 +511,12 @@ export async function resolveAcademicStaffContext(
       schoolAbbr,
       schoolLogo,
       schoolType,
+      avatarUrl,
       staffProfile: ownStaffRow
         ? {
             ...ownStaffRow,
             full_name: staffDisplayName(ownStaffRow),
+            avatar_url: avatarUrl || ownStaffRow.avatar_url || null,
             metadata: spMeta,
           }
         : null,
@@ -486,7 +527,7 @@ export async function resolveAcademicStaffContext(
       assignedCourseIds: Array.from(courseSet),
       assignedSubjectIds: Array.from(subjectSet),
       assignedModuleIds: Array.from(moduleSet),
-      assignedClassId: spMeta.assigned_class_id ? String(spMeta.assigned_class_id) : null,
+      assignedClassId: resolvedAssignedClassId,
       isClassTeacher: Boolean(spMeta.is_class_teacher),
     },
     errorResponse: null,

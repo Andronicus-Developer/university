@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import type { SchoolSidebarMenuItem, SchoolType } from "@/lib/superadmin/school-menu-service";
 import { LandingPageEditor } from "@/components/superadmin/LandingPageEditor";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
 
 const ICON_COMPONENTS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutGrid,
@@ -979,6 +980,11 @@ export default function PlatformSettingsPage() {
       {/* TAB 2: PLATFORM SECURITY & MAINTENANCE (EXISTING) */}
       {activeTab === "platform" && (
         <div className="max-w-4xl space-y-5">
+          <AvatarUpload
+            name="Super Administrator"
+            subtitle="Super Administrator profile photo (JPG, PNG, or WebP up to 2 MB)"
+          />
+
           {savedSuccess && (
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 shadow-2xs">
               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
