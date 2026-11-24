@@ -3,6 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  getSchoolPortalConfig,
+  toPortalSchoolType,
+  type PortalSchoolType,
+  type SchoolPortalConfig,
+} from "@/config/schoolPortalConfig";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import {
   GraduationCap,
   Plus,
   Search,
@@ -19,6 +26,7 @@ import {
   Award,
   UserCheck,
   Phone,
+  ShieldCheck,
 } from "lucide-react";
 
 interface StudentRecord {
@@ -29,9 +37,12 @@ interface StudentRecord {
   email: string;
   phone: string;
   account_status: string;
-  programme_id: string;
+  programme_id: string | null;
   programme_name: string;
   programme_code: string;
+  department_id?: string | null;
+  department_name?: string;
+  intake_id?: string | null;
   degree_level: string;
   entry_term_id: string | null;
   entry_term_name: string;
@@ -41,6 +52,13 @@ interface StudentRecord {
   admission_date: string;
   gpa: number;
   cgpa: number;
+  metadata?: Record<string, any>;
+}
+
+interface DepartmentOption {
+  id: string;
+  name: string;
+  code: string;
 }
 
 interface ProgrammeOption {
@@ -58,6 +76,22 @@ interface TermOption {
   is_active: boolean;
 }
 
+interface IntakeOption {
+  id: string;
+  code: string;
+  name: string;
+  department_id?: string | null;
+  status?: string;
+}
+
+interface HostelOption {
+  id: string;
+  code: string;
+  name: string;
+  gender_policy?: string;
+  is_active?: boolean;
+}
+
 interface StudentStats {
   total: number;
   active: number;
@@ -73,6 +107,8 @@ interface StudentFormState {
   phone: string;
   student_number: string;
   programme_id: string;
+  department_id: string;
+  intake_id: string;
   entry_term_id: string;
   cohort_year: number;
   current_level: number;
@@ -81,6 +117,29 @@ interface StudentFormState {
   gpa: string;
   cgpa: string;
   password: string;
+  // University metadata
+  level_label: string;
+  entry_mode: string;
+  residential_status: string;
+  hostel_name: string;
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  // High School metadata
+  stream_track: string;
+  boarding_status: string;
+  house_dormitory: string;
+  guardian_name: string;
+  guardian_relationship: string;
+  guardian_phone: string;
+  guardian_email: string;
+  create_parent_record: boolean;
+  create_parent_portal_account: boolean;
+  parent_password: string;
+  // Vocational metadata
+  training_stage: string;
+  sponsorship_type: string;
+  next_of_kin_name: string;
+  next_of_kin_phone: string;
 }
 
 const STUDENT_STATUS_OPTIONS = [
@@ -89,37 +148,35 @@ const STUDENT_STATUS_OPTIONS = [
   { value: "deferred", label: "Deferred" },
   { value: "leave_of_absence", label: "Leave of Absence" },
   { value: "suspended", label: "Suspended" },
-  { value: "withdrawn", label: "Withdrawn" },
   { value: "completed", label: "Completed" },
   { value: "graduated", label: "Graduated" },
+  { value: "withdrawn", label: "Withdrawn" },
 ];
-
-const LEVEL_OPTIONS = [100, 200, 300, 400, 500, 600, 700, 800];
 
 function statusBadgeStyle(status: string) {
   switch (status) {
     case "active":
       return "bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]";
     case "admitted":
-      return "bg-[#EFF6FF] text-[#1E40AF] border-[#BFDBFE]";
+      return "bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]";
     case "graduated":
     case "completed":
       return "bg-purple-50 text-purple-700 border-purple-200";
-    case "suspended":
-    case "withdrawn":
-    case "deceased":
-      return "bg-red-50 text-red-700 border-red-200";
-    default:
+    case "deferred":
+    case "leave_of_absence":
       return "bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]";
+    default:
+      return "bg-red-50 text-red-700 border-red-200";
   }
 }
 
-function generateNextStudentNumber(existing: StudentRecord[], year: number) {
-  const prefix = `STU${year}`;
+function generateNextStudentNumber(existing: StudentRecord[], year: number, idPrefix: string) {
+  const prefix = `${idPrefix}${year}`;
   let maxSeq = 0;
   for (const s of existing) {
-    if (s.student_number.toUpperCase().startsWith(prefix)) {
-      const numPart = parseInt(s.student_number.slice(prefix.length), 10);
+    const num = String(s.student_number || "").toUpperCase();
+    if (num.startsWith(prefix)) {
+      const numPart = parseInt(num.slice(prefix.length), 10);
       if (!Number.isNaN(numPart) && numPart > maxSeq) {
         maxSeq = numPart;
       }
@@ -131,7 +188,18 @@ function generateNextStudentNumber(existing: StudentRecord[], year: number) {
 export default function StudentsManagementPage() {
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [programmes, setProgrammes] = useState<ProgrammeOption[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [terms, setTerms] = useState<TermOption[]>([]);
+  const [intakes, setIntakes] = useState<IntakeOption[]>([]);
+  const [hostels, setHostels] = useState<HostelOption[]>([]);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+
+  const portalConfig: SchoolPortalConfig = useMemo(
+    () => getSchoolPortalConfig(schoolType),
+    [schoolType]
+  );
+  const formSpec = useMemo(() => getSchoolFormConfig(schoolType).student, [schoolType]);
+
   const [stats, setStats] = useState<StudentStats>({
     total: 0,
     active: 0,
@@ -148,14 +216,13 @@ export default function StudentsManagementPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [programmeFilter, setProgrammeFilter] = useState("all");
-  const [levelFilter, setLevelFilter] = useState("all");
+  const [secondaryFilter, setSecondaryFilter] = useState("all");
 
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
-  // Modal states
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentRecord | null>(null);
@@ -174,6 +241,8 @@ export default function StudentsManagementPage() {
     phone: "",
     student_number: "",
     programme_id: "",
+    department_id: "",
+    intake_id: "",
     entry_term_id: "",
     cohort_year: currentYear,
     current_level: 100,
@@ -182,6 +251,26 @@ export default function StudentsManagementPage() {
     gpa: "0.00",
     cgpa: "0.00",
     password: "",
+    level_label: "100",
+    entry_mode: "Regular",
+    residential_status: "On-Campus Hostel",
+    hostel_name: "",
+    emergency_contact_name: "",
+    emergency_contact_phone: "",
+    stream_track: "General Science",
+    boarding_status: "Day",
+    house_dormitory: "",
+    guardian_name: "",
+    guardian_relationship: "Parent",
+    guardian_phone: "",
+    guardian_email: "",
+    create_parent_record: true,
+    create_parent_portal_account: false,
+    parent_password: "",
+    training_stage: "NVTI Foundation",
+    sponsorship_type: "Self-Sponsored",
+    next_of_kin_name: "",
+    next_of_kin_phone: "",
   });
 
   const showNotification = useCallback((type: "success" | "error", message: string) => {
@@ -199,9 +288,15 @@ export default function StudentsManagementPage() {
         return;
       }
 
+      if (data.school_type) {
+        setSchoolType(toPortalSchoolType(data.school_type));
+      }
       setStudents(data.students || []);
       setProgrammes(data.programmes || []);
+      setDepartments(data.departments || []);
       setTerms(data.terms || []);
+      setIntakes(data.intakes || []);
+      setHostels(data.hostels || []);
       if (data.stats) {
         setStats(data.stats);
       }
@@ -216,16 +311,32 @@ export default function StudentsManagementPage() {
     fetchStudents();
   }, [fetchStudents]);
 
+  const deptNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of departments) map.set(d.id, d.name);
+    return map;
+  }, [departments]);
+
+  const intakeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of intakes) map.set(i.id, `${i.name}${i.code ? ` (${i.code})` : ""}`);
+    return map;
+  }, [intakes]);
+
   const openCreateModal = () => {
     const defaultProg = programmes[0]?.id || "";
+    const defaultDept = departments[0]?.id || "";
+    const defaultIntake = intakes[0]?.id || "";
     const activeTerm = terms.find((t) => t.is_active)?.id || terms[0]?.id || "";
     setEditingStudent(null);
     setFormData({
       full_name: "",
       email: "",
       phone: "",
-      student_number: generateNextStudentNumber(students, currentYear),
-      programme_id: defaultProg,
+      student_number: generateNextStudentNumber(students, currentYear, formSpec.idPrefix),
+      programme_id: formSpec.showProgram ? defaultProg : "",
+      department_id: formSpec.showDepartment ? defaultDept : "",
+      intake_id: defaultIntake,
       entry_term_id: activeTerm,
       cohort_year: currentYear,
       current_level: 100,
@@ -234,18 +345,41 @@ export default function StudentsManagementPage() {
       gpa: "0.00",
       cgpa: "0.00",
       password: "",
+      level_label: formSpec.levelOptions[0]?.value || "100",
+      entry_mode: formSpec.entryModeOptions[0] || "Regular",
+      residential_status: formSpec.residentialOptions[0] || "On-Campus Hostel",
+      hostel_name: hostels[0]?.name || "",
+      emergency_contact_name: "",
+      emergency_contact_phone: "",
+      stream_track: formSpec.streamOptions[0] || "General Science",
+      boarding_status: formSpec.boardingOptions[0] || "Boarding",
+      house_dormitory: "",
+      guardian_name: "",
+      guardian_relationship: formSpec.guardianRelationships[0] || "Mother",
+      guardian_phone: "",
+      guardian_email: "",
+      create_parent_record: true,
+      create_parent_portal_account: false,
+      parent_password: "",
+      training_stage: formSpec.trainingStageOptions[0] || "NVTI Foundation",
+      sponsorship_type: formSpec.sponsorshipOptions[0] || "Self-Sponsored",
+      next_of_kin_name: "",
+      next_of_kin_phone: "",
     });
     setModalMode("create");
   };
 
   const openEditModal = (student: StudentRecord) => {
+    const meta = student.metadata && typeof student.metadata === "object" ? student.metadata : {};
     setEditingStudent(student);
     setFormData({
       full_name: student.full_name,
       email: student.email,
       phone: student.phone || "",
       student_number: student.student_number,
-      programme_id: student.programme_id,
+      programme_id: student.programme_id || "",
+      department_id: student.department_id || meta.department_id || "",
+      intake_id: student.intake_id || meta.intake_id || "",
       entry_term_id: student.entry_term_id || "",
       cohort_year: student.cohort_year,
       current_level: student.current_level,
@@ -254,18 +388,90 @@ export default function StudentsManagementPage() {
       gpa: student.gpa.toFixed(2),
       cgpa: student.cgpa.toFixed(2),
       password: "",
+      level_label:
+        meta.level_label ||
+        (student.current_level >= 500 ? "postgrad" : String(student.current_level || 100)),
+      entry_mode: meta.entry_mode || "Regular",
+      residential_status: meta.residential_status || "On-Campus Hostel",
+      hostel_name: meta.hostel_name || "",
+      emergency_contact_name: meta.emergency_contact_name || "",
+      emergency_contact_phone: meta.emergency_contact_phone || "",
+      stream_track: meta.stream_track || "General Science",
+      boarding_status: meta.boarding_status || "Day",
+      house_dormitory: meta.house_dormitory || "",
+      guardian_name: meta.guardian_name || "",
+      guardian_relationship: meta.guardian_relationship || "Parent",
+      guardian_phone: meta.guardian_phone || "",
+      guardian_email: meta.guardian_email || "",
+      create_parent_record: Boolean(meta.guardian_name),
+      create_parent_portal_account: false,
+      parent_password: "",
+      training_stage: meta.training_stage || "NVTI Foundation",
+      sponsorship_type: meta.sponsorship_type || "Self-Sponsored",
+      next_of_kin_name: meta.next_of_kin_name || "",
+      next_of_kin_phone: meta.next_of_kin_phone || "",
     });
     setModalMode("edit");
   };
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.programme_id) {
+
+    if (schoolType === "vocational" && !formData.department_id) {
       showNotification(
         "error",
-        "Please select an academic programme before saving the student record."
+        `Please select a ${formSpec.departmentLabel.toLowerCase()} before saving the trainee record.`
       );
       return;
+    }
+    if (schoolType !== "vocational" && !formData.programme_id) {
+      showNotification(
+        "error",
+        `Please select a ${formSpec.programLabel.toLowerCase()} before saving the student record.`
+      );
+      return;
+    }
+
+    const levelSpec = formSpec.levelOptions.find((l) => l.value === formData.level_label);
+    const numericLevel = levelSpec ? levelSpec.numeric : Number(formData.current_level) || 100;
+
+    // Build school_type-specific metadata JSONB cleanly
+    let metadataPayload: Record<string, any> = {};
+    if (schoolType === "university") {
+      metadataPayload = {
+        school_type: "university",
+        department_id: formData.department_id || null,
+        department_name: formData.department_id ? deptNameById.get(formData.department_id) || "" : "",
+        level_label: formData.level_label,
+        entry_mode: formData.entry_mode,
+        residential_status: formData.residential_status,
+        hostel_name: formData.hostel_name.trim(),
+        emergency_contact_name: formData.emergency_contact_name.trim(),
+        emergency_contact_phone: formData.emergency_contact_phone.trim(),
+      };
+    } else if (schoolType === "high_school") {
+      metadataPayload = {
+        school_type: "high_school",
+        stream_track: formData.stream_track,
+        boarding_status: formData.boarding_status,
+        house_dormitory: formData.house_dormitory.trim(),
+        guardian_name: formData.guardian_name.trim(),
+        guardian_relationship: formData.guardian_relationship,
+        guardian_phone: formData.guardian_phone.trim(),
+        guardian_email: formData.guardian_email.trim().toLowerCase(),
+      };
+    } else {
+      metadataPayload = {
+        school_type: "vocational",
+        department_id: formData.department_id || null,
+        department_name: formData.department_id ? deptNameById.get(formData.department_id) || "" : "",
+        intake_id: formData.intake_id || null,
+        intake_name: formData.intake_id ? intakeNameById.get(formData.intake_id) || "" : "",
+        training_stage: formData.training_stage,
+        sponsorship_type: formData.sponsorship_type,
+        next_of_kin_name: formData.next_of_kin_name.trim(),
+        next_of_kin_phone: formData.next_of_kin_phone.trim(),
+      };
     }
 
     setSaving(true);
@@ -280,35 +486,48 @@ export default function StudentsManagementPage() {
           email: formData.email,
           phone: formData.phone,
           student_number: formData.student_number,
-          programme_id: formData.programme_id,
+          programme_id: schoolType === "vocational" ? null : formData.programme_id || null,
+          department_id: schoolType === "high_school" ? null : formData.department_id || null,
+          intake_id: schoolType === "vocational" ? formData.intake_id || null : null,
           entry_term_id: formData.entry_term_id || null,
           cohort_year: Number(formData.cohort_year),
-          current_level: Number(formData.current_level),
+          current_level: numericLevel,
           status: formData.status,
           admission_date: formData.admission_date,
-          gpa: parseFloat(formData.gpa) || 0,
-          cgpa: parseFloat(formData.cgpa) || 0,
+          gpa: formSpec.showGpaFields ? parseFloat(formData.gpa) || 0 : 0,
+          cgpa: formSpec.showGpaFields ? parseFloat(formData.cgpa) || 0 : 0,
           password: formData.password,
+          metadata: metadataPayload,
+          create_parent_record:
+            schoolType === "high_school" &&
+            formData.create_parent_record &&
+            Boolean(formData.guardian_name.trim()),
+          create_parent_portal_account:
+            schoolType === "high_school" &&
+            formData.create_parent_record &&
+            formData.create_parent_portal_account &&
+            Boolean(formData.guardian_email.trim()),
+          parent_password: formData.parent_password,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        showNotification("error", data.error || "Unable to save student record.");
+        showNotification("error", data.error || "Unable to save record.");
         return;
       }
 
       showNotification(
         "success",
         isEdit
-          ? `Student "${formData.full_name}" (${formData.student_number}) updated successfully.`
-          : `Student "${formData.full_name}" (${formData.student_number}) registered successfully.`
+          ? `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) updated successfully.`
+          : `${portalConfig.learnerSingular} "${formData.full_name}" (${formData.student_number}) registered successfully.`
       );
       setModalMode(null);
       setEditingStudent(null);
       await fetchStudents();
     } catch (err: any) {
-      showNotification("error", err.message || "Network error while saving student.");
+      showNotification("error", err.message || "Network error while saving record.");
     } finally {
       setSaving(false);
     }
@@ -333,12 +552,12 @@ export default function StudentsManagementPage() {
 
       showNotification(
         "success",
-        `Student "${deleteTarget.full_name}" (${deleteTarget.student_number}) deleted from database.`
+        `${portalConfig.learnerSingular} "${deleteTarget.full_name}" (${deleteTarget.student_number}) deleted.`
       );
       setDeleteTarget(null);
       await fetchStudents();
     } catch (err: any) {
-      showNotification("error", err.message || "Network error while deleting student.");
+      showNotification("error", err.message || "Network error while deleting record.");
     } finally {
       setDeleting(false);
     }
@@ -347,36 +566,107 @@ export default function StudentsManagementPage() {
   const filteredStudents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return students.filter((s) => {
+      const meta = s.metadata || {};
       const matchesSearch =
         !q ||
         s.full_name.toLowerCase().includes(q) ||
         s.student_number.toLowerCase().includes(q) ||
         s.email.toLowerCase().includes(q) ||
-        s.phone.toLowerCase().includes(q) ||
-        s.programme_name.toLowerCase().includes(q);
+        (s.phone || "").toLowerCase().includes(q) ||
+        (s.programme_name || "").toLowerCase().includes(q) ||
+        (s.department_name || "").toLowerCase().includes(q) ||
+        String(meta.guardian_name || "").toLowerCase().includes(q) ||
+        String(meta.stream_track || "").toLowerCase().includes(q) ||
+        String(meta.training_stage || "").toLowerCase().includes(q);
+
+      const matchesPrimary =
+        programmeFilter === "all" ||
+        (schoolType === "vocational"
+          ? s.department_id === programmeFilter || meta.department_id === programmeFilter
+          : s.programme_id === programmeFilter);
+
+      let matchesSecondary = true;
+      if (secondaryFilter !== "all") {
+        if (schoolType === "university") {
+          matchesSecondary = String(s.current_level) === secondaryFilter;
+        } else if (schoolType === "high_school") {
+          matchesSecondary = String(meta.boarding_status || "") === secondaryFilter;
+        } else {
+          matchesSecondary = String(meta.sponsorship_type || "") === secondaryFilter;
+        }
+      }
+
       const matchesStatus = statusFilter === "all" || s.status === statusFilter;
-      const matchesProg =
-        programmeFilter === "all" || s.programme_id === programmeFilter;
-      const matchesLevel =
-        levelFilter === "all" || s.current_level === Number(levelFilter);
-      return matchesSearch && matchesStatus && matchesProg && matchesLevel;
+      return matchesSearch && matchesPrimary && matchesSecondary && matchesStatus;
     });
-  }, [students, searchQuery, statusFilter, programmeFilter, levelFilter]);
+  }, [students, searchQuery, programmeFilter, secondaryFilter, statusFilter, schoolType]);
+
+  const fourthKpi = useMemo(() => {
+    if (schoolType === "high_school") {
+      const boarding = students.filter(
+        (s) => String(s.metadata?.boarding_status || "").toLowerCase() === "boarding"
+      ).length;
+      return {
+        label: "Boarding Students",
+        value: boarding,
+        sub: `${students.length - boarding} Day scholars`,
+      };
+    }
+    if (schoolType === "vocational") {
+      const sponsored = students.filter(
+        (s) =>
+          s.metadata?.sponsorship_type &&
+          s.metadata.sponsorship_type !== "Self-Sponsored"
+      ).length;
+      return {
+        label: "Sponsored / Grant",
+        value: sponsored,
+        sub: `${students.length - sponsored} self-sponsored`,
+      };
+    }
+    return {
+      label: "Average CGPA",
+      value: stats.avgCgpa.toFixed(2),
+      sub: "4.00 cumulative scale",
+    };
+  }, [schoolType, students, stats.avgCgpa]);
 
   const exportCSV = () => {
-    const headers =
-      "Student Number,Full Name,Email,Phone,Programme,Level,Cohort,CGPA,Status,Admission Date\n";
-    const rows = filteredStudents
-      .map(
-        (s) =>
-          `"${s.student_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${s.programme_name.replace(/"/g, '""')}",${s.current_level},${s.cohort_year},${s.cgpa.toFixed(2)},"${s.status}","${s.admission_date}"`
-      )
-      .join("\n");
+    let headers = "";
+    let rows = "";
+    if (schoolType === "high_school") {
+      headers =
+        "Admission ID,Full Name,Email,Phone,Class/Form,Stream,Boarding/Day,House,Guardian Name,Guardian Phone,Status\n";
+      rows = filteredStudents
+        .map((s) => {
+          const m = s.metadata || {};
+          return `"${s.student_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${s.programme_name.replace(/"/g, '""')}","${m.stream_track || ""}","${m.boarding_status || ""}","${m.house_dormitory || ""}","${m.guardian_name || ""}","${m.guardian_phone || ""}","${s.status}"`;
+        })
+        .join("\n");
+    } else if (schoolType === "vocational") {
+      headers =
+        "Trainee ID,Full Name,Email,Phone,Trade Class,Intake Cohort,NVTI Stage,Sponsorship,Next of Kin,Status\n";
+      rows = filteredStudents
+        .map((s) => {
+          const m = s.metadata || {};
+          return `"${s.student_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${(s.department_name || s.programme_name).replace(/"/g, '""')}","${m.intake_name || ""}","${m.training_stage || ""}","${m.sponsorship_type || ""}","${m.next_of_kin_phone || ""}","${s.status}"`;
+        })
+        .join("\n");
+    } else {
+      headers =
+        "Matric Number,Full Name,Email,Phone,Department,Program,Level,Entry Mode,Residential,CGPA,Status\n";
+      rows = filteredStudents
+        .map((s) => {
+          const m = s.metadata || {};
+          return `"${s.student_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${m.department_name || ""}","${s.programme_name.replace(/"/g, '""')}",${s.current_level},"${m.entry_mode || "Regular"}","${m.residential_status || ""}",${s.cgpa.toFixed(2)},"${s.status}"`;
+        })
+        .join("\n");
+    }
     const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `students_directory_${todayIso}.csv`;
+    a.download = `${portalConfig.learnerPlural.toLowerCase().replace(/\s+/g, "_")}_${todayIso}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -391,13 +681,30 @@ export default function StudentsManagementPage() {
               Dashboard
             </Link>
             <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Student Directory</span>
+            <span className="text-[#1E293B] font-semibold">
+              {portalConfig.learnerPlural} Directory
+            </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Authoritative Student Records
-          </h1>
+          <div className="flex flex-wrap items-center gap-2.5 mt-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B]">
+              {schoolType === "vocational"
+                ? "Vocational Trainees Directory"
+                : schoolType === "high_school"
+                ? "High School Student Records"
+                : "University Student Records"}
+            </h1>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${portalConfig.badgeClasses}`}
+            >
+              {portalConfig.portalBadge}
+            </span>
+          </div>
           <p className="text-xs text-[#64748B]">
-            Create, edit, and delete student accounts, academic programme placements, and lifecycle statuses.
+            {schoolType === "vocational"
+              ? "Manage trainee accounts, trade workshop assignments, NVTI training stages, cohorts, and sponsorships."
+              : schoolType === "high_school"
+              ? "Manage student admissions, class/form placements, streams, boarding houses, and linked parent contacts."
+              : "Manage university matriculation records, faculties/programs, academic levels, and campus residency."}
           </p>
         </div>
 
@@ -416,7 +723,7 @@ export default function StudentsManagementPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3B82F6] hover:bg-blue-600 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add New Student</span>
+            <span>{formSpec.addTitle}</span>
           </button>
         </div>
       </div>
@@ -426,12 +733,10 @@ export default function StudentsManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Total Students
+              Total {portalConfig.learnerPlural}
             </p>
             <p className="text-2xl font-bold text-[#1E293B] mt-1">{stats.total}</p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">
-              Registered in database
-            </p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Registered in database</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-blue-50 text-[#3B82F6] flex items-center justify-center">
             <Users className="h-5 w-5" />
@@ -473,12 +778,10 @@ export default function StudentsManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Average CGPA
+              {fourthKpi.label}
             </p>
-            <p className="text-2xl font-bold text-[#1E293B] mt-1">
-              {stats.avgCgpa.toFixed(2)}
-            </p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">4.00 cumulative scale</p>
+            <p className="text-2xl font-bold text-[#1E293B] mt-1">{fourthKpi.value}</p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">{fourthKpi.sub}</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
             <Award className="h-5 w-5" />
@@ -520,7 +823,7 @@ export default function StudentsManagementPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by student number, name, email, phone, or programme..."
+            placeholder={`Search by ${formSpec.idLabel.toLowerCase()}, name, email, or placement...`}
             className="w-full pl-9 pr-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
           />
         </div>
@@ -533,27 +836,64 @@ export default function StudentsManagementPage() {
               onChange={(e) => setProgrammeFilter(e.target.value)}
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="all">All Programmes</option>
-              {programmes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              {schoolType === "vocational" ? (
+                <>
+                  <option value="all">All Trade Classes</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <option value="all">
+                    {schoolType === "high_school" ? "All Classes / Forms" : "All Programs"}
+                  </option>
+                  {programmes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#475569]">
             <select
-              value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value)}
+              value={secondaryFilter}
+              onChange={(e) => setSecondaryFilter(e.target.value)}
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="all">All Levels</option>
-              {LEVEL_OPTIONS.map((lvl) => (
-                <option key={lvl} value={lvl}>
-                  Level {lvl}
-                </option>
-              ))}
+              {schoolType === "high_school" ? (
+                <>
+                  <option value="all">Boarding & Day</option>
+                  {formSpec.boardingOptions.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </>
+              ) : schoolType === "vocational" ? (
+                <>
+                  <option value="all">All Sponsorships</option>
+                  {formSpec.sponsorshipOptions.map((sp) => (
+                    <option key={sp} value={sp}>
+                      {sp}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <option value="all">All Levels</option>
+                  {formSpec.levelOptions.map((lvl) => (
+                    <option key={lvl.value} value={String(lvl.numeric)}>
+                      {lvl.label}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
 
@@ -574,7 +914,7 @@ export default function StudentsManagementPage() {
 
           <button
             onClick={fetchStudents}
-            title="Refresh Students"
+            title="Refresh"
             className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#64748B] cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -582,17 +922,35 @@ export default function StudentsManagementPage() {
         </div>
       </div>
 
-      {/* Students Table */}
+      {/* Students / Trainees Table */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                <th className="py-3 px-4">Student</th>
-                <th className="py-3 px-4">Student ID</th>
-                <th className="py-3 px-4">Programme</th>
-                <th className="py-3 px-4">Level & Cohort</th>
-                <th className="py-3 px-4">CGPA</th>
+                <th className="py-3 px-4">{portalConfig.learnerSingular}</th>
+                <th className="py-3 px-4">{formSpec.idLabel}</th>
+                <th className="py-3 px-4">
+                  {schoolType === "vocational"
+                    ? "Trade Class & Cohort"
+                    : schoolType === "high_school"
+                    ? "Class & Stream"
+                    : "Department & Program"}
+                </th>
+                <th className="py-3 px-4">
+                  {schoolType === "vocational"
+                    ? "NVTI Stage & Sponsor"
+                    : schoolType === "high_school"
+                    ? "Boarding & House"
+                    : "Level & Entry Mode"}
+                </th>
+                <th className="py-3 px-4">
+                  {schoolType === "vocational"
+                    ? "Next of Kin"
+                    : schoolType === "high_school"
+                    ? "Parent / Guardian"
+                    : "Residential / CGPA"}
+                </th>
                 <th className="py-3 px-4">Admission Date</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -604,12 +962,13 @@ export default function StudentsManagementPage() {
                   <td colSpan={8} className="py-12 text-center text-xs text-[#64748B]">
                     <div className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-[#3B82F6]" />
-                      <span>Loading live student database records...</span>
+                      <span>Loading live records from Supabase...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredStudents.length > 0 ? (
                 filteredStudents.map((s) => {
+                  const meta = s.metadata || {};
                   const initials = s.full_name
                     ? s.full_name
                         .split(" ")
@@ -638,31 +997,130 @@ export default function StudentsManagementPage() {
                           </div>
                         </div>
                       </td>
+
                       <td className="py-3.5 px-4 font-mono font-semibold text-[#334155]">
                         {s.student_number}
                       </td>
+
+                      {/* Placement column */}
                       <td className="py-3.5 px-4">
-                        <div className="font-medium text-[#1E293B]">
-                          {s.programme_name || "Unassigned"}
-                        </div>
-                        {s.programme_code && (
-                          <div className="text-[10px] font-mono text-[#64748B]">
-                            {s.programme_code}
-                          </div>
+                        {schoolType === "vocational" ? (
+                          <>
+                            <div className="font-medium text-[#1E293B]">
+                              {s.department_name || s.programme_name || "Unassigned Trade"}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {meta.intake_name ||
+                                (s.intake_id ? intakeNameById.get(s.intake_id) : "") ||
+                                `Cohort ${s.cohort_year}`}
+                            </div>
+                          </>
+                        ) : schoolType === "high_school" ? (
+                          <>
+                            <div className="font-medium text-[#1E293B]">
+                              {s.programme_name || "Unassigned Class"}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {meta.stream_track || "Core Track"}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-medium text-[#1E293B]">
+                              {s.programme_name || "Unassigned Program"}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {meta.department_name ||
+                                (s.department_id ? deptNameById.get(s.department_id) : "") ||
+                                s.programme_code ||
+                                "General"}
+                            </div>
+                          </>
                         )}
                       </td>
+
+                      {/* Mode / Boarding / NVTI column */}
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-[#334155]">
-                          Level {s.current_level}
-                        </div>
-                        <div className="text-[11px] text-[#64748B]">
-                          Cohort {s.cohort_year}
-                        </div>
+                        {schoolType === "vocational" ? (
+                          <>
+                            <div className="font-semibold text-[#334155]">
+                              {meta.training_stage || "NVTI Foundation"}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {meta.sponsorship_type || "Self-Sponsored"}
+                            </div>
+                          </>
+                        ) : schoolType === "high_school" ? (
+                          <>
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                meta.boarding_status === "Boarding"
+                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                  : "bg-slate-50 text-slate-700 border-slate-200"
+                              }`}
+                            >
+                              {meta.boarding_status || "Day"}
+                            </span>
+                            {meta.house_dormitory && (
+                              <div className="text-[11px] text-[#64748B] mt-0.5">
+                                {meta.house_dormitory}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-semibold text-[#334155]">
+                              {meta.level_label === "postgrad"
+                                ? "Postgraduate"
+                                : `Level ${s.current_level}`}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {meta.entry_mode || "Regular"} · Cohort {s.cohort_year}
+                            </div>
+                          </>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-semibold text-[#334155]">
-                        {s.cgpa.toFixed(2)}
+
+                      {/* Residential / Parent / Next of kin column */}
+                      <td className="py-3.5 px-4">
+                        {schoolType === "vocational" ? (
+                          <>
+                            <div className="font-medium text-[#1E293B]">
+                              {meta.next_of_kin_name || "—"}
+                            </div>
+                            {meta.next_of_kin_phone && (
+                              <div className="text-[11px] text-[#64748B]">
+                                {meta.next_of_kin_phone}
+                              </div>
+                            )}
+                          </>
+                        ) : schoolType === "high_school" ? (
+                          <>
+                            <div className="font-medium text-[#1E293B]">
+                              {meta.guardian_name || "Not linked"}
+                            </div>
+                            {(meta.guardian_relationship || meta.guardian_phone) && (
+                              <div className="text-[11px] text-[#64748B]">
+                                {[meta.guardian_relationship, meta.guardian_phone]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-[#334155] font-medium">
+                              {meta.residential_status || "On-Campus"}
+                            </div>
+                            <div className="text-[11px] font-mono text-[#64748B]">
+                              CGPA {s.cgpa.toFixed(2)}
+                            </div>
+                          </>
+                        )}
                       </td>
+
                       <td className="py-3.5 px-4 text-[#64748B]">{s.admission_date}</td>
+
                       <td className="py-3.5 px-4">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadgeStyle(
@@ -672,11 +1130,11 @@ export default function StudentsManagementPage() {
                           {s.status.replace(/_/g, " ").toUpperCase()}
                         </span>
                       </td>
+
                       <td className="py-3.5 px-4 text-right">
                         <div className="inline-flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => openEditModal(s)}
-                            title="Edit Student"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#334155] hover:text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -684,7 +1142,6 @@ export default function StudentsManagementPage() {
                           </button>
                           <button
                             onClick={() => setDeleteTarget(s)}
-                            title="Delete Student"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-red-50 text-[#64748B] hover:text-red-600 border border-[#E2E8F0] hover:border-red-200 text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -699,8 +1156,8 @@ export default function StudentsManagementPage() {
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-xs text-[#94A3B8]">
                     {students.length === 0
-                      ? 'No students registered yet. Click "Add New Student" to create the first student record.'
-                      : "No student records match your active search or filters."}
+                      ? `No ${portalConfig.learnerPlural.toLowerCase()} registered yet. Click "${formSpec.addTitle}" above.`
+                      : "No records match your active search or filters."}
                   </td>
                 </tr>
               )}
@@ -709,21 +1166,19 @@ export default function StudentsManagementPage() {
         </div>
       </div>
 
-      {/* Create / Edit Student Modal */}
+      {/* Create / Edit Modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0">
+            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0 bg-slate-50/70">
               <div>
                 <h3 className="text-sm font-bold text-[#1E293B]">
                   {modalMode === "edit"
-                    ? `Edit Student — ${editingStudent?.student_number}`
-                    : "Register New Student"}
+                    ? `${formSpec.editTitlePrefix} — ${editingStudent?.student_number}`
+                    : formSpec.addTitle}
                 </h3>
                 <p className="text-[11px] text-[#64748B]">
-                  {modalMode === "edit"
-                    ? "Update authoritative academic, profile, and portal login details."
-                    : "Provisions a live Supabase Auth account, user profile, student role, and academic record."}
+                  {modalMode === "edit" ? formSpec.editSubtitle : formSpec.addSubtitle}
                 </p>
               </div>
               <button
@@ -737,10 +1192,8 @@ export default function StudentsManagementPage() {
               </button>
             </div>
 
-            <form
-              onSubmit={handleSaveStudent}
-              className="p-6 space-y-4 overflow-y-auto"
-            >
+            <form onSubmit={handleSaveStudent} className="p-6 space-y-4 overflow-y-auto">
+              {/* Row 1: Full Name & ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -749,7 +1202,7 @@ export default function StudentsManagementPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Ama Mensah"
+                    placeholder={formSpec.namePlaceholder}
                     value={formData.full_name}
                     onChange={(e) =>
                       setFormData({ ...formData, full_name: e.target.value })
@@ -760,12 +1213,12 @@ export default function StudentsManagementPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Student Number <span className="text-red-500">*</span>
+                    {formSpec.idLabel} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. STU20260001"
+                    placeholder={formSpec.idPlaceholder}
                     value={formData.student_number}
                     onChange={(e) =>
                       setFormData({
@@ -778,6 +1231,7 @@ export default function StudentsManagementPage() {
                 </div>
               </div>
 
+              {/* Row 2: Email & Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -786,11 +1240,9 @@ export default function StudentsManagementPage() {
                   <input
                     type="email"
                     required
-                    placeholder="e.g. ama.mensah@university.edu.gh"
+                    placeholder={formSpec.emailPlaceholder}
                     value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
                   />
                 </div>
@@ -803,78 +1255,527 @@ export default function StudentsManagementPage() {
                     type="tel"
                     placeholder="e.g. +233 24 000 0000"
                     value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Academic Programme <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={formData.programme_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, programme_id: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  >
-                    <option value="">Select programme...</option>
-                    {programmes.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* SCHOOL-TYPE SPECIFIC SECTION */}
+              {schoolType === "university" && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        {formSpec.departmentLabel}
+                      </label>
+                      <select
+                        value={formData.department_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, department_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                      >
+                        <option value="">Select faculty / department...</option>
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Entry Term
-                  </label>
-                  <select
-                    value={formData.entry_term_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, entry_term_id: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  >
-                    <option value="">Default active term</option>
-                    {terms.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        {formSpec.programLabel} <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formData.programme_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, programme_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                      >
+                        <option value="">Select program...</option>
+                        {programmes.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        {formSpec.levelLabel}
+                      </label>
+                      <select
+                        value={formData.level_label}
+                        onChange={(e) => {
+                          const opt = formSpec.levelOptions.find(
+                            (l) => l.value === e.target.value
+                          );
+                          setFormData({
+                            ...formData,
+                            level_label: e.target.value,
+                            current_level: opt ? opt.numeric : 100,
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.levelOptions.map((lvl) => (
+                          <option key={lvl.value} value={lvl.value}>
+                            {lvl.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Entry Mode
+                      </label>
+                      <select
+                        value={formData.entry_mode}
+                        onChange={(e) =>
+                          setFormData({ ...formData, entry_mode: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.entryModeOptions.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {mode}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Semester / Session
+                      </label>
+                      <select
+                        value={formData.entry_term_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, entry_term_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        <option value="">Default active semester</option>
+                        {terms.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Hostel / Residential Status
+                      </label>
+                      <select
+                        value={formData.residential_status}
+                        onChange={(e) =>
+                          setFormData({ ...formData, residential_status: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.residentialOptions.map((resOpt) => (
+                          <option key={resOpt} value={resOpt}>
+                            {resOpt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Emergency Contact Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Mr. Samuel Mensah"
+                        value={formData.emergency_contact_name}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            emergency_contact_name: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Emergency Contact Phone
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+233 ..."
+                        value={formData.emergency_contact_phone}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            emergency_contact_phone: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {schoolType === "high_school" && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Class / Form <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formData.programme_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, programme_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        <option value="">Select class / form...</option>
+                        {programmes.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Stream / Track
+                      </label>
+                      <select
+                        value={formData.stream_track}
+                        onChange={(e) =>
+                          setFormData({ ...formData, stream_track: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.streamOptions.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Boarding vs. Day Status
+                      </label>
+                      <select
+                        value={formData.boarding_status}
+                        onChange={(e) =>
+                          setFormData({ ...formData, boarding_status: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.boardingOptions.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        House / Dormitory
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Unity House / Dormitory 2"
+                        value={formData.house_dormitory}
+                        onChange={(e) =>
+                          setFormData({ ...formData, house_dormitory: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* High School Parent / Guardian Linking */}
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900">
+                        Parent / Guardian Details
+                      </span>
+                      <label className="flex items-center gap-2 text-[11px] font-semibold text-emerald-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.create_parent_record}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              create_parent_record: e.target.checked,
+                            })
+                          }
+                          className="rounded border-emerald-400 text-emerald-600"
+                        />
+                        Save to Parents Directory
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#334155] mb-1">
+                          Parent / Guardian Full Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Mrs. Grace Osei"
+                          value={formData.guardian_name}
+                          onChange={(e) =>
+                            setFormData({ ...formData, guardian_name: e.target.value })
+                          }
+                          className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-xl text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#334155] mb-1">
+                          Relationship
+                        </label>
+                        <select
+                          value={formData.guardian_relationship}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              guardian_relationship: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-xl text-xs"
+                        >
+                          {formSpec.guardianRelationships.map((rel) => (
+                            <option key={rel} value={rel}>
+                              {rel}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#334155] mb-1">
+                          Parent / Guardian Phone
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="+233 24 ..."
+                          value={formData.guardian_phone}
+                          onChange={(e) =>
+                            setFormData({ ...formData, guardian_phone: e.target.value })
+                          }
+                          className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-xl text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#334155] mb-1">
+                          Parent Email (for Parent Portal)
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="parent@example.com"
+                          value={formData.guardian_email}
+                          onChange={(e) =>
+                            setFormData({ ...formData, guardian_email: e.target.value })
+                          }
+                          className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {formData.create_parent_record && formData.guardian_email.trim() && (
+                      <div className="pt-2 border-t border-emerald-200/70 space-y-2">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-emerald-900 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.create_parent_portal_account}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                create_parent_portal_account: e.target.checked,
+                              })
+                            }
+                            className="rounded border-emerald-400 text-emerald-600"
+                          />
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                          Provision Parent Portal Login Account via Server Action
+                        </label>
+                        {formData.create_parent_portal_account && (
+                          <input
+                            type="password"
+                            minLength={6}
+                            placeholder="Initial Parent Portal password (min 6 chars, auto-generated if blank)"
+                            value={formData.parent_password}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                parent_password: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-xl text-xs"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {schoolType === "vocational" && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        {formSpec.departmentLabel} <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formData.department_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, department_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        <option value="">Select trade class / workshop...</option>
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Intake / Cohort
+                      </label>
+                      <select
+                        value={formData.intake_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, intake_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        <option value="">Select intake cohort...</option>
+                        {intakes.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name} ({i.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Training Level / NVTI Stage
+                      </label>
+                      <select
+                        value={formData.training_stage}
+                        onChange={(e) =>
+                          setFormData({ ...formData, training_stage: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.trainingStageOptions.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Sponsorship Type
+                      </label>
+                      <select
+                        value={formData.sponsorship_type}
+                        onChange={(e) =>
+                          setFormData({ ...formData, sponsorship_type: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      >
+                        {formSpec.sponsorshipOptions.map((sp) => (
+                          <option key={sp} value={sp}>
+                            {sp}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Next of Kin / Guardian Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Mr. Kwaku Boateng"
+                        value={formData.next_of_kin_name}
+                        onChange={(e) =>
+                          setFormData({ ...formData, next_of_kin_name: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#334155] mb-1">
+                        Next of Kin / Guardian Phone
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+233 ..."
+                        value={formData.next_of_kin_phone}
+                        onChange={(e) =>
+                          setFormData({ ...formData, next_of_kin_phone: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Common Lifecycle & Date Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Current Level
+                    {formSpec.admissionDateLabel}
                   </label>
-                  <select
-                    value={formData.current_level}
+                  <input
+                    type="date"
+                    required
+                    value={formData.admission_date}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        current_level: Number(e.target.value),
-                      })
+                      setFormData({ ...formData, admission_date: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  >
-                    {LEVEL_OPTIONS.map((lvl) => (
-                      <option key={lvl} value={lvl}>
-                        Level {lvl}
-                      </option>
-                    ))}
-                  </select>
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                  />
                 </div>
 
                 <div>
@@ -893,7 +1794,7 @@ export default function StudentsManagementPage() {
                         cohort_year: Number(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
@@ -906,7 +1807,7 @@ export default function StudentsManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, status: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
                     {STUDENT_STATUS_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -917,56 +1818,43 @@ export default function StudentsManagementPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Admission Date
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.admission_date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, admission_date: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  />
+              {/* University-only GPA fields */}
+              {formSpec.showGpaFields && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Term GPA (0.00 - 4.00)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="4"
+                      value={formData.gpa}
+                      onChange={(e) =>
+                        setFormData({ ...formData, gpa: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Cumulative CGPA (0.00 - 4.00)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="4"
+                      value={formData.cgpa}
+                      onChange={(e) =>
+                        setFormData({ ...formData, cgpa: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
+                    />
+                  </div>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Term GPA (0.00 - 4.00)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="4"
-                    value={formData.gpa}
-                    onChange={(e) =>
-                      setFormData({ ...formData, gpa: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Cumulative CGPA (0.00 - 4.00)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="4"
-                    value={formData.cgpa}
-                    onChange={(e) =>
-                      setFormData({ ...formData, cgpa: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  />
-                </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -986,7 +1874,7 @@ export default function StudentsManagementPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, password: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                 />
               </div>
 
@@ -1012,7 +1900,7 @@ export default function StudentsManagementPage() {
                       ? "Saving..."
                       : modalMode === "edit"
                       ? "Save Changes"
-                      : "Register Student"}
+                      : formSpec.addTitle}
                   </span>
                 </button>
               </div>
@@ -1032,7 +1920,7 @@ export default function StudentsManagementPage() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#1E293B]">
-                    Delete Student Record
+                    Delete {portalConfig.learnerSingular} Record
                   </h3>
                   <p className="text-xs text-[#64748B] mt-1 leading-relaxed">
                     Are you sure you want to permanently delete{" "}
@@ -1040,8 +1928,7 @@ export default function StudentsManagementPage() {
                       {deleteTarget.full_name}
                     </span>{" "}
                     (<span className="font-mono">{deleteTarget.student_number}</span>)?
-                    This removes their student record, enrolments, and linked portal
-                    authentication account.
+                    This removes their record, enrolments, and linked portal login account.
                   </p>
                 </div>
               </div>

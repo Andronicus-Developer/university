@@ -318,6 +318,36 @@ export default function SettingsPage() {
           }));
         }
       }
+
+      // 3. Overlay authoritative tenant record from live `public.schools`
+      try {
+        const instRes = await fetch("/api/settings/institution", { cache: "no-store" });
+        if (instRes.ok) {
+          const instJson = await instRes.json();
+          const s = instJson?.institution;
+          if (s) {
+            setSchoolForm((prev) => ({
+              ...prev,
+              name: s.name || prev.name,
+              motto: s.motto || prev.motto,
+              logoUrl: s.logo_url || prev.logoUrl,
+              email: s.email || prev.email,
+              phone: s.phone || prev.phone,
+              website: s.website || prev.website,
+              address: s.address || prev.address,
+              currency: s.currency || prev.currency,
+            }));
+            if (s.academic_settings && typeof s.academic_settings === "object") {
+              setAcademicForm((prev) => ({
+                ...prev,
+                ...s.academic_settings,
+              }));
+            }
+          }
+        }
+      } catch (instErr) {
+        console.warn("Unable to load live institution settings:", instErr);
+      }
     } catch (err: any) {
       console.error("Error fetching system settings from database:", err);
     } finally {
@@ -548,6 +578,29 @@ export default function SettingsPage() {
         },
         { onConflict: "setting_key" }
       );
+
+      // 5. Persist tenant institution details & academic settings to live `public.schools`
+      const instSaveRes = await fetch("/api/settings/institution", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: schoolForm.name,
+          email: schoolForm.email,
+          phone: schoolForm.phone,
+          address: schoolForm.address,
+          currency: schoolForm.currency,
+          logo_url: schoolForm.logoUrl,
+          motto: schoolForm.motto,
+          website: schoolForm.website,
+          academic_settings: academicForm,
+        }),
+      });
+      if (!instSaveRes.ok) {
+        const instSaveErr = await instSaveRes.json().catch(() => ({}));
+        throw new Error(
+          instSaveErr?.error || "Failed to save institution settings to live Supabase schools table."
+        );
+      }
 
       setStatusMessage({
         type: "success",

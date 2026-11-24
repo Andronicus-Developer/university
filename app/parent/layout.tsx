@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import { resolveClientTenantContext } from "@/lib/saas/useTenantInstitution";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   FileCheck2,
@@ -44,6 +46,10 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
   const [tenantError, setTenantError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [parentSchoolId, setParentSchoolId] = useState<string | null>(null);
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const { loaded: flagsLoaded, findDisabledForPath } =
+    useFeatureFlags(parentSchoolId);
 
   // Live ticking date/time
   useEffect(() => {
@@ -77,11 +83,16 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
       if (!isMounted) return;
 
       if (tenantRes.status === "unauthenticated") {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
       const activeUser = tenantRes.user;
+      const normEmail = (activeUser.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          activeUser.app_metadata?.role === "superadmin"
+      );
       setUserEmail(activeUser.email || "");
       setParentName(activeUser.user_metadata?.full_name || "Parent / Guardian");
 
@@ -90,6 +101,7 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
         return;
       }
 
+      setParentSchoolId(tenantRes.schoolId || null);
       setTenantError(null);
       setSchoolName(tenantRes.schoolName);
     }
@@ -108,6 +120,20 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    const blocked = findDisabledForPath(pathname || "/parent/dashboard");
+    if (blocked) {
+      router.replace(
+        `/portal-unavailable?portal=${encodeURIComponent(
+          blocked.label
+        )}&key=${encodeURIComponent(
+          blocked.portal_key
+        )}&from=${encodeURIComponent(pathname || "/parent/dashboard")}`
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, findDisabledForPath, pathname, router]);
+
   const handleToggleWard = (type: "high_school" | "vocational_school") => {
     setActiveWardType(type);
     window.dispatchEvent(new CustomEvent("switch_parent_ward_view", { detail: { wardType: type } }));
@@ -116,9 +142,9 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
-      await signOutUser();
+      await signOutUser("/login");
     } finally {
-      window.location.assign("/");
+      window.location.assign("/login");
     }
   };
 
@@ -337,6 +363,8 @@ export default function ParentLayout({ children }: ParentLayoutProps) {
               <Clock className="h-3.5 w-3.5 text-slate-400" />
               <span>{currentTime}</span>
             </div>
+
+            <ThemeToggle variant="compact" align="right" />
 
             <Link
               href="/parent/messages"

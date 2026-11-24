@@ -11,6 +11,8 @@ import {
 } from "@/lib/saas/useTenantInstitution";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import GlobalSearchBar from "@/app/components/GlobalSearchBar";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   CalendarRange,
@@ -78,6 +80,10 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [financeSchoolId, setFinanceSchoolId] = useState<string | null>(null);
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const { loaded: flagsLoaded, findDisabledForPath } =
+    useFeatureFlags(financeSchoolId);
 
   // Live date & time
   useEffect(() => {
@@ -113,11 +119,16 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
       if (!isMounted) return;
 
       if (tenantRes.status === "unauthenticated") {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
       const activeUser = tenantRes.user;
+      const normEmail = (activeUser.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          activeUser.app_metadata?.role === "superadmin"
+      );
       setUserEmail(activeUser.email || "");
       setUserName(activeUser.user_metadata?.full_name || "Bursar / Finance Officer");
       const rawRole = String(activeUser.user_metadata?.role || "finance_officer");
@@ -132,6 +143,7 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
         return;
       }
 
+      setFinanceSchoolId(tenantRes.schoolId || null);
       setTenantError(null);
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
@@ -202,13 +214,27 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    const blocked = findDisabledForPath(pathname || "/finance/dashboard");
+    if (blocked) {
+      router.replace(
+        `/portal-unavailable?portal=${encodeURIComponent(
+          blocked.label
+        )}&key=${encodeURIComponent(
+          blocked.portal_key
+        )}&from=${encodeURIComponent(pathname || "/finance/dashboard")}`
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, findDisabledForPath, pathname, router]);
+
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
       setIsSigningOut(false);
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 
@@ -449,6 +475,8 @@ export default function FinanceLayout({ children }: FinanceLayoutProps) {
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
+              <ThemeToggle variant="compact" align="right" />
+
               {/* Currency Badge */}
               {(currencyCode || currencySymbol) && (
                 <div

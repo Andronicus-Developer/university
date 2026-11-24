@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/client";
  * 5. The browser is forcibly redirected to the login page via window.location.replace() to prevent
  *    the Back button or memory cache from displaying protected pages.
  */
-export async function signOutUser(redirectPath: string = "/") {
+export async function signOutUser(redirectPath: string = "/login") {
   try {
     // 1. Invoke server-side signout endpoint to delete all HttpOnly and server-set cookies
     await fetch("/api/auth/signout", {

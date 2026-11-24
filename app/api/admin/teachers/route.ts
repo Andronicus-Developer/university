@@ -15,6 +15,7 @@ const PROTECTED_ADMIN_EMAIL = "admin@university.edu.gh";
 const FACULTY_ROLE_CODES = [
   "lecturer",
   "teacher",
+  "instructor",
   "dean",
   "head_of_department",
   "academic_advisor",
@@ -113,6 +114,12 @@ export async function GET(req: NextRequest) {
       liveStaffProfsRes,
       liveMemsRes,
       liveProfilesRes,
+      liveSchoolRes,
+      liveDeptsRes,
+      liveProgsRes,
+      liveCoursesRes,
+      liveSubjectsRes,
+      liveModulesRes,
     ] = await Promise.all([
       scopeQueryBySchool(
         (supabase as any)
@@ -185,9 +192,7 @@ export async function GET(req: NextRequest) {
         tenant.schoolId
       ),
       scopeQueryBySchool(
-        (directAdmin as any)
-          .from("staff_profiles")
-          .select("id, school_id, user_id, staff_number, first_name, last_name, designation, department, employment_status, email, created_at"),
+        (directAdmin as any).from("staff_profiles").select("*"),
         tenant.schoolId
       ).then((r: any) => r, () => ({ data: [] })),
       scopeQueryBySchool(
@@ -199,9 +204,57 @@ export async function GET(req: NextRequest) {
       scopeQueryBySchool(
         (directAdmin as any)
           .from("profiles")
-          .select("id, email, full_name, phone, role, school_id, account_status, created_at"),
+          .select("id, email, full_name, phone, role, school_id, account_status, metadata, created_at"),
         tenant.schoolId
       ).then((r: any) => r, () => ({ data: [] })),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("schools")
+            .select("school_type")
+            .eq("id", tenant.schoolId)
+            .maybeSingle()
+            .then((r: any) => r, () => ({ data: null }))
+        : Promise.resolve({ data: null }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("departments")
+            .select("id, name, code")
+            .eq("school_id", tenant.schoolId)
+            .order("name", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("programmes")
+            .select("id, name, code, degree_level")
+            .eq("school_id", tenant.schoolId)
+            .order("name", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("courses")
+            .select("id, code, name, department_id")
+            .eq("school_id", tenant.schoolId)
+            .order("code", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("subjects")
+            .select("id, code, name, programme_id")
+            .eq("school_id", tenant.schoolId)
+            .order("code", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("vocational_modules")
+            .select("id, code, name, department_id")
+            .eq("school_id", tenant.schoolId)
+            .order("code", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
     ]);
 
     if (staffRes.error) {
@@ -270,42 +323,55 @@ export async function GET(req: NextRequest) {
       return Boolean(hasFacultyRole || hasFacultyTitle);
     });
 
+    const liveProfileMap = new Map<string, any>();
+    for (const lp of liveProfilesRes?.data || []) {
+      if (lp?.id) liveProfileMap.set(lp.id, lp);
+    }
+
+    const liveStaffByUserId = new Map<string, any>();
+    for (const sp of liveStaffProfsRes?.data || []) {
+      if (sp?.user_id) liveStaffByUserId.set(String(sp.user_id), sp);
+    }
+
     const teachers = facultyRows.map((s: any) => {
       const profile = Array.isArray(s.profile) ? s.profile[0] : s.profile;
       const dept = Array.isArray(s.department) ? s.department[0] : s.department;
       const assignedRole = roleMap.get(s.profile_id);
       const assignedCourses = coursesByProfile.get(s.profile_id) || [];
+      const liveProf = s.profile_id ? liveProfileMap.get(String(s.profile_id)) : null;
+      const liveSp = s.profile_id ? liveStaffByUserId.get(String(s.profile_id)) : null;
+      const meta =
+        (liveSp?.metadata && typeof liveSp.metadata === "object" && Object.keys(liveSp.metadata).length > 0
+          ? liveSp.metadata
+          : liveProf?.metadata?.staff_profile) || {};
 
       return {
         id: s.id,
         profile_id: s.profile_id,
         staff_number: s.staff_number,
-        full_name: profile?.full_name || "",
-        email: profile?.email || "",
-        phone: profile?.phone || "",
-        department_id: s.department_id || null,
-        department_name: dept?.name || "",
+        full_name: profile?.full_name || liveProf?.full_name || "",
+        email: profile?.email || liveProf?.email || "",
+        phone: profile?.phone || liveProf?.phone || liveSp?.phone || "",
+        department_id: s.department_id || liveSp?.department_id || null,
+        department_name: dept?.name || liveSp?.department || "",
         department_code: dept?.code || "",
         job_title: s.job_title,
-        employment_type: s.employment_type,
-        hire_date: s.hire_date,
+        employment_type: s.employment_type || liveSp?.employment_type || "full_time",
+        hire_date: s.hire_date || liveSp?.hire_date || "",
         status: s.status,
         role_code:
           assignedRole && (FACULTY_ROLE_CODES as readonly string[]).includes(assignedRole.code)
             ? assignedRole.code
-            : "lecturer",
+            : liveSp?.role_code || "lecturer",
         role_name: assignedRole?.name || "Lecturer",
-        salary_grade: salaryByStaffId.get(s.id) || "",
+        salary_grade: salaryByStaffId.get(s.id) || liveSp?.salary_grade || "",
         assigned_courses: assignedCourses,
+        metadata: meta,
         created_at: s.created_at,
       };
     });
 
     const seenProfileIds = new Set(teachers.map((t: any) => t.profile_id));
-    const liveProfileMap = new Map<string, any>();
-    for (const lp of liveProfilesRes?.data || []) {
-      if (lp?.id) liveProfileMap.set(lp.id, lp);
-    }
 
     for (const sp of liveStaffProfsRes?.data || []) {
       if (!sp?.user_id || seenProfileIds.has(sp.user_id)) continue;
@@ -316,41 +382,62 @@ export async function GET(req: NextRequest) {
       if (!hasFacultyRole && !hasFacultyTitle) continue;
 
       const lp = liveProfileMap.get(sp.user_id);
+      const meta =
+        (sp.metadata && typeof sp.metadata === "object" && Object.keys(sp.metadata).length > 0
+          ? sp.metadata
+          : lp?.metadata?.staff_profile) || {};
+
       teachers.push({
         id: sp.id,
         profile_id: sp.user_id,
         staff_number: sp.staff_number || "",
         full_name: lp?.full_name || [sp.first_name, sp.last_name].filter(Boolean).join(" "),
         email: sp.email || lp?.email || "",
-        phone: lp?.phone || "",
-        department_id: null,
+        phone: lp?.phone || sp.phone || "",
+        department_id: sp.department_id || null,
         department_name: sp.department || "",
         department_code: "",
         job_title: sp.designation || "Lecturer",
-        employment_type: "full_time",
-        hire_date: sp.created_at ? String(sp.created_at).split("T")[0] : "",
+        employment_type: sp.employment_type || "full_time",
+        hire_date: sp.hire_date || (sp.created_at ? String(sp.created_at).split("T")[0] : ""),
         status: sp.employment_status || "active",
-        role_code: assignedRole?.code || lp?.role || "lecturer",
+        role_code: sp.role_code || assignedRole?.code || lp?.role || "lecturer",
         role_name: assignedRole?.name || "Lecturer",
-        salary_grade: "",
+        salary_grade: sp.salary_grade || "",
         assigned_courses: coursesByProfile.get(sp.user_id) || [],
+        metadata: meta,
         created_at: sp.created_at,
       });
     }
+
+    const mergeUniqueById = (a: any[], b: any[]) => {
+      const m = new Map<string, any>();
+      for (const x of [...(a || []), ...(b || [])]) {
+        if (x?.id && !m.has(String(x.id))) m.set(String(x.id), x);
+      }
+      return Array.from(m.values());
+    };
+
+    const mergedDepartments = mergeUniqueById(liveDeptsRes?.data || [], departmentsRes.data || []);
+    const mergedCourses = mergeUniqueById(liveCoursesRes?.data || [], coursesRes.data || []);
 
     const total = teachers.length;
     const active = teachers.filter((t: any) => t.status === "active").length;
     const fullTime = teachers.filter((t: any) => t.employment_type === "full_time").length;
     const assignedCoursesCount = teachers.reduce(
-      (sum: number, t: any) => sum + t.assigned_courses.length,
+      (sum: number, t: any) => sum + Math.max(t.assigned_courses.length, (t.metadata?.teaching_subject_ids?.length || 0) + (t.metadata?.assigned_module_ids?.length || 0)),
       0
     );
 
     return NextResponse.json({
       teachers,
-      departments: departmentsRes.data || [],
-      courses: coursesRes.data || [],
+      departments: mergedDepartments,
+      programmes: liveProgsRes?.data || [],
+      courses: mergedCourses,
+      subjects: liveSubjectsRes?.data || [],
+      vocational_modules: liveModulesRes?.data || [],
       roles: rolesRes.data || [],
+      school_type: liveSchoolRes?.data?.school_type || "university",
       stats: {
         total,
         active,
@@ -407,6 +494,10 @@ export async function POST(req: NextRequest) {
       : "lecturer";
     const salaryGrade = body.salary_grade ? String(body.salary_grade).trim() : null;
     const courseIds: string[] = Array.isArray(body.course_ids) ? body.course_ids : [];
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? body.metadata
+        : {};
     const rawPassword = body.password ? String(body.password).trim() : "";
 
     if (!fullName || !email || !staffNumber || !jobTitle) {
@@ -466,6 +557,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const directAdmin = createDirectAdminClient();
     let departmentName: string | null = null;
     if (departmentId) {
       const { data: deptRow } = await (supabase as any)
@@ -474,6 +566,14 @@ export async function POST(req: NextRequest) {
         .eq("id", departmentId)
         .maybeSingle();
       departmentName = deptRow?.name || null;
+      if (!departmentName) {
+        const { data: liveDept } = await (directAdmin as any)
+          .from("departments")
+          .select("name")
+          .eq("id", departmentId)
+          .maybeSingle();
+        departmentName = liveDept?.name || null;
+      }
     }
 
     const provisioned = await provisionLiveTenantUser({
@@ -487,11 +587,19 @@ export async function POST(req: NextRequest) {
       schoolCode: targetSchool.schoolCode,
       accountStatus: status === "terminated" ? "deactivated" : "active",
       existingUserId: existingVProfile?.id || null,
+      extraMetadata: { staff_profile: metadata },
       staffProfile: {
         staffNumber,
         jobTitle,
-        departmentName,
+        departmentName: departmentName || metadata.assigned_class_name || null,
+        departmentId,
+        employmentType,
+        hireDate,
+        phone,
+        roleCode,
+        salaryGrade,
         employmentStatus: status,
+        metadata,
       },
     });
     const profileId = provisioned.userId;
@@ -623,6 +731,10 @@ export async function PUT(req: NextRequest) {
       ? requestedRole
       : "lecturer";
     const salaryGrade = body.salary_grade ? String(body.salary_grade).trim() : null;
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? body.metadata
+        : {};
     const rawPassword = body.password ? String(body.password).trim() : "";
 
     if (!id || !fullName || !email || !staffNumber || !jobTitle) {
@@ -722,6 +834,14 @@ export async function PUT(req: NextRequest) {
         .eq("id", departmentId)
         .maybeSingle();
       departmentName = deptRow?.name || null;
+      if (!departmentName) {
+        const { data: liveDept } = await (directAdmin as any)
+          .from("departments")
+          .select("name")
+          .eq("id", departmentId)
+          .maybeSingle();
+        departmentName = liveDept?.name || null;
+      }
     }
 
     if (profileId !== PROTECTED_ADMIN_ID) {
@@ -736,11 +856,19 @@ export async function PUT(req: NextRequest) {
         schoolName: targetSchool.schoolName,
         schoolCode: targetSchool.schoolCode,
         accountStatus: status === "terminated" ? "deactivated" : "active",
+        extraMetadata: { staff_profile: metadata },
         staffProfile: {
           staffNumber,
           jobTitle,
-          departmentName,
+          departmentName: departmentName || metadata.assigned_class_name || null,
+          departmentId,
+          employmentType,
+          hireDate,
+          phone,
+          roleCode,
+          salaryGrade,
           employmentStatus: status,
+          metadata,
         },
       });
     }

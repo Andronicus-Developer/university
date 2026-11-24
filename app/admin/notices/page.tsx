@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
 import {
   Megaphone,
   Plus,
@@ -27,6 +29,9 @@ export default function NoticesPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+
+  const auxSpec = useMemo(() => getSchoolFormConfig(schoolType).auxiliary, [schoolType]);
 
   const [newNotice, setNewNotice] = useState({
     title: "",
@@ -69,6 +74,14 @@ export default function NoticesPage() {
 
   useEffect(() => {
     fetchNotices();
+    fetch("/api/settings/institution", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.institution?.school_type) {
+          setSchoolType(toPortalSchoolType(data.institution.school_type));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleCreateNotice = async (e: React.FormEvent) => {
@@ -205,10 +218,11 @@ export default function NoticesPage() {
                   onChange={(e) => setNewNotice({ ...newNotice, targetAudience: e.target.value })}
                   className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                 >
-                  <option value="all">Entire University Community</option>
-                  <option value="students">Undergraduate & Graduate Students</option>
-                  <option value="lecturers">Academic Faculty & Lecturers</option>
-                  <option value="staff">Administrative Staff</option>
+                  {auxSpec.noticeAudiences.map((aud) => (
+                    <option key={aud.value} value={aud.value}>
+                      {aud.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 

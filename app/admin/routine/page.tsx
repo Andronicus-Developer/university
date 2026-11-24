@@ -1,198 +1,185 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import {
-  CalendarDays,
-  Plus,
-  Clock,
-  Download,
-  Filter,
-  RefreshCw,
-  Building,
-} from "lucide-react";
+import React from "react";
+import LiveCrudModule, { LiveCrudTabConfig } from "@/components/admin/LiveCrudModule";
 
-interface RoutineEvent {
-  id: string;
-  course_title: string;
-  course_code: string;
-  day_of_week: number;
-  start_time: string;
-  end_time: string;
-  room_code: string;
-  lecturer_name: string;
-}
+const DAYS_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export default function ClassRoutinePage() {
-  const [routines, setRoutines] = useState<RoutineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState<number>(1);
-
-  const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-  const fetchRoutines = async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const db = supabase as any;
-
-    try {
-      const { data } = await db
-        .from("timetable_events")
-        .select(`
-          id,
-          day_of_week,
-          start_time,
-          end_time,
-          room:room_id(code, name),
-          offering:course_offering_id(
-            course:course_id(code, name)
-          ),
-          staff:staff_id(profile:profile_id(full_name))
-        `)
-        .order("start_time", { ascending: true });
-
-      if (data && data.length > 0) {
-        setRoutines(
-          data.map((r: any) => ({
-            id: r.id,
-            course_code: r.offering?.course?.code || "CS101",
-            course_title: r.offering?.course?.name || "Intro to Computer Science",
-            day_of_week: r.day_of_week || 1,
-            start_time: r.start_time?.slice(0, 5) || "09:00",
-            end_time: r.end_time?.slice(0, 5) || "11:00",
-            room_code: r.room?.code || "LT-A",
-            lecturer_name: r.staff?.profile?.full_name || "Faculty Member",
-          }))
-        );
-      } else {
-        setRoutines([]);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRoutines();
-  }, []);
-
-  const filtered = routines.filter((r) => r.day_of_week === selectedDay);
-
-  const downloadTimetable = () => {
-    const content = `University Class Routine - ${daysOfWeek[selectedDay - 1]}\nTime,Course,Room,Lecturer\n` +
-      filtered.map((r) => `${r.start_time}-${r.end_time},${r.course_code}: ${r.course_title},${r.room_code},${r.lecturer_name}`).join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `routine_${daysOfWeek[selectedDay - 1].toLowerCase()}.txt`;
-    a.click();
-  };
+export default function TimetableAndRoutinePage() {
+  const tabs: LiveCrudTabConfig[] = [
+    {
+      key: "timetable_entries",
+      label: "Timetable Periods",
+      resource: "timetable_entries",
+      singularLabel: "Timetable Slot",
+      pluralLabel: "Class Timetable",
+      description:
+        "Schedule weekly subject periods across classes, assign subject teachers, and allocate classrooms.",
+      searchFields: ["day_of_week", "room", "start_time"],
+      filterField: {
+        name: "day_of_week",
+        label: "Days",
+        options: DAYS_ORDER.map((d) => ({ value: d, label: d })),
+      },
+      fields: [
+        {
+          name: "programme_id",
+          label: "Class / Grade Level",
+          type: "select",
+          lookupKey: "programmes",
+          required: true,
+        },
+        {
+          name: "subject_id",
+          label: "Subject",
+          type: "select",
+          lookupKey: "subjects",
+          required: true,
+        },
+        {
+          name: "teacher_id",
+          label: "Subject Teacher",
+          type: "select",
+          lookupKey: "staff",
+        },
+        {
+          name: "term_id",
+          label: "Academic Term",
+          type: "select",
+          lookupKey: "terms",
+        },
+        {
+          name: "day_of_week",
+          label: "Day of Week",
+          type: "select",
+          required: true,
+          defaultValue: "Monday",
+          options: DAYS_ORDER.map((d) => ({ value: d, label: d })),
+        },
+        {
+          name: "room",
+          label: "Room / Lab",
+          type: "text",
+          placeholder: "e.g. Block B — Room 12",
+        },
+        {
+          name: "start_time",
+          label: "Start Time",
+          type: "time",
+          required: true,
+          defaultValue: "08:00",
+        },
+        {
+          name: "end_time",
+          label: "End Time",
+          type: "time",
+          required: true,
+          defaultValue: "09:00",
+        },
+      ],
+      columns: [
+        { key: "day_of_week", label: "Day" },
+        {
+          key: "time_window",
+          label: "Time",
+          render: (row) => `${row.start_time || "—"} – ${row.end_time || "—"}`,
+        },
+        {
+          key: "programme_id",
+          label: "Class",
+          render: (row, _lookups, { formatLookup }) =>
+            formatLookup("programmes", row.programme_id),
+        },
+        {
+          key: "subject_id",
+          label: "Subject",
+          render: (row, _lookups, { formatLookup }) =>
+            formatLookup("subjects", row.subject_id),
+        },
+        {
+          key: "teacher_id",
+          label: "Teacher",
+          render: (row, _lookups, { formatLookup }) =>
+            formatLookup("staff", row.teacher_id),
+        },
+        { key: "room", label: "Room" },
+      ],
+    },
+  ];
 
   return (
-    <div className="space-y-6 max-w-[1580px] mx-auto pb-10">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-[#64748B] font-medium">
-            <span className="text-[#3B82F6] hover:underline cursor-pointer">Dashboard</span>
-            <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Timetable & Schedule</span>
+    <LiveCrudModule
+      title="Timetable & Class Routine"
+      subtitle="Build and maintain your high school weekly teaching timetable across classes, subjects, and rooms."
+      badge="High School Portal"
+      tabs={tabs}
+      computeKpis={(recordsByTab) => {
+        const rows = recordsByTab.timetable_entries || [];
+        const classesScheduled = new Set(rows.map((r: any) => r.programme_id).filter(Boolean)).size;
+        const activeTeachers = new Set(rows.map((r: any) => r.teacher_id).filter(Boolean)).size;
+        const roomsUsed = new Set(
+          rows.map((r: any) => String(r.room || "").trim()).filter(Boolean)
+        ).size;
+        return [
+          { label: "Weekly Periods", value: rows.length, subtext: "Scheduled slots", tone: "indigo" },
+          { label: "Classes Covered", value: classesScheduled, subtext: "Distinct grades", tone: "emerald" },
+          { label: "Teachers Assigned", value: activeTeachers, subtext: "Timetabled staff", tone: "blue" },
+          { label: "Rooms Allocated", value: roomsUsed, subtext: "Active classrooms", tone: "purple" },
+        ];
+      }}
+      renderExtraPanel={({ recordsByTab, helpers }) => {
+        const rows = recordsByTab.timetable_entries || [];
+        return (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <h3 className="text-base font-semibold text-slate-900">Weekly Grid Overview</h3>
+            <p className="mb-4 text-xs text-slate-500">
+              Live visual schedule grouped by weekday across all classes.
+            </p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
+              {DAYS_ORDER.map((day) => {
+                const daySlots = rows
+                  .filter((r: any) => r.day_of_week === day)
+                  .sort((a: any, b: any) =>
+                    String(a.start_time || "").localeCompare(String(b.start_time || ""))
+                  );
+                return (
+                  <div
+                    key={day}
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                  >
+                    <p className="mb-2 border-b border-slate-200 pb-1.5 text-xs font-bold uppercase tracking-wide text-slate-700">
+                      {day}
+                    </p>
+                    {daySlots.length === 0 ? (
+                      <p className="text-[11px] text-slate-400">No periods scheduled</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {daySlots.map((slot: any) => (
+                          <div
+                            key={slot.id}
+                            className="rounded-lg border border-indigo-100 bg-white p-2 text-xs shadow-2xs"
+                          >
+                            <p className="font-semibold text-indigo-700">
+                              {helpers.formatLookup("subjects", slot.subject_id)}
+                            </p>
+                            <p className="text-[11px] text-slate-600">
+                              {slot.start_time} – {slot.end_time}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {helpers.formatLookup("programmes", slot.programme_id)}
+                              {slot.room ? ` • ${slot.room}` : ""}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Institutional Class Routines
-          </h1>
-          <p className="text-xs text-[#64748B]">
-            Automated lecture schedule, room allocations, and faculty timetables.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={downloadTimetable}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-xs font-semibold text-[#475569] shadow-2xs"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Download Day Routine</span>
-          </button>
-
-          <button
-            onClick={() => alert("Opening Routine Generator modal.")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-600 text-white text-xs font-semibold shadow-xs"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Create New Routine</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Day Selector Pills */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {daysOfWeek.map((day, idx) => (
-          <button
-            key={day}
-            onClick={() => setSelectedDay(idx + 1)}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-              selectedDay === idx + 1
-                ? "bg-[#3B82F6] text-white shadow-xs"
-                : "bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"
-            }`}
-          >
-            {day}
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              <th className="py-3 px-4">Period / Time</th>
-              <th className="py-3 px-4">Course</th>
-              <th className="py-3 px-4">Classroom / Hall</th>
-              <th className="py-3 px-4">Assigned Lecturer</th>
-              <th className="py-3 px-4 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#F1F5F9] text-xs">
-            {filtered.length > 0 ? (
-              filtered.map((r) => (
-                <tr key={r.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-bold text-[#2563EB]">
-                    {r.start_time} - {r.end_time}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <div className="font-bold text-[#1E293B]">{r.course_code}</div>
-                    <div className="text-[11px] text-[#64748B]">{r.course_title}</div>
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-[#475569]">
-                    <span className="px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#334155] border border-[#E2E8F0]">
-                      {r.room_code}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-[#334155]">{r.lecturer_name}</td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => alert(`Rescheduling session: ${r.course_code}`)}
-                      className="px-2.5 py-1 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs font-semibold text-[#334155]"
-                    >
-                      Reschedule
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-xs text-[#94A3B8]">
-                  {loading ? "Loading timetable events..." : `No scheduled classes found for ${daysOfWeek[selectedDay - 1]}.`}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        );
+      }}
+    />
   );
 }
-

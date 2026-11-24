@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, createDirectAdminClient } from "@/lib/supabase/admin";
+import {
+  listDepartments,
+  listPrograms,
+} from "@/lib/academics/departments-programs-service";
 import {
   deleteLiveTenantUser,
   provisionLiveTenantUser,
@@ -8,6 +12,13 @@ import {
   scopeQueryBySchool,
   syncVirtualProfileAndRole,
 } from "@/lib/admin/tenant-provisioning";
+
+function splitFullName(fullName: string): { first_name: string; last_name: string } {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "Student", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: "" };
+  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
+}
 
 const PROTECTED_ADMIN_ID = "a0000000-0000-0000-0000-000000000001";
 const PROTECTED_ADMIN_EMAIL = "admin@university.edu.gh";
@@ -33,8 +44,33 @@ export async function GET(req: NextRequest) {
     if (errorResponse) return errorResponse;
 
     const supabase = createAdminClient();
+    const directAdmin = createDirectAdminClient();
 
-    const [studentsRes, programmesRes, termsRes] = await Promise.all([
+    const [
+      liveStudentsRes,
+      liveProfilesRes,
+      studentsRes,
+      progRes,
+      deptRes,
+      termsRes,
+      liveTermsRes,
+      liveSchoolRes,
+      liveIntakesRes,
+      liveHostelsRes,
+    ] = await Promise.all([
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("students")
+            .select("*")
+            .eq("school_id", tenant.schoolId)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("profiles")
+            .select("id, full_name, email, phone, account_status, metadata")
+            .eq("school_id", tenant.schoolId)
+        : Promise.resolve({ data: [], error: null }),
       scopeQueryBySchool(
         (supabase as any)
           .from("students")
@@ -45,6 +81,7 @@ export async function GET(req: NextRequest) {
           profile_id,
           student_number,
           programme_id,
+          department_id,
           entry_term_id,
           current_term_id,
           cohort_year,
@@ -53,6 +90,7 @@ export async function GET(req: NextRequest) {
           current_level,
           gpa,
           cgpa,
+          metadata,
           created_at,
           updated_at,
           profile:profile_id(id, full_name, email, phone, account_status),
@@ -63,13 +101,8 @@ export async function GET(req: NextRequest) {
           .order("created_at", { ascending: false }),
         tenant.schoolId
       ),
-      scopeQueryBySchool(
-        (supabase as any)
-          .from("programmes")
-          .select("id, name, code, degree_level, is_active")
-          .order("name", { ascending: true }),
-        tenant.schoolId
-      ),
+      listPrograms(tenant.schoolId).catch(() => ({ programs: [], school_type: "university" })),
+      listDepartments(tenant.schoolId).catch(() => ({ departments: [], school_type: "university" })),
       scopeQueryBySchool(
         (supabase as any)
           .from("terms")
@@ -77,18 +110,116 @@ export async function GET(req: NextRequest) {
           .order("start_date", { ascending: false }),
         tenant.schoolId
       ),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("terms")
+            .select("id, name, code, is_active, start_date")
+            .eq("school_id", tenant.schoolId)
+            .order("start_date", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("schools")
+            .select("school_type")
+            .eq("id", tenant.schoolId)
+            .maybeSingle()
+            .then((r: any) => r, () => ({ data: null }))
+        : Promise.resolve({ data: null }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("vocational_intakes")
+            .select("id, code, name, department_id, status")
+            .eq("school_id", tenant.schoolId)
+            .order("start_date", { ascending: false })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("hostels")
+            .select("id, code, name, gender_policy, is_active")
+            .eq("school_id", tenant.schoolId)
+            .order("name", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
     ]);
 
-    if (studentsRes.error) {
-      return NextResponse.json({ error: studentsRes.error.message }, { status: 500 });
+    const liveProfMap = new Map<string, any>();
+    for (const lp of liveProfilesRes?.data || []) {
+      liveProfMap.set(String(lp.id), lp);
     }
 
-    const students = (studentsRes.data || []).map((s: any) => {
-      const profile = Array.isArray(s.profile) ? s.profile[0] : s.profile;
-      const programme = Array.isArray(s.programme) ? s.programme[0] : s.programme;
-      const entryTerm = Array.isArray(s.entry_term) ? s.entry_term[0] : s.entry_term;
+    const progMap = new Map<string, any>();
+    for (const pr of progRes?.programs || []) {
+      progMap.set(String(pr.id), pr);
+    }
 
-      return {
+    const deptMap = new Map<string, any>();
+    for (const dp of deptRes?.departments || []) {
+      deptMap.set(String(dp.id), dp);
+    }
+
+    const virtualStudents = Array.isArray(studentsRes?.data) ? studentsRes.data : [];
+    const liveStudents = Array.isArray(liveStudentsRes?.data) ? liveStudentsRes.data : [];
+
+    const mergedById = new Map<string, any>();
+
+    for (const s of liveStudents) {
+      const liveProf = s.profile_id ? liveProfMap.get(String(s.profile_id)) : null;
+      const prog = s.programme_id ? progMap.get(String(s.programme_id)) : null;
+      const dept = s.department_id ? deptMap.get(String(s.department_id)) : null;
+      const fullName =
+        `${s.first_name || ""} ${s.last_name || ""}`.trim() ||
+        liveProf?.full_name ||
+        "";
+      const meta =
+        s.metadata && typeof s.metadata === "object" && Object.keys(s.metadata).length > 0
+          ? s.metadata
+          : liveProf?.metadata?.student_profile || {};
+
+      mergedById.set(String(s.id), {
+        id: s.id,
+        profile_id: s.profile_id || "",
+        student_number: s.student_number,
+        full_name: fullName,
+        email: s.email || liveProf?.email || "",
+        phone: s.phone || liveProf?.phone || "",
+        account_status: liveProf?.account_status || "active",
+        programme_id: s.programme_id || null,
+        programme_name: prog?.name || dept?.name || "",
+        programme_code: prog?.code || dept?.code || "",
+        department_id: s.department_id || null,
+        department_name: dept?.name || "",
+        intake_id: s.intake_id || null,
+        degree_level: prog?.degree_level || "",
+        entry_term_id: s.entry_term_id || null,
+        entry_term_name: "",
+        cohort_year: Number(s.cohort_year) || new Date(s.enrolled_at || s.created_at || Date.now()).getFullYear(),
+        current_level: Number(s.current_level) || 100,
+        status: s.status || "active",
+        admission_date: (s.enrolled_at || s.created_at || "").slice(0, 10),
+        gpa: Number(s.gpa ?? 0),
+        cgpa: Number(s.cgpa ?? 0),
+        metadata: meta,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+      });
+    }
+
+    for (const s of virtualStudents) {
+      const idKey = String(s.id);
+      if (mergedById.has(idKey)) continue;
+      const profile = Array.isArray(s.profile) ? s.profile[0] : s.profile;
+      const liveProf = s.profile_id ? liveProfMap.get(String(s.profile_id)) : null;
+      const programme = Array.isArray(s.programme) ? s.programme[0] : s.programme;
+      const progLookup = s.programme_id ? progMap.get(String(s.programme_id)) : null;
+      const deptLookup = s.department_id ? deptMap.get(String(s.department_id)) : null;
+      const entryTerm = Array.isArray(s.entry_term) ? s.entry_term[0] : s.entry_term;
+      const meta =
+        s.metadata && typeof s.metadata === "object" && Object.keys(s.metadata).length > 0
+          ? s.metadata
+          : liveProf?.metadata?.student_profile || {};
+
+      mergedById.set(idKey, {
         id: s.id,
         profile_id: s.profile_id,
         student_number: s.student_number,
@@ -97,9 +228,12 @@ export async function GET(req: NextRequest) {
         phone: profile?.phone || "",
         account_status: profile?.account_status || "active",
         programme_id: s.programme_id,
-        programme_name: programme?.name || "",
-        programme_code: programme?.code || "",
-        degree_level: programme?.degree_level || "",
+        programme_name: programme?.name || progLookup?.name || deptLookup?.name || "",
+        programme_code: programme?.code || progLookup?.code || deptLookup?.code || "",
+        department_id: s.department_id || null,
+        department_name: deptLookup?.name || "",
+        intake_id: s.intake_id || meta?.intake_id || null,
+        degree_level: programme?.degree_level || progLookup?.degree_level || "",
         entry_term_id: s.entry_term_id || null,
         entry_term_name: entryTerm?.name || "",
         cohort_year: Number(s.cohort_year),
@@ -108,10 +242,25 @@ export async function GET(req: NextRequest) {
         admission_date: s.admission_date,
         gpa: Number(s.gpa ?? 0),
         cgpa: Number(s.cgpa ?? 0),
+        metadata: meta,
         created_at: s.created_at,
         updated_at: s.updated_at,
-      };
-    });
+      });
+    }
+
+    const students = Array.from(mergedById.values()).sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    const mergedTerms =
+      Array.isArray(liveTermsRes?.data) && liveTermsRes.data.length > 0
+        ? liveTermsRes.data
+        : termsRes.data || [];
+
+    const resolvedSchoolType =
+      liveSchoolRes?.data?.school_type ||
+      (progRes as any)?.school_type ||
+      (deptRes as any)?.school_type ||
+      "university";
 
     const total = students.length;
     const active = students.filter((s: any) => s.status === "active").length;
@@ -129,8 +278,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       students,
-      programmes: programmesRes.data || [],
-      terms: termsRes.data || [],
+      programmes: progRes?.programs || [],
+      departments: deptRes?.departments || [],
+      terms: mergedTerms,
+      intakes: liveIntakesRes?.data || [],
+      hostels: liveHostelsRes?.data || [],
+      school_type: resolvedSchoolType,
       stats: {
         total,
         active,
@@ -169,7 +322,9 @@ export async function POST(req: NextRequest) {
     const studentNumber = String(body.student_number || "")
       .trim()
       .toUpperCase();
-    const programmeId = String(body.programme_id || "").trim();
+    const programmeId = String(body.programme_id || "").trim() || null;
+    const departmentId = String(body.department_id || "").trim() || null;
+    const intakeId = String(body.intake_id || "").trim() || null;
     const entryTermId = body.entry_term_id ? String(body.entry_term_id).trim() : null;
     const cohortYear = Number(body.cohort_year) || new Date().getFullYear();
     const currentLevel = VALID_LEVELS.includes(Number(body.current_level) as any)
@@ -183,12 +338,21 @@ export async function POST(req: NextRequest) {
     const gpa = Math.min(4, Math.max(0, Number(body.gpa ?? 0) || 0));
     const cgpa = Math.min(4, Math.max(0, Number(body.cgpa ?? 0) || 0));
     const rawPassword = body.password ? String(body.password).trim() : "";
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? { ...body.metadata, ...(intakeId ? { intake_id: intakeId } : {}) }
+        : intakeId
+        ? { intake_id: intakeId }
+        : {};
+    const createParentRecord = Boolean(body.create_parent_record);
+    const createParentPortalAccount = Boolean(body.create_parent_portal_account);
+    const parentPassword = body.parent_password ? String(body.parent_password).trim() : "";
 
-    if (!fullName || !email || !studentNumber || !programmeId) {
+    if (!fullName || !email || !studentNumber) {
       return NextResponse.json(
         {
           error:
-            "Full name, institutional email, student number, and academic programme are required.",
+            "Full name, institutional email, and student number are required.",
         },
         { status: 400 }
       );
@@ -259,6 +423,7 @@ export async function POST(req: NextRequest) {
       schoolCode: targetSchool.schoolCode,
       accountStatus,
       existingUserId: existingVProfile?.id || null,
+      extraMetadata: { student_profile: metadata },
     });
     const profileId = provisioned.userId;
     if (provisioned.createdNewAuthUser) {
@@ -290,14 +455,24 @@ export async function POST(req: NextRequest) {
       resolvedTermId = activeTerm?.id || null;
     }
 
+    const newStudentId = crypto.randomUUID();
+    const { first_name, last_name } = splitFullName(fullName);
+
     const { data: createdStudent, error: studentErr } = await (supabase as any)
       .from("students")
       .insert({
+        id: newStudentId,
         school_id: targetSchool.schoolId,
         university_id: targetSchool.schoolId,
         profile_id: profileId,
         student_number: studentNumber,
+        first_name,
+        last_name,
+        email,
+        phone,
         programme_id: programmeId,
+        department_id: departmentId,
+        intake_id: intakeId,
         entry_term_id: resolvedTermId,
         current_term_id: resolvedTermId,
         cohort_year: cohortYear,
@@ -306,6 +481,7 @@ export async function POST(req: NextRequest) {
         admission_date: admissionDate,
         gpa,
         cgpa,
+        metadata,
       })
       .select("id, student_number")
       .single();
@@ -316,6 +492,102 @@ export async function POST(req: NextRequest) {
         await (supabase as any).from("profiles").delete().eq("id", createdNewAuthUserId);
       }
       return NextResponse.json({ error: studentErr.message }, { status: 400 });
+    }
+
+    // Mirror cleanly into live Postgres `public.students` with resilient migration fallback
+    const savedStudentId = createdStudent.id || newStudentId;
+    try {
+      const directAdmin = createDirectAdminClient();
+      const baseLivePayload = {
+        id: savedStudentId,
+        school_id: targetSchool.schoolId,
+        student_number: studentNumber,
+        first_name,
+        last_name,
+        status,
+        enrolled_at: admissionDate,
+      };
+      const midLivePayload = {
+        ...baseLivePayload,
+        profile_id: profileId,
+        email,
+        phone,
+        programme_id: programmeId,
+        department_id: departmentId,
+        intake_id: intakeId,
+        current_level: currentLevel,
+      };
+      const fullLivePayload = {
+        ...midLivePayload,
+        entry_term_id: resolvedTermId,
+        cohort_year: cohortYear,
+        metadata,
+      };
+
+      const { error: fullErr } = await (directAdmin as any)
+        .from("students")
+        .upsert(fullLivePayload, { onConflict: "id" });
+
+      if (
+        fullErr &&
+        (String(fullErr.code || "") === "42703" ||
+          String(fullErr.code || "") === "PGRST204" ||
+          String(fullErr.message || "").includes("column"))
+      ) {
+        const { error: midErr } = await (directAdmin as any)
+          .from("students")
+          .upsert(midLivePayload, { onConflict: "id" });
+        if (
+          midErr &&
+          (String(midErr.code || "") === "42703" ||
+            String(midErr.code || "") === "PGRST204" ||
+            String(midErr.message || "").includes("column"))
+        ) {
+          await (directAdmin as any)
+            .from("students")
+            .upsert(baseLivePayload, { onConflict: "id" });
+        }
+      }
+
+      // Optional High School Parent/Guardian Record + Optional Parent Portal Login
+      if (createParentRecord && metadata.guardian_name) {
+        try {
+          let parentUserId: string | null = null;
+          const guardianEmail = metadata.guardian_email
+            ? String(metadata.guardian_email).trim().toLowerCase()
+            : "";
+
+          if (createParentPortalAccount && guardianEmail) {
+            const pProv = await provisionLiveTenantUser({
+              email: guardianEmail,
+              password: parentPassword.length >= 6 ? parentPassword : undefined,
+              fullName: String(metadata.guardian_name).trim(),
+              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
+              roleCode: "parent",
+              schoolId: targetSchool.schoolId,
+              schoolName: targetSchool.schoolName,
+              schoolCode: targetSchool.schoolCode,
+            });
+            parentUserId = pProv.userId;
+          }
+
+          await (directAdmin as any).from("parent_guardians").insert({
+            school_id: targetSchool.schoolId,
+            student_id: savedStudentId,
+            user_id: parentUserId,
+            full_name: String(metadata.guardian_name).trim(),
+            relationship: String(metadata.guardian_relationship || "Parent").trim(),
+            phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
+            email: guardianEmail || null,
+            is_primary_contact: true,
+            status: "active",
+          });
+        } catch (parentErr) {
+          console.warn("Could not link High School parent_guardians record:", parentErr);
+        }
+      }
+    } catch (liveStuErr) {
+      console.warn("Could not mirror student insert to live public.students:", liveStuErr);
     }
 
     try {
@@ -380,7 +652,9 @@ export async function PUT(req: NextRequest) {
     const studentNumber = String(body.student_number || "")
       .trim()
       .toUpperCase();
-    const programmeId = String(body.programme_id || "").trim();
+    const programmeId = String(body.programme_id || "").trim() || null;
+    const departmentId = String(body.department_id || "").trim() || null;
+    const intakeId = String(body.intake_id || "").trim() || null;
     const entryTermId = body.entry_term_id ? String(body.entry_term_id).trim() : null;
     const cohortYear = Number(body.cohort_year) || new Date().getFullYear();
     const currentLevel = VALID_LEVELS.includes(Number(body.current_level) as any)
@@ -394,12 +668,21 @@ export async function PUT(req: NextRequest) {
     const gpa = Math.min(4, Math.max(0, Number(body.gpa ?? 0) || 0));
     const cgpa = Math.min(4, Math.max(0, Number(body.cgpa ?? 0) || 0));
     const rawPassword = body.password ? String(body.password).trim() : "";
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? { ...body.metadata, ...(intakeId ? { intake_id: intakeId } : {}) }
+        : intakeId
+        ? { intake_id: intakeId }
+        : {};
+    const createParentRecord = Boolean(body.create_parent_record);
+    const createParentPortalAccount = Boolean(body.create_parent_portal_account);
+    const parentPassword = body.parent_password ? String(body.parent_password).trim() : "";
 
-    if (!id || !fullName || !email || !studentNumber || !programmeId) {
+    if (!id || !fullName || !email || !studentNumber) {
       return NextResponse.json(
         {
           error:
-            "Student ID, full name, email, student number, and academic programme are required.",
+            "Student ID, full name, email, and student number are required.",
         },
         { status: 400 }
       );
@@ -413,14 +696,25 @@ export async function PUT(req: NextRequest) {
     }
 
     const supabase = createAdminClient();
+    const directAdmin = createDirectAdminClient();
 
-    const { data: existingStudent, error: fetchErr } = await (supabase as any)
+    const { data: existingVirtualStudent } = await (supabase as any)
       .from("students")
       .select("id, school_id, university_id, profile_id, student_number, status, programme_id")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (fetchErr || !existingStudent) {
+    const { data: existingLiveStudent } = !existingVirtualStudent
+      ? await (directAdmin as any)
+          .from("students")
+          .select("id, school_id, profile_id, student_number, status, programme_id")
+          .eq("id", id)
+          .maybeSingle()
+          .then((r: any) => r, () => ({ data: null }))
+      : { data: null };
+
+    const existingStudent = existingVirtualStudent || existingLiveStudent;
+    if (!existingStudent) {
       return NextResponse.json({ error: "Student record not found." }, { status: 404 });
     }
 
@@ -479,7 +773,7 @@ export async function PUT(req: NextRequest) {
       : "active";
 
     await provisionLiveTenantUser({
-      existingUserId: existingStudent.profile_id,
+      existingUserId: existingStudent.profile_id || null,
       email,
       password: rawPassword || undefined,
       fullName,
@@ -489,6 +783,7 @@ export async function PUT(req: NextRequest) {
       schoolName: targetSchool.schoolName,
       schoolCode: targetSchool.schoolCode,
       accountStatus,
+      extraMetadata: { student_profile: metadata },
     });
 
     await syncVirtualProfileAndRole(supabase, {
@@ -503,31 +798,159 @@ export async function PUT(req: NextRequest) {
       accountStatus,
     });
 
+    const { first_name, last_name } = splitFullName(fullName);
     const studentUpdates: Record<string, any> = {
       school_id: targetSchool.schoolId,
       university_id: targetSchool.schoolId,
       student_number: studentNumber,
+      first_name,
+      last_name,
+      email,
+      phone,
       programme_id: programmeId,
+      department_id: departmentId,
+      intake_id: intakeId,
       cohort_year: cohortYear,
       current_level: currentLevel,
       status,
       admission_date: admissionDate,
       gpa,
       cgpa,
+      metadata,
       updated_at: new Date().toISOString(),
     };
     if (entryTermId) {
       studentUpdates.entry_term_id = entryTermId;
     }
 
-    const { error: updateErr } = await (supabase as any)
-      .from("students")
-      .update(studentUpdates)
-      .eq("id", id);
+    if (existingVirtualStudent) {
+      const { error: updateErr } = await (supabase as any)
+        .from("students")
+        .update(studentUpdates)
+        .eq("id", id);
 
-    if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 400 });
+      if (updateErr) {
+        return NextResponse.json({ error: updateErr.message }, { status: 400 });
+      }
     }
+
+    // Mirror update into live Postgres `public.students` with resilient fallback
+    try {
+      const baseLiveUpd = {
+        student_number: studentNumber,
+        first_name,
+        last_name,
+        status,
+        enrolled_at: admissionDate,
+        updated_at: new Date().toISOString(),
+      };
+      const midLiveUpd = {
+        ...baseLiveUpd,
+        email,
+        phone,
+        programme_id: programmeId,
+        department_id: departmentId,
+        intake_id: intakeId,
+        current_level: currentLevel,
+      };
+      const fullLiveUpd = {
+        ...midLiveUpd,
+        ...(entryTermId ? { entry_term_id: entryTermId } : {}),
+        cohort_year: cohortYear,
+        metadata,
+      };
+
+      const { error: fullUpdErr } = await (directAdmin as any)
+        .from("students")
+        .update(fullLiveUpd)
+        .eq("id", id)
+        .eq("school_id", targetSchool.schoolId);
+
+      if (
+        fullUpdErr &&
+        (String(fullUpdErr.code || "") === "42703" ||
+          String(fullUpdErr.code || "") === "PGRST204" ||
+          String(fullUpdErr.message || "").includes("column"))
+      ) {
+        const { error: midUpdErr } = await (directAdmin as any)
+          .from("students")
+          .update(midLiveUpd)
+          .eq("id", id)
+          .eq("school_id", targetSchool.schoolId);
+
+        if (
+          midUpdErr &&
+          (String(midUpdErr.code || "") === "42703" ||
+            String(midUpdErr.code || "") === "PGRST204" ||
+            String(midUpdErr.message || "").includes("column"))
+        ) {
+          await (directAdmin as any)
+            .from("students")
+            .update(baseLiveUpd)
+            .eq("id", id)
+            .eq("school_id", targetSchool.schoolId);
+        }
+      }
+
+      // Optional High School Parent/Guardian Update or Insert
+      if (createParentRecord && metadata.guardian_name) {
+        try {
+          let parentUserId: string | null = null;
+          const guardianEmail = metadata.guardian_email
+            ? String(metadata.guardian_email).trim().toLowerCase()
+            : "";
+
+          if (createParentPortalAccount && guardianEmail) {
+            const pProv = await provisionLiveTenantUser({
+              email: guardianEmail,
+              password: parentPassword.length >= 6 ? parentPassword : undefined,
+              fullName: String(metadata.guardian_name).trim(),
+              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
+              roleCode: "parent",
+              schoolId: targetSchool.schoolId,
+              schoolName: targetSchool.schoolName,
+              schoolCode: targetSchool.schoolCode,
+            });
+            parentUserId = pProv.userId;
+          }
+
+          const { data: existingGuardian } = await (directAdmin as any)
+            .from("parent_guardians")
+            .select("id, user_id")
+            .eq("school_id", targetSchool.schoolId)
+            .eq("student_id", id)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingGuardian?.id) {
+            await (directAdmin as any)
+              .from("parent_guardians")
+              .update({
+                full_name: String(metadata.guardian_name).trim(),
+                relationship: String(metadata.guardian_relationship || "Parent").trim(),
+                phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
+                email: guardianEmail || null,
+                ...(parentUserId ? { user_id: parentUserId } : {}),
+              })
+              .eq("id", existingGuardian.id);
+          } else {
+            await (directAdmin as any).from("parent_guardians").insert({
+              school_id: targetSchool.schoolId,
+              student_id: id,
+              user_id: parentUserId,
+              full_name: String(metadata.guardian_name).trim(),
+              relationship: String(metadata.guardian_relationship || "Parent").trim(),
+              phone: metadata.guardian_phone ? String(metadata.guardian_phone).trim() : null,
+              email: guardianEmail || null,
+              is_primary_contact: true,
+              status: "active",
+            });
+          }
+        } catch (parentErr) {
+          console.warn("Could not upsert High School parent_guardians record:", parentErr);
+        }
+      }
+    } catch {}
 
     try {
       if (existingStudent.status !== status) {
@@ -651,6 +1074,15 @@ export async function DELETE(req: NextRequest) {
     if (delStudentErr) {
       return NextResponse.json({ error: delStudentErr.message }, { status: 400 });
     }
+
+    try {
+      const directAdmin = createDirectAdminClient();
+      await (directAdmin as any)
+        .from("students")
+        .delete()
+        .eq("id", id)
+        .eq("school_id", recordSchoolId || tenant.schoolId);
+    } catch {}
 
     const { data: linkedStaff } = await (supabase as any)
       .from("staff")

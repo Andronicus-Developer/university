@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,8 @@ import {
   resolveClientTenantContext,
 } from "@/lib/saas/useTenantInstitution";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   BookOpen,
@@ -63,6 +65,10 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [teacherSchoolId, setTeacherSchoolId] = useState<string | null>(null);
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
+    useFeatureFlags(teacherSchoolId);
 
   // Live date & time ticking clock
   useEffect(() => {
@@ -97,11 +103,16 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
       if (!isMounted) return;
 
       if (tenantRes.status === "unauthenticated") {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
       const activeUser = tenantRes.user;
+      const normEmail = (activeUser.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          activeUser.app_metadata?.role === "superadmin"
+      );
       setUserEmail(activeUser.email || "");
       setUserName(activeUser.user_metadata?.full_name || "Teacher / Instructor");
 
@@ -110,6 +121,7 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
         return;
       }
 
+      setTeacherSchoolId(tenantRes.schoolId || null);
       setTenantError(null);
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
@@ -148,6 +160,20 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    const blocked = findDisabledForPath(pathname || "/teacher/dashboard");
+    if (blocked) {
+      router.replace(
+        `/portal-unavailable?portal=${encodeURIComponent(
+          blocked.label
+        )}&key=${encodeURIComponent(
+          blocked.portal_key
+        )}&from=${encodeURIComponent(pathname || "/teacher/dashboard")}`
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, findDisabledForPath, pathname, router]);
+
   const handleToggleSchoolType = (type: "high_school" | "vocational_school") => {
     setSchoolType(type);
     window.dispatchEvent(new CustomEvent("switch_school_type_view", { detail: { schoolType: type } }));
@@ -156,14 +182,14 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
-      await signOutUser();
+      await signOutUser("/login");
     } finally {
-      window.location.assign("/");
+      window.location.assign("/login");
     }
   };
 
-  // Dynamic Navigation based on school type
-  const navItems = [
+  // Dynamic Navigation based on school type + Feature Flags
+  const rawNavItems = [
     {
       id: "dashboard",
       label: "Dashboard",
@@ -211,6 +237,14 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
       badge: unreadCount > 0 ? `${unreadCount}` : null,
     },
   ];
+
+  const navItems = useMemo(
+    () =>
+      rawNavItems.filter(
+        (item) => isSuperAdminUser || isHrefEnabled(item.href)
+      ),
+    [rawNavItems, isSuperAdminUser, isHrefEnabled]
+  );
 
   return (
     <div className="flex h-screen bg-slate-50/60 overflow-hidden text-slate-800 font-sans">
@@ -382,6 +416,8 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
               <Clock className="h-3.5 w-3.5 text-slate-400" />
               <span>{currentTime}</span>
             </div>
+
+            <ThemeToggle variant="compact" align="right" />
 
             {/* Notifications */}
             <Link

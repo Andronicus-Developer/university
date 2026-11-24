@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
 import {
   BusFront,
   Plus,
@@ -72,6 +74,8 @@ export default function TransportManagementPage() {
 
   // Current selected route for editing or deletion
   const [selectedRoute, setSelectedRoute] = useState<TransportRouteItem | null>(null);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+  const auxSpec = useMemo(() => getSchoolFormConfig(schoolType).auxiliary, [schoolType]);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
@@ -120,6 +124,14 @@ export default function TransportManagementPage() {
 
   useEffect(() => {
     fetchTransportData();
+    fetch("/api/settings/institution", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.institution?.school_type) {
+          setSchoolType(toPortalSchoolType(data.institution.school_type));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const openAddModal = () => {
@@ -646,7 +658,7 @@ export default function TransportManagementPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Main Campus Terminal"
+                    placeholder={auxSpec.transportDeparturePlaceholder}
                     value={formData.departureLocation}
                     onChange={(e) => setFormData({ ...formData, departureLocation: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs focus:border-[#2563EB] focus:outline-none"

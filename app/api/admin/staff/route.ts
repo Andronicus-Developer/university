@@ -16,12 +16,15 @@ const PROTECTED_ADMIN_EMAIL = "admin@university.edu.gh";
 const FACULTY_ROLE_CODES = [
   "lecturer",
   "teacher",
+  "instructor",
   "dean",
   "head_of_department",
   "academic_advisor",
 ] as const;
 
 const ADMIN_STAFF_ROLE_CODES = [
+  "faculty_officer",
+  "exams_officer",
   "registrar",
   "academic_affairs_officer",
   "admissions_officer",
@@ -30,6 +33,12 @@ const ADMIN_STAFF_ROLE_CODES = [
   "accountant",
   "librarian",
   "hostel_officer",
+  "matron",
+  "storekeeper",
+  "placement_coordinator",
+  "school_admin",
+  "secretary",
+  "safety_officer",
   "hr_officer",
   "auditor",
   "system_admin",
@@ -59,6 +68,8 @@ export async function GET(req: NextRequest) {
       liveStaffProfsRes,
       liveMemsRes,
       liveProfilesRes,
+      liveSchoolRes,
+      liveDeptsRes,
     ] = await Promise.all([
       scopeQueryBySchool(
         (supabase as any)
@@ -110,9 +121,7 @@ export async function GET(req: NextRequest) {
         tenant.schoolId
       ),
       scopeQueryBySchool(
-        (directAdmin as any)
-          .from("staff_profiles")
-          .select("id, school_id, user_id, staff_number, first_name, last_name, designation, department, employment_status, email, created_at"),
+        (directAdmin as any).from("staff_profiles").select("*"),
         tenant.schoolId
       ).then((r: any) => r, () => ({ data: [] })),
       scopeQueryBySchool(
@@ -124,9 +133,25 @@ export async function GET(req: NextRequest) {
       scopeQueryBySchool(
         (directAdmin as any)
           .from("profiles")
-          .select("id, email, full_name, phone, role, school_id, account_status, created_at"),
+          .select("id, email, full_name, phone, role, school_id, account_status, metadata, created_at"),
         tenant.schoolId
       ).then((r: any) => r, () => ({ data: [] })),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("schools")
+            .select("school_type")
+            .eq("id", tenant.schoolId)
+            .maybeSingle()
+            .then((r: any) => r, () => ({ data: null }))
+        : Promise.resolve({ data: null }),
+      tenant.schoolId
+        ? (directAdmin as any)
+            .from("departments")
+            .select("id, name, code")
+            .eq("school_id", tenant.schoolId)
+            .order("name", { ascending: true })
+            .then((r: any) => r, () => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
     ]);
 
     if (staffRes.error) {
@@ -176,42 +201,55 @@ export async function GET(req: NextRequest) {
       return !isFacultyRole && !isFacultyTitle;
     });
 
+    const liveProfileMap = new Map<string, any>();
+    for (const lp of liveProfilesRes?.data || []) {
+      if (lp?.id) liveProfileMap.set(lp.id, lp);
+    }
+
+    const liveStaffByUserId = new Map<string, any>();
+    for (const sp of liveStaffProfsRes?.data || []) {
+      if (sp?.user_id) liveStaffByUserId.set(String(sp.user_id), sp);
+    }
+
     const staff = adminStaffRows.map((s: any) => {
       const profile = Array.isArray(s.profile) ? s.profile[0] : s.profile;
       const dept = Array.isArray(s.department) ? s.department[0] : s.department;
       const assignedRole = roleMap.get(s.profile_id);
+      const liveProf = s.profile_id ? liveProfileMap.get(String(s.profile_id)) : null;
+      const liveSp = s.profile_id ? liveStaffByUserId.get(String(s.profile_id)) : null;
+      const meta =
+        (liveSp?.metadata && typeof liveSp.metadata === "object" && Object.keys(liveSp.metadata).length > 0
+          ? liveSp.metadata
+          : liveProf?.metadata?.staff_profile) || {};
 
       return {
         id: s.id,
         profile_id: s.profile_id,
         staff_number: s.staff_number,
-        full_name: profile?.full_name || "",
-        email: profile?.email || "",
-        phone: profile?.phone || "",
-        department_id: s.department_id || null,
-        department_name: dept?.name || "",
+        full_name: profile?.full_name || liveProf?.full_name || "",
+        email: profile?.email || liveProf?.email || "",
+        phone: profile?.phone || liveProf?.phone || liveSp?.phone || "",
+        department_id: s.department_id || liveSp?.department_id || null,
+        department_name: dept?.name || meta?.assigned_unit || liveSp?.department || "",
         department_code: dept?.code || "",
         job_title: s.job_title,
-        employment_type: s.employment_type,
-        hire_date: s.hire_date,
+        employment_type: s.employment_type || liveSp?.employment_type || "full_time",
+        hire_date: s.hire_date || liveSp?.hire_date || "",
         status: s.status,
         role_code:
           assignedRole &&
           (ADMIN_STAFF_ROLE_CODES as readonly string[]).includes(assignedRole.code)
             ? assignedRole.code
-            : "hr_officer",
-        role_name: assignedRole?.name || "Administrative Staff",
-        salary_grade: salaryByStaffId.get(s.id) || "",
+            : liveSp?.role_code || "hr_officer",
+        role_name: meta?.school_type_role_label || assignedRole?.name || "Administrative Staff",
+        salary_grade: salaryByStaffId.get(s.id) || liveSp?.salary_grade || "",
+        metadata: meta,
         created_at: s.created_at,
       };
     });
 
     // Also include live staff_profiles not yet mirrored into virtual staff
     const seenProfileIds = new Set(staff.map((s: any) => s.profile_id));
-    const liveProfileMap = new Map<string, any>();
-    for (const lp of liveProfilesRes?.data || []) {
-      if (lp?.id) liveProfileMap.set(lp.id, lp);
-    }
 
     for (const sp of liveStaffProfsRes?.data || []) {
       if (!sp?.user_id || seenProfileIds.has(sp.user_id)) continue;
@@ -224,25 +262,36 @@ export async function GET(req: NextRequest) {
       }
       if (FACULTY_TITLE_REGEX.test(sp.designation || "")) continue;
       const lp = liveProfileMap.get(sp.user_id);
+      const meta =
+        (sp.metadata && typeof sp.metadata === "object" && Object.keys(sp.metadata).length > 0
+          ? sp.metadata
+          : lp?.metadata?.staff_profile) || {};
+
       staff.push({
         id: sp.id,
         profile_id: sp.user_id,
         staff_number: sp.staff_number || "",
         full_name: lp?.full_name || [sp.first_name, sp.last_name].filter(Boolean).join(" "),
         email: sp.email || lp?.email || "",
-        phone: lp?.phone || "",
-        department_id: null,
-        department_name: sp.department || "",
+        phone: lp?.phone || sp.phone || "",
+        department_id: sp.department_id || null,
+        department_name: meta?.assigned_unit || sp.department || "",
         department_code: "",
         job_title: sp.designation || "Staff",
-        employment_type: "full_time",
-        hire_date: sp.created_at ? String(sp.created_at).split("T")[0] : "",
+        employment_type: sp.employment_type || "full_time",
+        hire_date: sp.hire_date || (sp.created_at ? String(sp.created_at).split("T")[0] : ""),
         status: sp.employment_status || "active",
-        role_code: assignedRole?.code || lp?.role || "hr_officer",
-        role_name: assignedRole?.name || "Administrative Staff",
-        salary_grade: "",
+        role_code: sp.role_code || assignedRole?.code || lp?.role || "hr_officer",
+        role_name: meta?.school_type_role_label || assignedRole?.name || "Administrative Staff",
+        salary_grade: sp.salary_grade || "",
+        metadata: meta,
         created_at: sp.created_at,
       });
+    }
+
+    const deptById = new Map<string, any>();
+    for (const d of [...(liveDeptsRes?.data || []), ...(departmentsRes.data || [])]) {
+      if (d?.id && !deptById.has(String(d.id))) deptById.set(String(d.id), d);
     }
 
     const total = staff.length;
@@ -252,8 +301,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       staff,
-      departments: departmentsRes.data || [],
+      departments: Array.from(deptById.values()),
       roles: rolesRes.data || [],
+      school_type: liveSchoolRes?.data?.school_type || "university",
       stats: {
         total,
         active,
@@ -316,6 +366,10 @@ export async function POST(req: NextRequest) {
       ? requestedRole
       : "hr_officer";
     const salaryGrade = body.salary_grade ? String(body.salary_grade).trim() : null;
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? body.metadata
+        : {};
     const rawPassword = body.password ? String(body.password).trim() : "";
 
     if (!fullName || !email || !staffNumber || !jobTitle) {
@@ -377,14 +431,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let departmentName: string | null = null;
-    if (departmentId) {
+    const directAdmin = createDirectAdminClient();
+    let departmentName: string | null = metadata.assigned_unit ? String(metadata.assigned_unit).trim() : null;
+    if (departmentId && isValidUuid(departmentId)) {
       const { data: deptRow } = await (supabase as any)
         .from("departments")
         .select("name")
         .eq("id", departmentId)
         .maybeSingle();
-      departmentName = deptRow?.name || null;
+      departmentName = deptRow?.name || departmentName;
+      if (!deptRow?.name) {
+        const { data: liveDept } = await (directAdmin as any)
+          .from("departments")
+          .select("name")
+          .eq("id", departmentId)
+          .maybeSingle();
+        departmentName = liveDept?.name || departmentName;
+      }
     }
 
     // 2. Provision Auth User + Live profiles + Live school_memberships + Live staff_profiles
@@ -399,11 +462,19 @@ export async function POST(req: NextRequest) {
       schoolCode: targetSchool.schoolCode,
       accountStatus: status === "terminated" ? "deactivated" : "active",
       existingUserId: existingVProfile?.id || null,
+      extraMetadata: { staff_profile: metadata },
       staffProfile: {
         staffNumber,
         jobTitle,
         departmentName,
+        departmentId: departmentId && isValidUuid(departmentId) ? departmentId : null,
+        employmentType,
+        hireDate,
+        phone,
+        roleCode,
+        salaryGrade,
         employmentStatus: status,
+        metadata,
       },
     });
     const profileId = provisioned.userId;
@@ -535,6 +606,10 @@ export async function PUT(req: NextRequest) {
       ? requestedRole
       : "hr_officer";
     const salaryGrade = body.salary_grade ? String(body.salary_grade).trim() : null;
+    const metadata: Record<string, any> =
+      body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+        ? body.metadata
+        : {};
     const rawPassword = body.password ? String(body.password).trim() : "";
 
     if (!id || !fullName || !email || !staffNumber || !jobTitle) {
@@ -626,14 +701,22 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    let departmentName: string | null = null;
-    if (departmentId) {
+    let departmentName: string | null = metadata.assigned_unit ? String(metadata.assigned_unit).trim() : null;
+    if (departmentId && isValidUuid(departmentId)) {
       const { data: deptRow } = await (supabase as any)
         .from("departments")
         .select("name")
         .eq("id", departmentId)
         .maybeSingle();
-      departmentName = deptRow?.name || null;
+      departmentName = deptRow?.name || departmentName;
+      if (!deptRow?.name) {
+        const { data: liveDept } = await (directAdmin as any)
+          .from("departments")
+          .select("name")
+          .eq("id", departmentId)
+          .maybeSingle();
+        departmentName = liveDept?.name || departmentName;
+      }
     }
 
     if (profileId !== PROTECTED_ADMIN_ID) {
@@ -648,11 +731,19 @@ export async function PUT(req: NextRequest) {
         schoolName: targetSchool.schoolName,
         schoolCode: targetSchool.schoolCode,
         accountStatus: status === "terminated" ? "deactivated" : "active",
+        extraMetadata: { staff_profile: metadata },
         staffProfile: {
           staffNumber,
           jobTitle,
           departmentName,
+          departmentId: departmentId && isValidUuid(departmentId) ? departmentId : null,
+          employmentType,
+          hireDate,
+          phone,
+          roleCode,
+          salaryGrade,
           employmentStatus: status,
+          metadata,
         },
       });
     }

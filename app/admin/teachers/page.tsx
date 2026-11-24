@@ -3,6 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  getSchoolPortalConfig,
+  toPortalSchoolType,
+  type PortalSchoolType,
+  type SchoolPortalConfig,
+} from "@/config/schoolPortalConfig";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import {
   UserCheck,
   Plus,
   Search,
@@ -45,9 +52,16 @@ interface TeacherRecord {
   role_name: string;
   salary_grade: string;
   assigned_courses: AssignedCourse[];
+  metadata?: Record<string, any>;
 }
 
 interface DepartmentOption {
+  id: string;
+  name: string;
+  code: string;
+}
+
+interface ProgrammeOption {
   id: string;
   name: string;
   code: string;
@@ -58,6 +72,20 @@ interface CourseOption {
   code: string;
   name: string;
   department_id: string | null;
+}
+
+interface SubjectOption {
+  id: string;
+  code: string;
+  name: string;
+  programme_id?: string | null;
+}
+
+interface VocationalModuleOption {
+  id: string;
+  code: string;
+  name: string;
+  department_id?: string | null;
 }
 
 interface RoleOption {
@@ -87,26 +115,19 @@ interface TeacherFormState {
   salary_grade: string;
   course_ids: string[];
   password: string;
+  // University metadata
+  highest_qualification: string;
+  specialization: string;
+  // High School metadata
+  assigned_class_id: string;
+  is_class_teacher: boolean;
+  teaching_subject_ids: string[];
+  teaching_qualification: string;
+  // Vocational metadata
+  trade_certification_no: string;
+  industry_experience_years: string;
+  assigned_module_ids: string[];
 }
-
-const ACADEMIC_RANKS = [
-  "Professor",
-  "Associate Professor",
-  "Senior Lecturer",
-  "Lecturer",
-  "Assistant Lecturer",
-  "Adjunct Lecturer",
-  "Teaching Instructor",
-  "Faculty Dean",
-  "Academic Advisor",
-];
-
-const EMPLOYMENT_TYPES = [
-  { value: "full_time", label: "Full-Time" },
-  { value: "part_time", label: "Part-Time" },
-  { value: "adjunct", label: "Adjunct" },
-  { value: "contract", label: "Contract" },
-];
 
 const STAFF_STATUSES = [
   { value: "active", label: "Active" },
@@ -128,12 +149,13 @@ function statusBadgeStyle(status: string) {
   }
 }
 
-function generateNextFacultyNumber(existing: TeacherRecord[], year: number) {
-  const prefix = `FAC${year}`;
+function generateNextFacultyNumber(existing: TeacherRecord[], year: number, idPrefix: string) {
+  const prefix = `${idPrefix}${year}`;
   let maxSeq = 0;
   for (const t of existing) {
-    if (t.staff_number.toUpperCase().startsWith(prefix)) {
-      const numPart = parseInt(t.staff_number.slice(prefix.length), 10);
+    const sn = String(t.staff_number || "").toUpperCase();
+    if (sn.startsWith(prefix)) {
+      const numPart = parseInt(sn.slice(prefix.length), 10);
       if (!Number.isNaN(numPart) && numPart > maxSeq) {
         maxSeq = numPart;
       }
@@ -145,8 +167,22 @@ function generateNextFacultyNumber(existing: TeacherRecord[], year: number) {
 export default function TeachersManagementPage() {
   const [teachers, setTeachers] = useState<TeacherRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [programmes, setProgrammes] = useState<ProgrammeOption[]>([]);
   const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
+  const [vocationalModules, setVocationalModules] = useState<VocationalModuleOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+
+  const portalConfig: SchoolPortalConfig = useMemo(
+    () => getSchoolPortalConfig(schoolType),
+    [schoolType]
+  );
+  const formSpec = useMemo(
+    () => getSchoolFormConfig(schoolType).academicStaff,
+    [schoolType]
+  );
+
   const [stats, setStats] = useState<TeacherStats>({
     total: 0,
     active: 0,
@@ -194,6 +230,15 @@ export default function TeachersManagementPage() {
     salary_grade: "",
     course_ids: [],
     password: "",
+    highest_qualification: "PhD",
+    specialization: "",
+    assigned_class_id: "",
+    is_class_teacher: false,
+    teaching_subject_ids: [],
+    teaching_qualification: "B.Ed",
+    trade_certification_no: "",
+    industry_experience_years: "",
+    assigned_module_ids: [],
   });
 
   const showNotification = useCallback((type: "success" | "error", message: string) => {
@@ -211,15 +256,21 @@ export default function TeachersManagementPage() {
         return;
       }
 
+      if (data.school_type) {
+        setSchoolType(toPortalSchoolType(data.school_type));
+      }
       setTeachers(data.teachers || []);
       setDepartments(data.departments || []);
+      setProgrammes(data.programmes || []);
       setCourses(data.courses || []);
+      setSubjects(data.subjects || []);
+      setVocationalModules(data.vocational_modules || []);
       setRoles(data.roles || []);
       if (data.stats) {
         setStats(data.stats);
       }
     } catch (err: any) {
-      showNotification("error", err.message || "Network error loading faculty records.");
+      showNotification("error", err.message || "Network error loading records.");
     } finally {
       setLoading(false);
     }
@@ -229,61 +280,150 @@ export default function TeachersManagementPage() {
     fetchTeachers();
   }, [fetchTeachers]);
 
+  const programmeNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of programmes) m.set(p.id, `${p.name} (${p.code})`);
+    return m;
+  }, [programmes]);
+
+  const subjectById = useMemo(() => {
+    const m = new Map<string, SubjectOption>();
+    for (const s of subjects) m.set(s.id, s);
+    return m;
+  }, [subjects]);
+
+  const moduleById = useMemo(() => {
+    const m = new Map<string, VocationalModuleOption>();
+    for (const mod of vocationalModules) m.set(mod.id, mod);
+    return m;
+  }, [vocationalModules]);
+
   const openCreateModal = () => {
     setEditingTeacher(null);
     setFormData({
       full_name: "",
       email: "",
       phone: "",
-      staff_number: generateNextFacultyNumber(teachers, currentYear),
-      job_title: "Senior Lecturer",
-      department_id: departments[0]?.id || "",
-      employment_type: "full_time",
+      staff_number: generateNextFacultyNumber(teachers, currentYear, formSpec.idPrefix),
+      job_title: formSpec.ranks[0] || "Lecturer",
+      department_id: formSpec.showDepartment ? departments[0]?.id || "" : "",
+      employment_type: formSpec.employmentTypes[0]?.value || "full_time",
       hire_date: todayIso,
       status: "active",
-      role_code: "lecturer",
+      role_code: formSpec.defaultRoleCode,
       salary_grade: "",
       course_ids: [],
       password: "",
+      highest_qualification: formSpec.qualifications[0] || "PhD",
+      specialization: "",
+      assigned_class_id: programmes[0]?.id || "",
+      is_class_teacher: false,
+      teaching_subject_ids: [],
+      teaching_qualification: formSpec.qualifications[0] || "B.Ed",
+      trade_certification_no: "",
+      industry_experience_years: "5",
+      assigned_module_ids: [],
     });
     setModalMode("create");
   };
 
   const openEditModal = (teacher: TeacherRecord) => {
+    const meta = teacher.metadata && typeof teacher.metadata === "object" ? teacher.metadata : {};
     setEditingTeacher(teacher);
     setFormData({
       full_name: teacher.full_name,
       email: teacher.email,
       phone: teacher.phone || "",
       staff_number: teacher.staff_number,
-      job_title: teacher.job_title,
+      job_title: teacher.job_title || formSpec.ranks[0],
       department_id: teacher.department_id || "",
-      employment_type: teacher.employment_type,
+      employment_type: teacher.employment_type || "full_time",
       hire_date: teacher.hire_date || todayIso,
-      status: teacher.status,
-      role_code: teacher.role_code || "lecturer",
+      status: teacher.status || "active",
+      role_code: teacher.role_code || formSpec.defaultRoleCode,
       salary_grade: teacher.salary_grade || "",
-      course_ids: teacher.assigned_courses.map((c) => c.course_id),
+      course_ids: (teacher.assigned_courses || []).map((c) => c.course_id),
       password: "",
+      highest_qualification: meta.highest_qualification || formSpec.qualifications[0] || "PhD",
+      specialization: meta.specialization || "",
+      assigned_class_id: meta.assigned_class_id || "",
+      is_class_teacher: Boolean(meta.is_class_teacher),
+      teaching_subject_ids: Array.isArray(meta.teaching_subject_ids)
+        ? meta.teaching_subject_ids
+        : [],
+      teaching_qualification: meta.teaching_qualification || formSpec.qualifications[0] || "B.Ed",
+      trade_certification_no: meta.trade_certification_no || "",
+      industry_experience_years:
+        meta.industry_experience_years != null ? String(meta.industry_experience_years) : "",
+      assigned_module_ids: Array.isArray(meta.assigned_module_ids)
+        ? meta.assigned_module_ids
+        : [],
     });
     setModalMode("edit");
   };
 
-  const toggleCourseSelection = (courseId: string) => {
+  const toggleIdInList = (
+    key: "course_ids" | "teaching_subject_ids" | "assigned_module_ids",
+    targetId: string
+  ) => {
     setFormData((prev) => {
-      const exists = prev.course_ids.includes(courseId);
-      return {
-        ...prev,
-        course_ids: exists
-          ? prev.course_ids.filter((id) => id !== courseId)
-          : [...prev.course_ids, courseId],
-      };
+      const current = prev[key];
+      const next = current.includes(targetId)
+        ? current.filter((x) => x !== targetId)
+        : [...current, targetId];
+      return { ...prev, [key]: next };
     });
   };
 
   const handleSaveTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+
+    let metadataPayload: Record<string, any> = {};
+    if (schoolType === "university") {
+      metadataPayload = {
+        school_type: "university",
+        academic_rank: formData.job_title,
+        highest_qualification: formData.highest_qualification,
+        specialization: formData.specialization.trim(),
+      };
+    } else if (schoolType === "high_school") {
+      const subjectNames = formData.teaching_subject_ids
+        .map((id) => {
+          const s = subjectById.get(id);
+          return s ? `${s.code} — ${s.name}` : "";
+        })
+        .filter(Boolean);
+      metadataPayload = {
+        school_type: "high_school",
+        assigned_class_id: formData.assigned_class_id || null,
+        assigned_class_name: formData.assigned_class_id
+          ? programmeNameById.get(formData.assigned_class_id) || ""
+          : "",
+        is_class_teacher: formData.is_class_teacher,
+        teaching_subject_ids: formData.teaching_subject_ids,
+        teaching_subject_names: subjectNames,
+        teaching_qualification: formData.teaching_qualification,
+      };
+    } else {
+      const moduleNames = formData.assigned_module_ids
+        .map((id) => {
+          const mod = moduleById.get(id);
+          return mod ? `${mod.code} — ${mod.name}` : "";
+        })
+        .filter(Boolean);
+      metadataPayload = {
+        school_type: "vocational",
+        trade_certification_no: formData.trade_certification_no.trim(),
+        industry_experience_years: formData.industry_experience_years
+          ? Number(formData.industry_experience_years)
+          : 0,
+        teaching_qualification: formData.teaching_qualification,
+        assigned_module_ids: formData.assigned_module_ids,
+        assigned_module_names: moduleNames,
+      };
+    }
+
     try {
       const isEdit = modalMode === "edit" && editingTeacher;
       const res = await fetch("/api/admin/teachers", {
@@ -296,34 +436,35 @@ export default function TeachersManagementPage() {
           phone: formData.phone,
           staff_number: formData.staff_number,
           job_title: formData.job_title,
-          department_id: formData.department_id || null,
+          department_id: formSpec.showDepartment ? formData.department_id || null : null,
           employment_type: formData.employment_type,
           hire_date: formData.hire_date,
           status: formData.status,
           role_code: formData.role_code,
           salary_grade: formData.salary_grade,
-          course_ids: formData.course_ids,
+          course_ids: schoolType === "university" ? formData.course_ids : [],
+          metadata: metadataPayload,
           password: formData.password,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        showNotification("error", data.error || "Unable to save faculty member.");
+        showNotification("error", data.error || "Unable to save record.");
         return;
       }
 
       showNotification(
         "success",
         isEdit
-          ? `Faculty member "${formData.full_name}" (${formData.staff_number}) updated successfully.`
-          : `Faculty member "${formData.full_name}" (${formData.staff_number}) added successfully.`
+          ? `${portalConfig.instructorSingular} "${formData.full_name}" (${formData.staff_number}) updated successfully.`
+          : `${portalConfig.instructorSingular} "${formData.full_name}" (${formData.staff_number}) added successfully.`
       );
       setModalMode(null);
       setEditingTeacher(null);
       await fetchTeachers();
     } catch (err: any) {
-      showNotification("error", err.message || "Network error while saving faculty member.");
+      showNotification("error", err.message || "Network error while saving record.");
     } finally {
       setSaving(false);
     }
@@ -342,18 +483,18 @@ export default function TeachersManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        showNotification("error", data.error || "Failed to delete faculty member.");
+        showNotification("error", data.error || "Failed to delete record.");
         return;
       }
 
       showNotification(
         "success",
-        `Faculty member "${deleteTarget.full_name}" (${deleteTarget.staff_number}) deleted from database.`
+        `${portalConfig.instructorSingular} "${deleteTarget.full_name}" (${deleteTarget.staff_number}) deleted.`
       );
       setDeleteTarget(null);
       await fetchTeachers();
     } catch (err: any) {
-      showNotification("error", err.message || "Network error while deleting faculty.");
+      showNotification("error", err.message || "Network error while deleting record.");
     } finally {
       setDeleting(false);
     }
@@ -362,36 +503,54 @@ export default function TeachersManagementPage() {
   const filteredTeachers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return teachers.filter((t) => {
+      const meta = t.metadata || {};
       const matchesSearch =
         !q ||
         t.full_name.toLowerCase().includes(q) ||
         t.staff_number.toLowerCase().includes(q) ||
         t.email.toLowerCase().includes(q) ||
         t.job_title.toLowerCase().includes(q) ||
-        t.department_name.toLowerCase().includes(q);
-      const matchesDept =
-        departmentFilter === "all" || t.department_id === departmentFilter;
+        (t.department_name || "").toLowerCase().includes(q) ||
+        String(meta.specialization || "").toLowerCase().includes(q) ||
+        String(meta.trade_certification_no || "").toLowerCase().includes(q) ||
+        String(meta.assigned_class_name || "").toLowerCase().includes(q);
+
+      const matchesUnit =
+        departmentFilter === "all" ||
+        (schoolType === "high_school"
+          ? meta.assigned_class_id === departmentFilter
+          : t.department_id === departmentFilter);
+
       const matchesStatus = statusFilter === "all" || t.status === statusFilter;
-      const matchesType =
-        typeFilter === "all" || t.employment_type === typeFilter;
-      return matchesSearch && matchesDept && matchesStatus && matchesType;
+      const matchesType = typeFilter === "all" || t.employment_type === typeFilter;
+      return matchesSearch && matchesUnit && matchesStatus && matchesType;
     });
-  }, [teachers, searchQuery, departmentFilter, statusFilter, typeFilter]);
+  }, [teachers, searchQuery, departmentFilter, statusFilter, typeFilter, schoolType]);
 
   const exportCSV = () => {
     const headers =
-      "Staff ID,Full Name,Email,Phone,Academic Title,Role,Department,Employment Type,Assigned Courses,Hire Date,Status\n";
+      "ID,Full Name,Email,Phone,Title,Unit/Class,Details,Employment Type,Status\n";
     const rows = filteredTeachers
       .map((t) => {
-        const courseCodes = t.assigned_courses.map((c) => c.course_code).join("; ");
-        return `"${t.staff_number}","${t.full_name.replace(/"/g, '""')}","${t.email}","${t.phone}","${t.job_title.replace(/"/g, '""')}","${t.role_name}","${(t.department_name || "Unassigned").replace(/"/g, '""')}","${t.employment_type}","${courseCodes}","${t.hire_date}","${t.status}"`;
+        const m = t.metadata || {};
+        const unit =
+          schoolType === "high_school"
+            ? m.assigned_class_name || "Subject Teacher"
+            : t.department_name || "Unassigned";
+        const detail =
+          schoolType === "high_school"
+            ? `${m.teaching_qualification || ""} | ${(m.teaching_subject_names || []).join("; ")}`
+            : schoolType === "vocational"
+            ? `${m.trade_certification_no || ""} | ${(m.assigned_module_names || []).join("; ")}`
+            : `${m.highest_qualification || ""} | ${m.specialization || ""}`;
+        return `"${t.staff_number}","${t.full_name.replace(/"/g, '""')}","${t.email}","${t.phone}","${t.job_title}","${unit}","${detail.replace(/"/g, '""')}","${t.employment_type}","${t.status}"`;
       })
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `faculty_directory_${todayIso}.csv`;
+    a.download = `${portalConfig.instructorPlural.toLowerCase().replace(/\s+/g, "_")}_${todayIso}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -406,14 +565,21 @@ export default function TeachersManagementPage() {
               Dashboard
             </Link>
             <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Faculty & Teachers</span>
+            <span className="text-[#1E293B] font-semibold">
+              {formSpec.breadcrumbLabel}
+            </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Teaching Faculty & Academic Staff
-          </h1>
-          <p className="text-xs text-[#64748B]">
-            Create, edit, and delete professors, lecturers, department heads, and course teaching assignments.
-          </p>
+          <div className="flex flex-wrap items-center gap-2.5 mt-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B]">
+              {formSpec.pageTitle}
+            </h1>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${portalConfig.badgeClasses}`}
+            >
+              {portalConfig.portalBadge}
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">{formSpec.pageSubtitle}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -431,7 +597,7 @@ export default function TeachersManagementPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3B82F6] hover:bg-blue-600 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add Faculty Member</span>
+            <span>{formSpec.addTitle}</span>
           </button>
         </div>
       </div>
@@ -441,10 +607,10 @@ export default function TeachersManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Total Faculty
+              Total {portalConfig.instructorPlural}
             </p>
             <p className="text-2xl font-bold text-[#1E293B] mt-1">{stats.total}</p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">Academic & teaching staff</p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Instructional staff</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-blue-50 text-[#3B82F6] flex items-center justify-center">
             <Users className="h-5 w-5" />
@@ -454,10 +620,10 @@ export default function TeachersManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Active Faculty
+              Active {portalConfig.instructorPlural}
             </p>
             <p className="text-2xl font-bold text-[#059669] mt-1">{stats.active}</p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">Currently in service</p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Currently teaching</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-emerald-50 text-[#059669] flex items-center justify-center">
             <UserCheck className="h-5 w-5" />
@@ -467,11 +633,11 @@ export default function TeachersManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Full-Time Faculty
+              Full-Time {portalConfig.instructorPlural}
             </p>
             <p className="text-2xl font-bold text-[#1E293B] mt-1">{stats.fullTime}</p>
             <p className="text-[11px] text-[#64748B] mt-0.5">
-              {stats.total - stats.fullTime} adjunct / contract
+              {stats.total - stats.fullTime} part-time / contract
             </p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -482,12 +648,16 @@ export default function TeachersManagementPage() {
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-              Assigned Courses
+              {schoolType === "high_school"
+                ? "Assigned Subjects"
+                : schoolType === "vocational"
+                ? "Practical Modules"
+                : "Assigned Courses"}
             </p>
             <p className="text-2xl font-bold text-amber-600 mt-1">
               {stats.assignedCoursesCount}
             </p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">Active term offerings</p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Active teaching loads</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
             <BookOpen className="h-5 w-5" />
@@ -529,7 +699,7 @@ export default function TeachersManagementPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by faculty name, staff ID, email, academic rank, or department..."
+            placeholder={`Search by name, ${formSpec.idLabel.toLowerCase()}, email, qualification, or assignment...`}
             className="w-full pl-9 pr-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
           />
         </div>
@@ -542,12 +712,29 @@ export default function TeachersManagementPage() {
               onChange={(e) => setDepartmentFilter(e.target.value)}
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="all">All Departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {schoolType === "high_school" ? (
+                <>
+                  <option value="all">All Classes / Forms</option>
+                  {programmes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <option value="all">
+                    {schoolType === "vocational"
+                      ? "All Trade Workshops"
+                      : "All Departments"}
+                  </option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
 
@@ -558,7 +745,7 @@ export default function TeachersManagementPage() {
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
               <option value="all">All Types</option>
-              {EMPLOYMENT_TYPES.map((t) => (
+              {formSpec.employmentTypes.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
                 </option>
@@ -583,7 +770,7 @@ export default function TeachersManagementPage() {
 
           <button
             onClick={fetchTeachers}
-            title="Refresh Faculty"
+            title="Refresh"
             className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#64748B] cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -591,17 +778,33 @@ export default function TeachersManagementPage() {
         </div>
       </div>
 
-      {/* Faculty Table */}
+      {/* Faculty / Teachers / Instructors Table */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                <th className="py-3 px-4">Faculty Member</th>
-                <th className="py-3 px-4">Staff ID</th>
-                <th className="py-3 px-4">Academic Rank & Role</th>
-                <th className="py-3 px-4">Department</th>
-                <th className="py-3 px-4">Assigned Courses</th>
+                <th className="py-3 px-4">{portalConfig.instructorSingular}</th>
+                <th className="py-3 px-4">{formSpec.idLabel}</th>
+                <th className="py-3 px-4">
+                  {schoolType === "vocational"
+                    ? "License & Experience"
+                    : schoolType === "high_school"
+                    ? "Role & Qualification"
+                    : "Rank & Qualification"}
+                </th>
+                <th className="py-3 px-4">
+                  {schoolType === "high_school"
+                    ? "Assigned Class"
+                    : formSpec.departmentLabel}
+                </th>
+                <th className="py-3 px-4">
+                  {schoolType === "high_school"
+                    ? "Teaching Subjects"
+                    : schoolType === "vocational"
+                    ? "Practical Modules"
+                    : "Assigned Courses"}
+                </th>
                 <th className="py-3 px-4">Type</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -613,12 +816,13 @@ export default function TeachersManagementPage() {
                   <td colSpan={8} className="py-12 text-center text-xs text-[#64748B]">
                     <div className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-[#3B82F6]" />
-                      <span>Loading live faculty records...</span>
+                      <span>Loading live instructional staff records...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredTeachers.length > 0 ? (
                 filteredTeachers.map((t) => {
+                  const meta = t.metadata || {};
                   const initials = t.full_name
                     ? t.full_name
                         .split(" ")
@@ -647,20 +851,93 @@ export default function TeachersManagementPage() {
                           </div>
                         </div>
                       </td>
+
                       <td className="py-3.5 px-4 font-mono font-semibold text-[#334155]">
                         {t.staff_number}
                       </td>
+
+                      {/* Rank / Qualification / License */}
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-[#1E293B]">{t.job_title}</div>
-                        <div className="text-[10px] text-[#64748B]">{t.role_name}</div>
+                        <div className="text-[10px] text-[#64748B]">
+                          {schoolType === "vocational"
+                            ? [
+                                meta.trade_certification_no
+                                  ? `Lic: ${meta.trade_certification_no}`
+                                  : "",
+                                meta.industry_experience_years != null
+                                  ? `${meta.industry_experience_years} yrs exp`
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || t.role_name
+                            : schoolType === "high_school"
+                            ? meta.teaching_qualification || t.role_name
+                            : [meta.highest_qualification, meta.specialization]
+                                .filter(Boolean)
+                                .join(" · ") || t.role_name}
+                        </div>
                       </td>
+
+                      {/* Unit / Assigned Class */}
                       <td className="py-3.5 px-4 text-[#475569]">
-                        {t.department_name || (
-                          <span className="text-[#94A3B8]">Unassigned</span>
+                        {schoolType === "high_school" ? (
+                          <div>
+                            <div className="font-medium text-[#1E293B]">
+                              {meta.assigned_class_name ||
+                                (meta.assigned_class_id
+                                  ? programmeNameById.get(meta.assigned_class_id)
+                                  : "") ||
+                                "Floating / All Forms"}
+                            </div>
+                            {meta.is_class_teacher && (
+                              <span className="inline-flex mt-0.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                Class Teacher
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          t.department_name || (
+                            <span className="text-[#94A3B8]">Unassigned</span>
+                          )
                         )}
                       </td>
+
+                      {/* Assigned Courses / Subjects / Modules */}
                       <td className="py-3.5 px-4">
-                        {t.assigned_courses.length > 0 ? (
+                        {schoolType === "high_school" ? (
+                          Array.isArray(meta.teaching_subject_names) &&
+                          meta.teaching_subject_names.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-[240px]">
+                              {meta.teaching_subject_names.map((sn: string, idx: number) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-semibold"
+                                >
+                                  {sn.split(" — ")[0]}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#94A3B8]">None assigned</span>
+                          )
+                        ) : schoolType === "vocational" ? (
+                          Array.isArray(meta.assigned_module_names) &&
+                          meta.assigned_module_names.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-[240px]">
+                              {meta.assigned_module_names.map((mn: string, idx: number) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold"
+                                >
+                                  {mn.split(" — ")[0]}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#94A3B8]">None assigned</span>
+                          )
+                        ) : t.assigned_courses.length > 0 ? (
                           <div className="flex flex-wrap gap-1 max-w-[240px]">
                             {t.assigned_courses.map((c) => (
                               <span
@@ -676,9 +953,11 @@ export default function TeachersManagementPage() {
                           <span className="text-[11px] text-[#94A3B8]">None assigned</span>
                         )}
                       </td>
+
                       <td className="py-3.5 px-4 uppercase text-[10px] font-bold text-[#64748B]">
                         {t.employment_type.replace(/_/g, " ")}
                       </td>
+
                       <td className="py-3.5 px-4">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadgeStyle(
@@ -688,11 +967,11 @@ export default function TeachersManagementPage() {
                           {t.status.replace(/_/g, " ").toUpperCase()}
                         </span>
                       </td>
+
                       <td className="py-3.5 px-4 text-right">
                         <div className="inline-flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => openEditModal(t)}
-                            title="Edit Faculty & Courses"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#334155] hover:text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -700,7 +979,6 @@ export default function TeachersManagementPage() {
                           </button>
                           <button
                             onClick={() => setDeleteTarget(t)}
-                            title="Delete Faculty Member"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-red-50 text-[#64748B] hover:text-red-600 border border-[#E2E8F0] hover:border-red-200 text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -715,8 +993,8 @@ export default function TeachersManagementPage() {
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-xs text-[#94A3B8]">
                     {teachers.length === 0
-                      ? 'No faculty members registered yet. Click "Add Faculty Member" to create the first faculty record.'
-                      : "No faculty records match your active search or filters."}
+                      ? `No ${portalConfig.instructorPlural.toLowerCase()} registered yet. Click "${formSpec.addTitle}" above.`
+                      : "No records match your active search or filters."}
                   </td>
                 </tr>
               )}
@@ -725,21 +1003,19 @@ export default function TeachersManagementPage() {
         </div>
       </div>
 
-      {/* Create / Edit Faculty Modal */}
+      {/* Create / Edit Modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0">
+            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0 bg-slate-50/70">
               <div>
                 <h3 className="text-sm font-bold text-[#1E293B]">
                   {modalMode === "edit"
-                    ? `Edit Faculty Member — ${editingTeacher?.staff_number}`
-                    : "Add New Faculty Member"}
+                    ? `${formSpec.editTitlePrefix} — ${editingTeacher?.staff_number}`
+                    : formSpec.addTitle}
                 </h3>
                 <p className="text-[11px] text-[#64748B]">
-                  {modalMode === "edit"
-                    ? "Update academic rank, department placement, RBAC role, and course teaching load."
-                    : "Provisions a live Supabase Auth account, academic staff record, and course assignments."}
+                  {modalMode === "edit" ? formSpec.editSubtitle : formSpec.addSubtitle}
                 </p>
               </div>
               <button
@@ -753,10 +1029,8 @@ export default function TeachersManagementPage() {
               </button>
             </div>
 
-            <form
-              onSubmit={handleSaveTeacher}
-              className="p-6 space-y-4 overflow-y-auto"
-            >
+            <form onSubmit={handleSaveTeacher} className="p-6 space-y-4 overflow-y-auto">
+              {/* Row 1: Name & ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -765,23 +1039,23 @@ export default function TeachersManagementPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Dr. Kwame Asare"
+                    placeholder={formSpec.namePlaceholder}
                     value={formData.full_name}
                     onChange={(e) =>
                       setFormData({ ...formData, full_name: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Faculty Staff ID <span className="text-red-500">*</span>
+                    {formSpec.idLabel} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. FAC20260001"
+                    placeholder={formSpec.idPlaceholder}
                     value={formData.staff_number}
                     onChange={(e) =>
                       setFormData({
@@ -789,11 +1063,12 @@ export default function TeachersManagementPage() {
                         staff_number: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
                   />
                 </div>
               </div>
 
+              {/* Row 2: Email & Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -802,12 +1077,10 @@ export default function TeachersManagementPage() {
                   <input
                     type="email"
                     required
-                    placeholder="e.g. k.asare@university.edu.gh"
+                    placeholder={formSpec.emailPlaceholder}
                     value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
@@ -817,33 +1090,32 @@ export default function TeachersManagementPage() {
                   </label>
                   <input
                     type="tel"
-                    placeholder="e.g. +233 20 000 0000"
+                    placeholder="e.g. +233 24 000 0000"
                     value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
               </div>
 
+              {/* Rank/Designation & Qualification */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Academic Rank / Title <span className="text-red-500">*</span>
+                    {formSpec.rankLabel} <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={
-                      ACADEMIC_RANKS.includes(formData.job_title)
+                      formSpec.ranks.includes(formData.job_title)
                         ? formData.job_title
-                        : "Senior Lecturer"
+                        : formSpec.ranks[0]
                     }
                     onChange={(e) =>
                       setFormData({ ...formData, job_title: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
-                    {ACADEMIC_RANKS.map((rank) => (
+                    {formSpec.ranks.map((rank) => (
                       <option key={rank} value={rank}>
                         {rank}
                       </option>
@@ -853,49 +1125,201 @@ export default function TeachersManagementPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Academic Portal Role
+                    {formSpec.qualificationLabel}
+                  </label>
+                  <select
+                    value={
+                      schoolType === "university"
+                        ? formData.highest_qualification
+                        : formData.teaching_qualification
+                    }
+                    onChange={(e) =>
+                      schoolType === "university"
+                        ? setFormData({
+                            ...formData,
+                            highest_qualification: e.target.value,
+                          })
+                        : setFormData({
+                            ...formData,
+                            teaching_qualification: e.target.value,
+                          })
+                    }
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                  >
+                    {formSpec.qualifications.map((q) => (
+                      <option key={q} value={q}>
+                        {q}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* SCHOOL-TYPE SPECIFIC MIDDLE SECTION */}
+              {schoolType === "university" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      {formSpec.departmentLabel}
+                    </label>
+                    <select
+                      value={formData.department_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, department_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      <option value="">Unassigned Department</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Specialization / Research Area
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Distributed Systems & Machine Learning"
+                      value={formData.specialization}
+                      onChange={(e) =>
+                        setFormData({ ...formData, specialization: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {schoolType === "high_school" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Assigned Class / Form
+                    </label>
+                    <select
+                      value={formData.assigned_class_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, assigned_class_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      <option value="">Subject Teacher Only (Multiple Classes)</option>
+                      {programmes.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="pt-4">
+                    <label className="flex items-center gap-2.5 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_class_teacher}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            is_class_teacher: e.target.checked,
+                          })
+                        }
+                        className="h-4 w-4 rounded border-emerald-400 text-emerald-600"
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-emerald-900">
+                          Designated Class Teacher
+                        </p>
+                        <p className="text-[10px] text-emerald-700">
+                          Homeroom / Form Master responsibility
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {schoolType === "vocational" && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      {formSpec.departmentLabel}
+                    </label>
+                    <select
+                      value={formData.department_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, department_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      <option value="">Select Trade Workshop...</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Trade Certification / Master License No.
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. NVTI-MC-2024-882"
+                      value={formData.trade_certification_no}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          trade_certification_no: e.target.value.toUpperCase(),
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      Years of Industry Experience
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={formData.industry_experience_years}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          industry_experience_years: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Role & Salary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-1">
+                    Portal Role
                   </label>
                   <select
                     value={formData.role_code}
                     onChange={(e) =>
                       setFormData({ ...formData, role_code: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
-                    {roles.length > 0 ? (
-                      roles.map((r) => (
-                        <option key={r.code} value={r.code}>
-                          {r.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="lecturer">Lecturer</option>
-                        <option value="head_of_department">Head of Department</option>
-                        <option value="dean">Faculty Dean</option>
-                        <option value="academic_advisor">Academic Advisor</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Department
-                  </label>
-                  <select
-                    value={formData.department_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, department_id: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
-                  >
-                    <option value="">Unassigned Department</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
+                    {formSpec.roleOptions.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.name}
                       </option>
                     ))}
                   </select>
@@ -907,16 +1331,17 @@ export default function TeachersManagementPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. ACAD-SL-04"
+                    placeholder={formSpec.salaryPlaceholder}
                     value={formData.salary_grade}
                     onChange={(e) =>
                       setFormData({ ...formData, salary_grade: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
               </div>
 
+              {/* Employment Type, Hire Date & Status */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -927,9 +1352,9 @@ export default function TeachersManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, employment_type: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
-                    {EMPLOYMENT_TYPES.map((t) => (
+                    {formSpec.employmentTypes.map((t) => (
                       <option key={t.value} value={t.value}>
                         {t.label}
                       </option>
@@ -948,7 +1373,7 @@ export default function TeachersManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, hire_date: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
@@ -961,7 +1386,7 @@ export default function TeachersManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, status: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
                     {STAFF_STATUSES.map((s) => (
                       <option key={s.value} value={s.value}>
@@ -972,55 +1397,168 @@ export default function TeachersManagementPage() {
                 </div>
               </div>
 
-              {/* Dynamic Course Assignments */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-[#334155]">
-                    Assigned Courses ({formData.course_ids.length} selected)
-                  </label>
-                  {formData.course_ids.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, course_ids: [] })}
-                      className="text-[11px] font-semibold text-[#3B82F6] hover:underline cursor-pointer"
-                    >
-                      Clear selection
-                    </button>
+              {/* MULTI-SELECT SECTION PER SCHOOL TYPE */}
+              {schoolType === "university" && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#334155]">
+                      Assigned Courses ({formData.course_ids.length} selected)
+                    </label>
+                    {formData.course_ids.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, course_ids: [] })}
+                        className="text-[11px] font-semibold text-[#3B82F6] hover:underline cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    )}
+                  </div>
+                  {courses.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {courses.map((course) => {
+                        const checked = formData.course_ids.includes(course.id);
+                        return (
+                          <label
+                            key={course.id}
+                            className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                              checked
+                                ? "bg-[#EFF6FF] border-[#93C5FD] text-[#1E3A8A]"
+                                : "bg-white border-[#E2E8F0] text-[#334155] hover:bg-slate-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleIdInList("course_ids", course.id)}
+                              className="rounded border-slate-300 text-[#3B82F6]"
+                            />
+                            <span className="truncate">
+                              <span className="font-mono font-bold">{course.code}</span>{" "}
+                              — {course.name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-[11px] text-[#94A3B8]">
+                      No courses created yet. Add courses under Courses & Credit Hours to assign them here.
+                    </div>
                   )}
                 </div>
-                {courses.length > 0 ? (
-                  <div className="max-h-36 overflow-y-auto p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {courses.map((course) => {
-                      const checked = formData.course_ids.includes(course.id);
-                      return (
-                        <label
-                          key={course.id}
-                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            checked
-                              ? "bg-[#EFF6FF] border-[#93C5FD] text-[#1E3A8A]"
-                              : "bg-white border-[#E2E8F0] text-[#334155] hover:bg-slate-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleCourseSelection(course.id)}
-                            className="rounded border-slate-300 text-[#3B82F6]"
-                          />
-                          <span className="truncate">
-                            <span className="font-mono font-bold">{course.code}</span>{" "}
-                            — {course.name}
-                          </span>
-                        </label>
-                      );
-                    })}
+              )}
+
+              {schoolType === "high_school" && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#334155]">
+                      Teaching Subject(s) ({formData.teaching_subject_ids.length} selected)
+                    </label>
+                    {formData.teaching_subject_ids.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData({ ...formData, teaching_subject_ids: [] })
+                        }
+                        className="text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-[11px] text-[#94A3B8]">
-                    No active courses found in catalogue yet. You can create courses under Courses & Subjects and assign them here.
+                  {subjects.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {subjects.map((sub) => {
+                        const checked = formData.teaching_subject_ids.includes(sub.id);
+                        return (
+                          <label
+                            key={sub.id}
+                            className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                              checked
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                                : "bg-white border-[#E2E8F0] text-[#334155] hover:bg-slate-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                toggleIdInList("teaching_subject_ids", sub.id)
+                              }
+                              className="rounded border-slate-300 text-emerald-600"
+                            />
+                            <span className="truncate">
+                              <span className="font-mono font-bold">{sub.code}</span> —{" "}
+                              {sub.name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-[11px] text-[#94A3B8]">
+                      No high school subjects added yet. Add subjects under Subjects to assign them here.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {schoolType === "vocational" && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#334155]">
+                      Assigned Practical Modules ({formData.assigned_module_ids.length}{" "}
+                      selected)
+                    </label>
+                    {formData.assigned_module_ids.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData({ ...formData, assigned_module_ids: [] })
+                        }
+                        className="text-[11px] font-semibold text-amber-700 hover:underline cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
+                  {vocationalModules.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {vocationalModules.map((mod) => {
+                        const checked = formData.assigned_module_ids.includes(mod.id);
+                        return (
+                          <label
+                            key={mod.id}
+                            className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                              checked
+                                ? "bg-amber-50 border-amber-300 text-amber-900"
+                                : "bg-white border-[#E2E8F0] text-[#334155] hover:bg-slate-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                toggleIdInList("assigned_module_ids", mod.id)
+                              }
+                              className="rounded border-slate-300 text-amber-600"
+                            />
+                            <span className="truncate">
+                              <span className="font-mono font-bold">{mod.code}</span> —{" "}
+                              {mod.name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-[11px] text-[#94A3B8]">
+                      No practical workshop modules created yet. Add modules under Modules / Practicals to assign them here.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -1040,7 +1578,7 @@ export default function TeachersManagementPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, password: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                 />
               </div>
 
@@ -1066,7 +1604,7 @@ export default function TeachersManagementPage() {
                       ? "Saving..."
                       : modalMode === "edit"
                       ? "Save Changes"
-                      : "Add Faculty Member"}
+                      : formSpec.addTitle}
                   </span>
                 </button>
               </div>
@@ -1086,7 +1624,7 @@ export default function TeachersManagementPage() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#1E293B]">
-                    Delete Faculty Member
+                    Delete {portalConfig.instructorSingular}
                   </h3>
                   <p className="text-xs text-[#64748B] mt-1 leading-relaxed">
                     Are you sure you want to permanently delete{" "}
@@ -1094,8 +1632,7 @@ export default function TeachersManagementPage() {
                       {deleteTarget.full_name}
                     </span>{" "}
                     (<span className="font-mono">{deleteTarget.staff_number}</span>)?
-                    This removes their faculty record, course assignments, and linked
-                    portal login account.
+                    This removes their teaching record, assignments, and linked portal login account.
                   </p>
                 </div>
               </div>

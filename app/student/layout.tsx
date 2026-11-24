@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,8 @@ import {
   resolveClientTenantContext,
 } from "@/lib/saas/useTenantInstitution";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   User,
@@ -80,6 +82,10 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [studentSchoolId, setStudentSchoolId] = useState<string | null>(null);
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
+    useFeatureFlags(studentSchoolId);
 
   // Live date & time counter
   useEffect(() => {
@@ -115,11 +121,16 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       if (!isMounted) return;
 
       if (tenantRes.status === "unauthenticated") {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
       const activeUser = tenantRes.user;
+      const normEmail = (activeUser.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          activeUser.app_metadata?.role === "superadmin"
+      );
       setUserEmail(activeUser.email || "");
       setStudentName(activeUser.user_metadata?.full_name || "Student");
 
@@ -128,6 +139,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
         return;
       }
 
+      setStudentSchoolId(tenantRes.schoolId || null);
       setTenantError(null);
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
@@ -207,18 +219,32 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    const blocked = findDisabledForPath(pathname || "/student/dashboard");
+    if (blocked) {
+      router.replace(
+        `/portal-unavailable?portal=${encodeURIComponent(
+          blocked.label
+        )}&key=${encodeURIComponent(
+          blocked.portal_key
+        )}&from=${encodeURIComponent(pathname || "/student/dashboard")}`
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, findDisabledForPath, pathname, router]);
+
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
       setIsSigningOut(false);
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 
   // Section 7.2: Official Student Portal Sidebar Menu Items (23 Items)
-  const navCategories: NavCategory[] = [
+  const rawNavCategories: NavCategory[] = [
     {
       title: "Core Workspace",
       items: [
@@ -268,6 +294,19 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       ],
     },
   ];
+
+  const navCategories = useMemo(
+    () =>
+      rawNavCategories
+        .map((cat) => ({
+          ...cat,
+          items: cat.items.filter(
+            (item) => isSuperAdminUser || isHrefEnabled(item.href)
+          ),
+        }))
+        .filter((cat) => cat.items.length > 0),
+    [rawNavCategories, isSuperAdminUser, isHrefEnabled]
+  );
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white select-none">
@@ -442,6 +481,8 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
               <Calendar className="h-3.5 w-3.5 text-blue-600" />
               <span>AY: {academicYear || "Not Configured"}</span>
             </div>
+
+            <ThemeToggle variant="compact" align="right" />
 
             {/* Notification Bell */}
             <Link

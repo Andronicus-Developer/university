@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,8 @@ import {
   resolveClientTenantContext,
 } from "@/lib/saas/useTenantInstitution";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   BookOpen,
@@ -70,6 +72,10 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [lecturerSchoolId, setLecturerSchoolId] = useState<string | null>(null);
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
+    useFeatureFlags(lecturerSchoolId);
 
   // Live date & time ticking counter
   useEffect(() => {
@@ -105,11 +111,16 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
       if (!isMounted) return;
 
       if (tenantRes.status === "unauthenticated") {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
 
       const activeUser = tenantRes.user;
+      const normEmail = (activeUser.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          activeUser.app_metadata?.role === "superadmin"
+      );
       setUserEmail(activeUser.email || "");
       setUserName(activeUser.user_metadata?.full_name || "Faculty Member");
 
@@ -118,6 +129,7 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
         return;
       }
 
+      setLecturerSchoolId(tenantRes.schoolId || null);
       setTenantError(null);
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
@@ -211,18 +223,32 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    const blocked = findDisabledForPath(pathname || "/lecturer/dashboard");
+    if (blocked) {
+      router.replace(
+        `/portal-unavailable?portal=${encodeURIComponent(
+          blocked.label
+        )}&key=${encodeURIComponent(
+          blocked.portal_key
+        )}&from=${encodeURIComponent(pathname || "/lecturer/dashboard")}`
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, findDisabledForPath, pathname, router]);
+
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
       setIsSigningOut(false);
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 
   // Section 7.3: Official Lecturer Portal Sidebar Menu Items from Product Specification
-  const navCategories: NavCategory[] = [
+  const rawNavCategories: NavCategory[] = [
     {
       title: "Core Workspace",
       items: [
@@ -259,6 +285,19 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
       ],
     },
   ];
+
+  const navCategories = useMemo(
+    () =>
+      rawNavCategories
+        .map((cat) => ({
+          ...cat,
+          items: cat.items.filter(
+            (item) => isSuperAdminUser || isHrefEnabled(item.href)
+          ),
+        }))
+        .filter((cat) => cat.items.length > 0),
+    [rawNavCategories, isSuperAdminUser, isHrefEnabled]
+  );
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white select-none">
@@ -459,6 +498,8 @@ export default function LecturerLayout({ children }: LecturerLayoutProps) {
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
+              <ThemeToggle variant="compact" align="right" />
+
               {/* Notifications */}
               <Link
                 href="/lecturer/notifications"

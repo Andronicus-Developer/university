@@ -132,16 +132,16 @@ function UnauthorizedContent() {
     } else if (targetDashboard) {
       window.location.assign(targetDashboard);
     } else {
-      window.location.assign("/");
+      window.location.assign("/login");
     }
   };
 
   const handleSignOut = async () => {
     try {
       setIsLoggingOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 

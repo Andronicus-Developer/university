@@ -82,13 +82,14 @@
     "description": "Applications intake, document verification, review queues, and offer decisions.",
     "school_types": [
       "university",
-      "high_school",
-      "vocational_school"
+      "vocational_school",
+      "high_school"
     ],
-    "is_active": true,
+    "is_active": false,
     "display_order": 5,
     "created_at": "2026-10-29T00:00:00.000Z",
-    "page_created": true
+    "page_created": true,
+    "updated_at": "2026-11-23T22:18:15.120Z"
   },
   {
     "id": "departments",
@@ -108,6 +109,24 @@
     "page_created": true
   },
   {
+    "id": "courses",
+    "label": "Courses",
+    "href": "/admin/courses",
+    "category": "Academics & Schedule",
+    "icon": "BookOpen",
+    "badge": null,
+    "description": "Curriculum requirements, course offerings, syllabus modules, and prerequisites.",
+    "school_types": [
+      "university",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 6,
+    "created_at": "2026-10-29T00:00:00.000Z",
+    "page_created": true,
+    "updated_at": "2026-11-23T22:21:21.367Z"
+  },
+  {
     "id": "programs",
     "label": "Programs",
     "href": "/admin/programs",
@@ -117,30 +136,14 @@
     "description": "Academic degree programs, curricula, faculties, duration, and credit requirements.",
     "school_types": [
       "university",
-      "high_school"
-    ],
-    "is_active": true,
-    "display_order": 7,
-    "created_at": "2026-10-29T00:00:00.000Z",
-    "page_created": true
-  },
-  {
-    "id": "courses",
-    "label": "Courses & Subjects",
-    "href": "/admin/courses",
-    "category": "Academics & Schedule",
-    "icon": "BookOpen",
-    "badge": null,
-    "description": "Curriculum requirements, course offerings, syllabus modules, and prerequisites.",
-    "school_types": [
-      "university",
       "high_school",
       "vocational_school"
     ],
     "is_active": true,
-    "display_order": 6,
+    "display_order": 7,
     "created_at": "2026-10-29T00:00:00.000Z",
-    "page_created": true
+    "page_created": true,
+    "updated_at": "2026-11-23T22:18:29.404Z"
   },
   {
     "id": "routine",
@@ -375,6 +378,43 @@
     "page_created": true
   },
   {
+    "id": "performance",
+    "label": "Performance",
+    "href": "/admin/performance",
+    "category": "Academics & Schedule",
+    "icon": "BarChart3",
+    "badge": null,
+    "description": "",
+    "school_types": [
+      "vocational_school",
+      "high_school",
+      "university"
+    ],
+    "is_active": true,
+    "display_order": 21,
+    "created_at": "2026-11-19T19:53:17.249Z",
+    "updated_at": "2026-11-19T19:53:17.249Z",
+    "page_created": true
+  },
+  {
+    "id": "class",
+    "label": "class",
+    "href": "/admin/class",
+    "category": "Academics & Schedule",
+    "icon": "BookOpen",
+    "badge": null,
+    "description": "",
+    "school_types": [
+      "high_school",
+      "vocational_school"
+    ],
+    "is_active": true,
+    "display_order": 24,
+    "created_at": "2026-11-23T22:19:47.471Z",
+    "updated_at": "2026-11-23T22:19:47.471Z",
+    "page_created": true
+  },
+  {
     "id": "workshops-practical-labs",
     "label": "Workshops & Practical Labs",
     "href": "/admin/workshops",
@@ -392,22 +432,20 @@
     "page_created": true
   },
   {
-    "id": "performance",
-    "label": "Performance",
-    "href": "/admin/performance",
+    "id": "subjects",
+    "label": "Subjects",
+    "href": "/admin/subject",
     "category": "Academics & Schedule",
-    "icon": "BarChart3",
+    "icon": "BookOpen",
     "badge": null,
     "description": "",
     "school_types": [
-      "vocational_school",
-      "high_school",
-      "university"
+      "high_school"
     ],
     "is_active": true,
-    "display_order": 21,
-    "created_at": "2026-11-19T19:53:17.249Z",
-    "updated_at": "2026-11-19T19:53:17.249Z",
+    "display_order": 25,
+    "created_at": "2026-11-23T22:22:40.202Z",
+    "updated_at": "2026-11-23T22:22:40.202Z",
     "page_created": true
   }
 ]

@@ -4,27 +4,44 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { FileText, LogOut, Upload, CheckCircle2 } from "lucide-react";
 
 export default function ApplicantDashboardPage() {
   const router = useRouter();
+  const { loaded: flagsLoaded, isEnabled } = useFeatureFlags();
   const [email, setEmail] = useState("");
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+        window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
         return;
       }
+      const normEmail = (user.email || "").trim().toLowerCase();
+      setIsSuperAdminUser(
+        normEmail === "superadmin@university.edu.gh" ||
+          user.app_metadata?.role === "superadmin"
+      );
       setEmail(user.email || "");
     }
     loadUser();
   }, []);
 
+  useEffect(() => {
+    if (!flagsLoaded || isSuperAdminUser) return;
+    if (!isEnabled("applicant_portal")) {
+      router.replace(
+        "/portal-unavailable?portal=Admissions%20%26%20Applicant%20Portal&key=applicant_portal&from=%2Fapplicant%2Fdashboard"
+      );
+    }
+  }, [flagsLoaded, isSuperAdminUser, isEnabled, router]);
+
   const handleSignOut = async () => {
-    await signOutUser("/");
+    await signOutUser("/login");
   };
 
   return (

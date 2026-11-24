@@ -94,6 +94,8 @@ export async function GET(req: NextRequest) {
       livePaymentsRes,
       liveInvoicesRes,
       liveAttendanceRes,
+      liveSubjectsCountRes,
+      liveModulesCountRes,
       virtualStudentsRes,
       virtualStaffRes,
       deptResult,
@@ -132,6 +134,14 @@ export async function GET(req: NextRequest) {
       (directAdmin as any)
         .from("attendance_records")
         .select("status")
+        .eq("school_id", schoolId),
+      (directAdmin as any)
+        .from("subjects")
+        .select("*", { count: "exact", head: true })
+        .eq("school_id", schoolId),
+      (directAdmin as any)
+        .from("vocational_modules")
+        .select("*", { count: "exact", head: true })
         .eq("school_id", schoolId),
       scopeQueryBySchool(
         (virtualAdmin as any)
@@ -480,7 +490,14 @@ export async function GET(req: NextRequest) {
           totalStaff,
           activeStaff,
           inactiveStaff: totalStaff - activeStaff,
-          totalSubjects: totalAcademicUnits,
+          totalSubjects:
+            !liveSubjectsCountRes?.error && typeof liveSubjectsCountRes?.count === "number"
+              ? liveSubjectsCountRes.count
+              : totalAcademicUnits,
+          totalModules:
+            !liveModulesCountRes?.error && typeof liveModulesCountRes?.count === "number"
+              ? liveModulesCountRes.count
+              : 0,
           activeSubjects: activeAcademicUnits,
           inactiveSubjects: inactiveAcademicUnits,
           totalAcademicUnits,

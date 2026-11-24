@@ -1,11 +1,31 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --font-sans: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  color-scheme: light;
+}
+
+html.dark {
+  --background: #0b0f19;
+  --foreground: #f1f5f9;
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html,
@@ -15,3 +35,129 @@ body {
   font-family: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, sans-serif;
 }
 
+/* ============================================================================
+ * Global Dark Mode Surface & Contrast Compatibility Layer
+ * Ensures existing subpages across Admin, Super Admin, Finance, Teacher,
+ * Lecturer, Student, and Parent portals inherit high-contrast dark surfaces
+ * unless explicit `dark:*` utilities or `data-keep-light` are specified.
+ * ============================================================================ */
+@layer utilities {
+  .dark .bg-white:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-white\/95:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-white\/90:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: #111827;
+  }
+
+  .dark .bg-\[\#F8FAFC\]:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-\[\#FAFAFC\]:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50\/60:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50\/70:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50\/80:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50\/90:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-50\/50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: #0b0f19;
+  }
+
+  .dark .bg-\[\#F7F7FA\]:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-100:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-slate-100\/80:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: #1e293b;
+  }
+
+  .dark .hover\:bg-slate-50:where(:not([class*="dark:hover:bg-"]):not([data-keep-light], [data-keep-light] *)):hover,
+  .dark .hover\:bg-slate-50\/70:where(:not([class*="dark:hover:bg-"]):not([data-keep-light], [data-keep-light] *)):hover,
+  .dark .hover\:bg-slate-100:where(:not([class*="dark:hover:bg-"]):not([data-keep-light], [data-keep-light] *)):hover,
+  .dark .hover\:bg-slate-100\/80:where(:not([class*="dark:hover:bg-"]):not([data-keep-light], [data-keep-light] *)):hover {
+    background-color: #1e293b;
+  }
+
+  .dark .focus\:bg-white:where(:not([class*="dark:focus:bg-"]):not([data-keep-light], [data-keep-light] *)):focus {
+    background-color: #0f172a;
+  }
+
+  .dark .hover\:text-slate-900:where(:not([class*="dark:hover:text-"]):not([data-keep-light], [data-keep-light] *)):hover,
+  .dark .hover\:text-slate-800:where(:not([class*="dark:hover:text-"]):not([data-keep-light], [data-keep-light] *)):hover {
+    color: #f8fafc;
+  }
+
+  .dark .border-slate-100:where(:not([class*="dark:border-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .border-slate-200:where(:not([class*="dark:border-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .border-slate-200\/70:where(:not([class*="dark:border-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .border-slate-200\/80:where(:not([class*="dark:border-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .border-slate-200\/90:where(:not([class*="dark:border-"]):not([data-keep-light], [data-keep-light] *)) {
+    border-color: #1e293b;
+  }
+
+  .dark .divide-slate-100 > :not(:last-child),
+  .dark .divide-slate-200 > :not(:last-child) {
+    border-color: #1e293b;
+  }
+
+  .dark .text-slate-900:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-\[\#0F172A\]:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-\[\#111118\]:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-\[\#1E293B\]:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #f8fafc;
+  }
+
+  .dark .text-slate-800:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-slate-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #e2e8f0;
+  }
+
+  .dark .text-slate-600:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #cbd5e1;
+  }
+
+  .dark .text-slate-500:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #94a3b8;
+  }
+
+  /* Tinted badge backgrounds inside non-custom pages */
+  .dark .bg-blue-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(30, 58, 138, 0.35);
+  }
+  .dark .bg-indigo-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(49, 46, 129, 0.35);
+  }
+  .dark .bg-emerald-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(6, 78, 59, 0.35);
+  }
+  .dark .bg-amber-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(120, 53, 15, 0.35);
+  }
+  .dark .bg-rose-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-red-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(127, 29, 29, 0.32);
+  }
+  .dark .bg-purple-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .bg-violet-50:where(:not([class*="dark:bg-"]):not([data-keep-light], [data-keep-light] *)) {
+    background-color: rgba(88, 28, 135, 0.35);
+  }
+
+  .dark .text-blue-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-blue-800:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-blue-900:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #93c5fd;
+  }
+  .dark .text-emerald-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-emerald-800:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-emerald-900:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #6ee7b7;
+  }
+  .dark .text-amber-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-amber-800:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-amber-900:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #fcd34d;
+  }
+  .dark .text-purple-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-indigo-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #c4b5fd;
+  }
+  .dark .text-red-600:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-red-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)),
+  .dark .text-rose-700:where(:not([class*="dark:text-"]):not([data-keep-light], [data-keep-light] *)) {
+    color: #fca5a5;
+  }
+}

@@ -1245,7 +1245,7 @@ export default function SuperAdminDashboardPage() {
               </button>
 
               <Link
-                href="/superadmin/payments"
+                href="/superadmin/integrations/paystack"
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-emerald-50 hover:border-emerald-200 text-slate-700 hover:text-emerald-700 text-xs font-medium transition-all text-left"
               >
                 <CreditCard className="h-4 w-4 text-emerald-600 shrink-0" />

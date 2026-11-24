@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
 import {
   ShieldCheck,
   Plus,
@@ -48,6 +50,7 @@ interface UserItem {
 export default function UsersRBACPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -136,7 +139,42 @@ export default function UsersRBACPage() {
 
   useEffect(() => {
     fetchUsersAndRoles();
+    fetch("/api/settings/institution", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.institution?.school_type) {
+          setSchoolType(toPortalSchoolType(data.institution.school_type));
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const formCfg = useMemo(() => getSchoolFormConfig(schoolType), [schoolType]);
+
+  const tailoredRoles = useMemo(() => {
+    const byCode = new Map<string, { code: string; name: string }>();
+    const learnerLabel =
+      schoolType === "vocational"
+        ? "Vocational Trainee"
+        : schoolType === "high_school"
+        ? "High School Student"
+        : "University Student";
+    byCode.set("student", { code: "student", name: learnerLabel });
+    for (const r of formCfg.academicStaff.roleOptions) {
+      byCode.set(r.code, r);
+    }
+    for (const r of formCfg.adminStaff.roleOptions) {
+      if (!byCode.has(r.code)) byCode.set(r.code, r);
+    }
+    if (schoolType === "high_school") {
+      byCode.set("parent", { code: "parent", name: "Parent / Guardian" });
+    }
+    for (const r of roles) {
+      if (r.code === "parent" && schoolType !== "high_school") continue;
+      if (!byCode.has(r.code)) byCode.set(r.code, { code: r.code, name: r.name });
+    }
+    return Array.from(byCode.values());
+  }, [schoolType, formCfg, roles]);
 
   // Filtered Users
   const filteredUsers = useMemo(() => {
@@ -656,7 +694,7 @@ export default function UsersRBACPage() {
                     required
                     value={createForm.email}
                     onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                    placeholder="user@university.edu.gh"
+                    placeholder={formCfg.auxiliary.emailDomainPlaceholder}
                     className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none font-mono"
                   />
                 </div>
@@ -720,7 +758,7 @@ export default function UsersRBACPage() {
                     onChange={(e) => setCreateForm({ ...createForm, roleCode: e.target.value })}
                     className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none cursor-pointer"
                   >
-                    {roles.map((r) => (
+                    {tailoredRoles.map((r) => (
                       <option key={r.code} value={r.code}>
                         {r.name} ({r.code})
                       </option>
@@ -836,7 +874,7 @@ export default function UsersRBACPage() {
                   onChange={(e) => setEditForm({ ...editForm, roleCode: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-blue-700 focus:bg-white focus:border-blue-600 focus:outline-none cursor-pointer"
                 >
-                  {roles.map((r) => (
+                  {tailoredRoles.map((r) => (
                     <option key={r.code} value={r.code}>
                       {r.name} ({r.code})
                     </option>

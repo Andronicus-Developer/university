@@ -11,12 +11,19 @@ import {
   normalizeSchoolType,
 } from "@/lib/academics/school-terminology";
 import {
+  getSchoolPortalConfig,
+  isRouteAllowedForSchoolType,
+} from "@/config/schoolPortalConfig";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import {
   LayoutGrid,
   GraduationCap,
   Users,
   UserCheck,
   BookOpen,
   CalendarDays,
+  ClipboardList,
   FileCheck2,
   CheckSquare,
   CreditCard,
@@ -60,6 +67,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   UserCheck,
   BookOpen,
   CalendarDays,
+  ClipboardList,
   FileCheck2,
   CheckSquare,
   CreditCard,
@@ -116,7 +124,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [schoolType, setSchoolType] = useState<string>("");
+  const [adminSchoolId, setAdminSchoolId] = useState<string | null>(null);
   const [tenantLoaded, setTenantLoaded] = useState<boolean>(false);
+  const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
+    useFeatureFlags(adminSchoolId);
   const [isSuperAdminTenant, setIsSuperAdminTenant] = useState<boolean>(false);
   const [tenantError, setTenantError] = useState<string | null>(null);
   const [dynamicCategories, setDynamicCategories] = useState<NavCategory[]>([]);
@@ -181,7 +192,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         if (!currentUser) {
           if (isMounted) {
-            window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+            window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
           }
           return;
         }
@@ -232,6 +243,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           if (isMounted) {
             setTenantError(null);
             setIsSuperAdminTenant(Boolean(data?.is_super_admin));
+            setAdminSchoolId(tenantSchoolId);
             setTenantLoaded(true);
             if (data?.name) setSchoolName(data.name);
             if (data?.abbreviation) setSchoolAbbr(data.abbreviation);
@@ -337,9 +349,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     };
   }, []);
 
-  // Enforce school_type route eligibility (hide /admin/departments for High School, /admin/programs for Vocational)
+  // Enforce portal/module feature flags & specialized school_type route eligibility
   useEffect(() => {
     if (!tenantLoaded || isSuperAdminTenant) return;
+    if (flagsLoaded) {
+      const blocked = findDisabledForPath(pathname || "/admin/dashboard");
+      if (blocked) {
+        router.replace(
+          `/portal-unavailable?portal=${encodeURIComponent(
+            blocked.label
+          )}&key=${encodeURIComponent(
+            blocked.portal_key
+          )}&from=${encodeURIComponent(pathname || "/admin/dashboard")}`
+        );
+        return;
+      }
+    }
+    if (schoolType && pathname && !isRouteAllowedForSchoolType(pathname, schoolType)) {
+      router.replace("/admin/dashboard");
+      return;
+    }
     const term = getSchoolTerminology(schoolType);
     if (pathname === "/admin/departments" && !term.departments.visible) {
       router.replace(term.departments.redirectWhenHidden);
@@ -351,15 +380,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ) {
       router.replace(term.programs.redirectWhenHidden);
     }
-  }, [tenantLoaded, isSuperAdminTenant, schoolType, pathname, router]);
+  }, [
+    tenantLoaded,
+    isSuperAdminTenant,
+    flagsLoaded,
+    findDisabledForPath,
+    schoolType,
+    pathname,
+    router,
+  ]);
 
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
       setIsSigningOut(false);
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 
@@ -412,11 +449,43 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     },
   ];
 
+  const portalConfig = useMemo(
+    () => getSchoolPortalConfig(schoolType),
+    [schoolType]
+  );
+
   const resolvedCategories = useMemo(() => {
+    if (schoolType && !isSuperAdminTenant) {
+      return portalConfig.sidebarGroups
+        .map((group) => ({
+          title: group.title,
+          items: group.items
+            .map((item) => ({
+              id: item.id,
+              label: item.label,
+              href: item.href,
+              icon: ICON_MAP[item.iconKey] || Boxes,
+              badge: item.badge,
+            }))
+            .filter((item) => isHrefEnabled(item.href)),
+        }))
+        .filter((group) => group.items.length > 0);
+    }
+
     const base = dynamicCategories.length > 0 ? dynamicCategories : navCategories;
-    if (isSuperAdminTenant || !schoolType) return base;
+    const filterByFlags = (groups: NavCategory[]) =>
+      groups
+        .map((group) => ({
+          ...group,
+          items: (group.items || []).filter(
+            (item) => isSuperAdminTenant || isHrefEnabled(item.href)
+          ),
+        }))
+        .filter((group) => group.items.length > 0);
+
+    if (isSuperAdminTenant || !schoolType) return filterByFlags(base);
     const term = getSchoolTerminology(schoolType);
-    return base
+    return filterByFlags(base)
       .map((group) => ({
         ...group,
         items: (group.items || [])
@@ -440,7 +509,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           }),
       }))
       .filter((group) => group.items.length > 0);
-  }, [dynamicCategories, navCategories, isSuperAdminTenant, schoolType]);
+  }, [portalConfig, dynamicCategories, navCategories, isSuperAdminTenant, schoolType, isHrefEnabled]);
 
   const normalizedDisplayType = schoolType ? normalizeSchoolType(schoolType) : "";
 
@@ -477,16 +546,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             >
               {schoolName || "—"}
             </span>
-            <span className="text-[10.5px] font-semibold text-blue-600 flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span
+              className={`mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold w-fit ${
+                normalizedDisplayType
+                  ? portalConfig.badgeClasses
+                  : "bg-blue-50 text-blue-600 border-blue-200"
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />
               <span>
-                {normalizedDisplayType === "vocational_school"
-                  ? "Vocational SaaS Tenant"
-                  : normalizedDisplayType === "high_school"
-                  ? "High School SaaS Tenant"
-                  : normalizedDisplayType === "university"
-                  ? "University SaaS Tenant"
-                  : "Tenant Portal"}
+                {normalizedDisplayType ? portalConfig.portalBadge : "Tenant Portal"}
               </span>
             </span>
           </div>
@@ -654,6 +723,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
+              <ThemeToggle variant="compact" align="right" />
+
               {/* Notifications */}
               <Link
                 href="/admin/settings#notifications"

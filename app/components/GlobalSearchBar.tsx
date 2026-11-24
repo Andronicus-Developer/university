@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import {
   Search,
   X,
@@ -54,6 +55,15 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
       keywords: "settings sidebar menu modules navigation toggle high school vocational university auto page",
     },
     {
+      id: "sa-settings-landing",
+      title: "Landing Page Content Editor",
+      subtitle: "Edit public landing page headlines, features, pricing, testimonials, FAQs, and images",
+      href: "/super-admin/settings/landing-page",
+      category: "System Settings",
+      badge: "CMS",
+      keywords: "landing page cms editor home hero pricing testimonials faq images footer",
+    },
+    {
       id: "sa-admins",
       title: "System Administrators",
       subtitle: "Manage institutional system admin accounts and access rights",
@@ -96,9 +106,9 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
     },
     {
       id: "sa-payments",
-      title: "Payment Provider Settings",
-      subtitle: "Paystack, Flutterwave, bank integrations, and settlement accounts",
-      href: "/superadmin/payments",
+      title: "Payment Gateway (Integrations)",
+      subtitle: "Paystack, Hubtel, Flutterwave, and bank webhook keys",
+      href: "/superadmin/integrations/paystack",
       category: "Platform Configuration",
       keywords: "payments billing paystack bank finance gateway",
     },
@@ -163,11 +173,11 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
     },
     {
       id: "sa-modules",
-      title: "Feature Flags & Modules",
-      subtitle: "Global feature toggles and tier entitlements",
-      href: "/superadmin/modules",
+      title: "Feature Flags & Portals",
+      subtitle: "Enable or disable system portals and campus modules globally or per school",
+      href: "/super-admin/feature-flags",
       category: "Security & Operations",
-      keywords: "feature flags modules toggles tiers",
+      keywords: "feature flags portals modules toggles switches permissions",
     },
   ],
   admin: [
@@ -392,6 +402,7 @@ const PORTAL_CATALOGS: Record<string, SearchResultItem[]> = {
 export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { isHrefEnabled } = useFeatureFlags();
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -479,6 +490,9 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
     const combined: SearchResultItem[] = [];
 
     for (const item of [...base, ...dynamicItems]) {
+      if (portal !== "superadmin" && !isHrefEnabled(item.href)) {
+        continue;
+      }
       const key = `${item.title.toLowerCase()}::${item.href.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -486,7 +500,7 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
       }
     }
     return combined;
-  }, [portal, dynamicItems]);
+  }, [portal, dynamicItems, isHrefEnabled]);
 
   // Filter results based on query
   const filteredResults = useMemo(() => {
@@ -607,7 +621,7 @@ export default function GlobalSearchBar({ portal, placeholder }: GlobalSearchBar
           placeholder={
             placeholder || "Search schools, modules, students, settings..."
           }
-          className="w-full pl-9 pr-14 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all shadow-2xs"
+          className="w-full pl-9 pr-14 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/15 transition-all shadow-2xs"
         />
         {query ? (
           <button

@@ -36,6 +36,7 @@ import {
   type CanonicalSchoolType,
   normalizeSchoolType,
 } from "@/lib/academics/school-terminology";
+import { getSchoolPortalConfig } from "@/config/schoolPortalConfig";
 
 interface StatCounts {
   totalStudents: number;
@@ -53,6 +54,9 @@ interface StatCounts {
   totalAcademicUnits: number;
   activeAcademicUnits: number;
   inactiveAcademicUnits: number;
+  totalDepartments: number;
+  totalPrograms: number;
+  totalModules: number;
   academicCardLabel: string;
   academicCardHref: string;
 }
@@ -145,9 +149,17 @@ export default function AdminDashboardPage() {
     totalAcademicUnits: 0,
     activeAcademicUnits: 0,
     inactiveAcademicUnits: 0,
+    totalDepartments: 0,
+    totalPrograms: 0,
+    totalModules: 0,
     academicCardLabel: "Total Programs",
     academicCardHref: "/admin/programs",
   });
+
+  const portalConfig = useMemo(
+    () => getSchoolPortalConfig(schoolType),
+    [schoolType]
+  );
 
   // Attendance Widget State
   const [attendanceTab, setAttendanceTab] = useState<"Students" | "Teachers" | "Staff">("Students");
@@ -325,6 +337,9 @@ export default function AdminDashboardPage() {
             totalAcademicUnits: Number(dashData.stats.totalAcademicUnits) || 0,
             activeAcademicUnits: Number(dashData.stats.activeAcademicUnits) || 0,
             inactiveAcademicUnits: Number(dashData.stats.inactiveAcademicUnits) || 0,
+            totalDepartments: Number(dashData.stats.totalDepartments) || 0,
+            totalPrograms: Number(dashData.stats.totalPrograms) || 0,
+            totalModules: Number(dashData.stats.totalModules) || 0,
             academicCardLabel: String(dashData.stats.academicCardLabel || "Total Programs"),
             academicCardHref: String(dashData.stats.academicCardHref || "/admin/programs"),
           });
@@ -632,7 +647,7 @@ export default function AdminDashboardPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add New Student</span>
+            <span>Add New {portalConfig.learnerSingular}</span>
           </Link>
 
           <Link
@@ -701,114 +716,90 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* 4. Top 4 Metric Cards (Total Students, Teachers, Staff, Dynamic Academic Card) */}
+      {/* 4. Top 5 School-Type Specialized Live KPI Cards */}
       {dashboardError && (
         <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
           <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
           <span>{dashboardError}</span>
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Students */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-          <div className="flex items-center gap-4">
-            <div className="h-13 w-13 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shadow-2xs">
-              <GraduationCap className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {loading ? "…" : stats.totalStudents}
-              </div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">
-                Total Students
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">
-              Active: <strong className="text-slate-800">{stats.activeStudents}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveStudents}</strong>
-            </span>
-            <Link href="/admin/students" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
-              View all
-            </Link>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {portalConfig.dashboardKpis.map((kpi) => {
+          const rawVal =
+            kpi.key === "departments"
+              ? stats.totalDepartments
+              : kpi.key === "programs"
+              ? stats.totalPrograms
+              : kpi.key === "subjects"
+              ? stats.totalSubjects
+              : kpi.key === "modules"
+              ? stats.totalModules
+              : kpi.key === "students"
+              ? stats.totalStudents
+              : kpi.key === "teachers"
+              ? stats.totalTeachers
+              : fees.totalCollected;
 
-        {/* Card 2: Total Teachers */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-          <div className="flex items-center gap-4">
-            <div className="h-13 w-13 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-2xs">
-              <Briefcase className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {loading ? "…" : stats.totalTeachers}
-              </div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">
-                Total Teachers
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">
-              Active: <strong className="text-slate-800">{stats.activeTeachers}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveTeachers}</strong>
-            </span>
-            <Link href="/admin/teachers" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
-              View all
-            </Link>
-          </div>
-        </div>
+          const displayVal = kpi.isCurrency
+            ? `${currencyCode ? `${currencyCode} ` : "$"}${Number(rawVal || 0).toLocaleString()}`
+            : String(rawVal ?? 0);
 
-        {/* Card 3: Total Staff */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-          <div className="flex items-center gap-4">
-            <div className="h-13 w-13 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shadow-2xs">
-              <Users className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {loading ? "…" : stats.totalStaff}
-              </div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">
-                Total Staff
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">
-              Active: <strong className="text-slate-800">{stats.activeStaff}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveStaff}</strong>
-            </span>
-            <Link href="/admin/staff" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
-              View all
-            </Link>
-          </div>
-        </div>
+          const iconTone =
+            kpi.tone === "indigo"
+              ? "bg-indigo-50 border-indigo-100 text-indigo-600"
+              : kpi.tone === "blue"
+              ? "bg-blue-50 border-blue-100 text-blue-600"
+              : kpi.tone === "rose"
+              ? "bg-rose-50 border-rose-100 text-rose-600"
+              : kpi.tone === "teal"
+              ? "bg-teal-50 border-teal-100 text-teal-600"
+              : kpi.tone === "amber"
+              ? "bg-amber-50 border-amber-100 text-amber-600"
+              : "bg-emerald-50 border-emerald-100 text-emerald-600";
 
-        {/* Card 4: Dynamic Academic Card (Programs for University, Classes for High School & Vocational) */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-          <div className="flex items-center gap-4">
-            <div className="h-13 w-13 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-2xs">
-              <BookOpen className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
-                {loading ? "…" : stats.totalAcademicUnits}
+          const KpiIcon =
+            kpi.key === "students"
+              ? GraduationCap
+              : kpi.key === "teachers"
+              ? Briefcase
+              : kpi.key === "fees"
+              ? CreditCard
+              : kpi.key === "departments"
+              ? Users
+              : BookOpen;
+
+          return (
+            <div
+              key={kpi.key}
+              className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+            >
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`h-12 w-12 rounded-2xl border flex items-center justify-center shadow-2xs shrink-0 ${iconTone}`}
+                >
+                  <KpiIcon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-2xl font-extrabold text-slate-900 tracking-tight leading-none truncate">
+                    {loading ? "…" : displayVal}
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500 mt-1 truncate">
+                    {kpi.label}
+                  </div>
+                </div>
               </div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">
-                {stats.academicCardLabel ||
-                  (schoolType === "university" ? "Total Programs" : "Total Classes")}
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] gap-2">
+                <span className="text-slate-500 truncate">{kpi.sublabel}</span>
+                <Link
+                  href={kpi.href}
+                  className="text-blue-600 font-semibold hover:text-blue-700 hover:underline shrink-0"
+                >
+                  View all
+                </Link>
               </div>
             </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">
-              Active: <strong className="text-slate-800">{stats.activeAcademicUnits}</strong> | Inactive: <strong className="text-slate-400">{stats.inactiveAcademicUnits}</strong>
-            </span>
-            <Link href={stats.academicCardHref} className="text-blue-600 font-semibold hover:text-blue-700 hover:underline">
-              View all
-            </Link>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       {/* 5. Middle Grid (3 Columns: Schedules | Attendance + Stars | Quick Links + Routine + Performance) */}

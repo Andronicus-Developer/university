@@ -6,6 +6,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { signOutUser } from "@/lib/auth/signout";
 import GlobalSearchBar from "@/app/components/GlobalSearchBar";
+import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   LayoutGrid,
   Building2,
@@ -13,7 +15,6 @@ import {
   Users,
   UserCheck,
   Layers,
-  CreditCard,
   Megaphone,
   HardDrive,
   Boxes,
@@ -51,9 +52,10 @@ interface NavCategory {
   }[];
 }
 
-export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
+function SuperAdminLayoutInner({ children }: SuperAdminLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { isEnabled } = useFeatureFlags();
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   const [userName, setUserName] = useState<string>("Super Administrator");
@@ -102,7 +104,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         } = await supabase.auth.getUser();
 
         if (!user) {
-          window.location.replace("/?redirectedFrom=" + encodeURIComponent(window.location.pathname));
+          window.location.replace("/login?redirectedFrom=" + encodeURIComponent(window.location.pathname));
           return;
         }
 
@@ -163,10 +165,10 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
-      await signOutUser("/");
+      await signOutUser("/login");
     } catch {
       setIsSigningOut(false);
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
 
@@ -194,7 +196,6 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     {
       title: "Platform Configuration",
       items: [
-        { id: "payments", label: "Payment Provider Settings", href: "/superadmin/payments", icon: CreditCard },
         { id: "storage", label: "Storage & File Policies", href: "/superadmin/storage", icon: HardDrive },
         { id: "integrations", label: "Integrations & APIs", href: "/superadmin/integrations", icon: Boxes },
       ],
@@ -206,7 +207,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         { id: "jobs", label: "Background Jobs", href: "/superadmin/jobs", icon: Clock, badge: "Queue" },
         { id: "health", label: "Monitoring & Health", href: "/superadmin/health", icon: Activity, badge: "99.9%" },
         { id: "backups", label: "Backup & Recovery Status", href: "/superadmin/backups", icon: Database },
-        { id: "modules", label: "Feature Flags", href: "/superadmin/modules", icon: Sliders },
+        { id: "modules", label: "Feature Flags", href: "/super-admin/feature-flags", icon: Sliders },
         { id: "settings", label: "Settings & School Menus", href: "/superadmin/settings", icon: Sliders },
       ],
     },
@@ -225,11 +226,11 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate max-w-[165px]"
               title={schoolName}
             >
-              UMS Global
+              Erudian360
             </span>
             <span className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Super Admin Portal
+              Super Admin Panel
             </span>
           </div>
         </Link>
@@ -257,7 +258,17 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                 pathname === item.href ||
                 (item.id === "dashboard" && pathname === "/superadmin") ||
                 (item.id === "departments" && pathname === "/superadmin/departments") ||
-                (item.id === "programs" && pathname === "/superadmin/programs");
+                (item.id === "programs" && pathname === "/superadmin/programs") ||
+                (item.id === "integrations" &&
+                  (pathname.startsWith("/superadmin/integrations") ||
+                    pathname.startsWith("/super-admin/integrations"))) ||
+                (item.id === "backups" &&
+                  (pathname.startsWith("/superadmin/backups") ||
+                    pathname.startsWith("/super-admin/backups"))) ||
+                (item.id === "modules" &&
+                  (pathname === "/superadmin/modules" ||
+                    pathname === "/superadmin/feature-flags" ||
+                    pathname === "/super-admin/feature-flags"));
 
               return (
                 <Link
@@ -297,31 +308,37 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         ))}
 
         {/* Quick Cross-Portal Jump Links */}
-        <div className="pt-2 border-t border-slate-100 space-y-1">
-          <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Tenant Workspaces
+        {(isEnabled("admin_portal") || isEnabled("finance_portal")) && (
+          <div className="pt-2 border-t border-slate-100 space-y-1">
+            <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Tenant Workspaces
+            </div>
+            {isEnabled("admin_portal") && (
+              <Link
+                href="/admin/dashboard"
+                className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all"
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <ExternalLink className="h-4 w-4 text-blue-500 shrink-0" />
+                  <span className="truncate">Campus Admin Portal</span>
+                </div>
+                <ChevronRight className="h-3 w-3 text-slate-400" />
+              </Link>
+            )}
+            {isEnabled("finance_portal") && (
+              <Link
+                href="/finance/dashboard"
+                className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all"
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <ExternalLink className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span className="truncate">Bursary &amp; Finance</span>
+                </div>
+                <ChevronRight className="h-3 w-3 text-slate-400" />
+              </Link>
+            )}
           </div>
-          <Link
-            href="/admin/dashboard"
-            className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all"
-          >
-            <div className="flex items-center gap-2.5 truncate">
-              <ExternalLink className="h-4 w-4 text-blue-500 shrink-0" />
-              <span className="truncate">Campus Admin Portal</span>
-            </div>
-            <ChevronRight className="h-3 w-3 text-slate-400" />
-          </Link>
-          <Link
-            href="/finance/dashboard"
-            className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all"
-          >
-            <div className="flex items-center gap-2.5 truncate">
-              <ExternalLink className="h-4 w-4 text-emerald-500 shrink-0" />
-              <span className="truncate">Bursary & Finance</span>
-            </div>
-            <ChevronRight className="h-3 w-3 text-slate-400" />
-          </Link>
-        </div>
+        )}
       </nav>
 
       {/* Sidebar Footer with Super Admin Details and Logout Button */}
@@ -423,13 +440,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Quick Actions Stack */}
             <div className="flex items-center gap-1.5">
-              {/* Region Flag */}
-              <div
-                className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-sm cursor-default"
-                title="Ghana Region"
-              >
-                🇬🇭
-              </div>
+              <ThemeToggle variant="compact" align="right" />
 
               {/* Notifications */}
               <Link
@@ -553,5 +564,19 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-500 text-xs font-medium">
+          Loading Super Admin Console...
+        </div>
+      }
+    >
+      <SuperAdminLayoutInner>{children}</SuperAdminLayoutInner>
+    </React.Suspense>
   );
 }

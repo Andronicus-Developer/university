@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
 import {
   UserPlus,
   Plus,
@@ -55,6 +57,9 @@ interface AdmissionStats {
 export default function AdmissionsPage() {
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [programmes, setProgrammes] = useState<ProgrammeItem[]>([]);
+  const [departments, setDepartments] = useState<ProgrammeItem[]>([]);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+  const auxSpec = useMemo(() => getSchoolFormConfig(schoolType).auxiliary, [schoolType]);
   const [stats, setStats] = useState<AdmissionStats>({
     totalApplications: 0,
     approved: 0,
@@ -119,7 +124,36 @@ export default function AdmissionsPage() {
 
   useEffect(() => {
     fetchApplications();
+    fetch("/api/settings/institution", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.institution?.school_type) {
+          const st = toPortalSchoolType(data.institution.school_type);
+          setSchoolType(st);
+          if (st === "vocational") {
+            fetch("/api/admin/departments", { cache: "no-store" })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((dData) => {
+                if (Array.isArray(dData?.departments)) {
+                  setDepartments(
+                    dData.departments.map((d: any) => ({
+                      id: d.id,
+                      name: d.name,
+                      code: d.code,
+                      degree_level: "vocational",
+                    }))
+                  );
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const choiceOptions =
+    schoolType === "vocational" && departments.length > 0 ? departments : programmes;
 
   const openAddModal = () => {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -339,7 +373,11 @@ export default function AdmissionsPage() {
             <span className="text-[#1E293B] font-semibold">Admissions & Registry</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Student Admissions & Enrollment
+            {schoolType === "vocational"
+              ? "Trainee Admissions & Cohort Intake"
+              : schoolType === "high_school"
+              ? "High School Student Admissions"
+              : "University Admissions & Enrollment"}
           </h1>
           <p className="text-xs text-[#64748B]">
             Process admissions candidates, verify applicant details, grant offers, and enroll admitted students in the database.
@@ -574,7 +612,7 @@ export default function AdmissionsPage() {
             <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between bg-[#F8FAFC]">
               <div className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5 text-[#2563EB]" />
-                <h3 className="text-sm font-bold text-[#1E293B]">Register Admission Application</h3>
+                <h3 className="text-sm font-bold text-[#1E293B]">{auxSpec.admissionsTitle}</h3>
               </div>
               <button onClick={() => setShowAddModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
@@ -631,13 +669,16 @@ export default function AdmissionsPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Degree Programme Choice</label>
+                  <label className="block text-xs font-bold text-[#334155] mb-1">
+                    {auxSpec.admissionsChoiceLabel}
+                  </label>
                   <select
                     value={formData.programmeId}
                     onChange={(e) => setFormData({ ...formData, programmeId: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:border-[#2563EB] focus:outline-none"
                   >
-                    {programmes.map((p) => (
+                    <option value="">Select...</option>
+                    {choiceOptions.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.code})
                       </option>
@@ -664,7 +705,7 @@ export default function AdmissionsPage() {
                 <label className="block text-xs font-bold text-[#334155] mb-1">Registry Notes / Remarks</label>
                 <textarea
                   rows={2}
-                  placeholder="Review comments or WASSCE aggregate notes..."
+                  placeholder={auxSpec.admissionsNotesPlaceholder}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:border-[#2563EB] focus:outline-none"
@@ -743,13 +784,16 @@ export default function AdmissionsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">Degree Programme Choice</label>
+                  <label className="block text-xs font-bold text-[#334155] mb-1">
+                    {auxSpec.admissionsChoiceLabel}
+                  </label>
                   <select
                     value={formData.programmeId}
                     onChange={(e) => setFormData({ ...formData, programmeId: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:border-[#2563EB] focus:outline-none"
                   >
-                    {programmes.map((p) => (
+                    <option value="">Select...</option>
+                    {choiceOptions.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.code})
                       </option>

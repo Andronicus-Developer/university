@@ -37,7 +37,14 @@ export interface StaffProfileInput {
   staffNumber: string;
   jobTitle: string;
   departmentName?: string | null;
+  departmentId?: string | null;
+  employmentType?: string;
+  hireDate?: string | null;
+  phone?: string | null;
+  roleCode?: string | null;
+  salaryGrade?: string | null;
   employmentStatus?: string;
+  metadata?: Record<string, any> | null;
 }
 
 export interface ProvisionTenantUserParams {
@@ -52,6 +59,7 @@ export interface ProvisionTenantUserParams {
   accountStatus?: string;
   existingUserId?: string | null;
   staffProfile?: StaffProfileInput | null;
+  extraMetadata?: Record<string, any> | null;
 }
 
 /**
@@ -658,7 +666,7 @@ export async function provisionLiveTenantUser(
   }
 
   try {
-    // 1. Upsert live public.profiles with explicit school_id
+    // 1. Upsert live public.profiles with explicit school_id & merged extraMetadata
     const { error: profErr } = await (directAdmin as any)
       .from("profiles")
       .upsert(
@@ -673,6 +681,7 @@ export async function provisionLiveTenantUser(
           account_status: cleanStatus,
           metadata: {
             ...userMetadata,
+            ...(params.extraMetadata || {}),
           },
           updated_at: now,
         },
@@ -758,7 +767,7 @@ export async function provisionLiveTenantUser(
           .eq("user_id", userId)
           .maybeSingle();
 
-        const staffProfPayload = {
+        const baseStaffProfPayload = {
           school_id: validSchoolId,
           user_id: userId,
           staff_number: params.staffProfile.staffNumber,
@@ -771,13 +780,50 @@ export async function provisionLiveTenantUser(
           updated_at: now,
         };
 
-        if (existingStaffProf?.id) {
-          await (directAdmin as any)
-            .from("staff_profiles")
-            .update(staffProfPayload)
-            .eq("id", existingStaffProf.id);
-        } else {
-          await (directAdmin as any).from("staff_profiles").insert(staffProfPayload);
+        const extendedStaffProfPayload = {
+          ...baseStaffProfPayload,
+          ...(params.staffProfile.departmentId !== undefined
+            ? { department_id: params.staffProfile.departmentId }
+            : {}),
+          ...(params.staffProfile.employmentType !== undefined
+            ? { employment_type: params.staffProfile.employmentType }
+            : {}),
+          ...(params.staffProfile.hireDate !== undefined
+            ? { hire_date: params.staffProfile.hireDate }
+            : {}),
+          ...(params.staffProfile.phone !== undefined
+            ? { phone: params.staffProfile.phone }
+            : {}),
+          ...(params.staffProfile.roleCode !== undefined
+            ? { role_code: params.staffProfile.roleCode }
+            : {}),
+          ...(params.staffProfile.salaryGrade !== undefined
+            ? { salary_grade: params.staffProfile.salaryGrade }
+            : {}),
+          ...(params.staffProfile.metadata !== undefined &&
+          params.staffProfile.metadata !== null
+            ? { metadata: params.staffProfile.metadata }
+            : {}),
+        };
+
+        const saveStaffRow = async (payload: Record<string, any>) => {
+          if (existingStaffProf?.id) {
+            return (directAdmin as any)
+              .from("staff_profiles")
+              .update(payload)
+              .eq("id", existingStaffProf.id);
+          }
+          return (directAdmin as any).from("staff_profiles").insert(payload);
+        };
+
+        const { error: extStaffErr } = await saveStaffRow(extendedStaffProfPayload);
+        if (
+          extStaffErr &&
+          (String(extStaffErr.code || "") === "42703" ||
+            String(extStaffErr.code || "") === "PGRST204" ||
+            String(extStaffErr.message || "").includes("column"))
+        ) {
+          await saveStaffRow(baseStaffProfPayload);
         }
       }
     }

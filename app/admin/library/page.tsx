@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import { type PortalSchoolType, toPortalSchoolType } from "@/config/schoolPortalConfig";
 import {
   BookMarked,
   Plus,
@@ -30,6 +32,36 @@ export default function LibraryManagementPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+  const auxSpec = useMemo(() => getSchoolFormConfig(schoolType).auxiliary, [schoolType]);
+
+  const libraryCategories = useMemo(() => {
+    if (schoolType === "vocational") {
+      return [
+        "Trade & Craft Manuals",
+        "Workshop Safety & PPE",
+        "Engineering & Schematics",
+        "Hospitality & Catering Guides",
+        "ICT & Technical Training",
+      ];
+    }
+    if (schoolType === "high_school") {
+      return [
+        "Core Mathematics",
+        "Integrated Sciences",
+        "English & Literature",
+        "Social Studies & Humanities",
+        "Exam Past Questions & Study Guides",
+      ];
+    }
+    return [
+      "Computer Science",
+      "Information Technology",
+      "Engineering",
+      "Business & Finance",
+      "Medicine & Health",
+    ];
+  }, [schoolType]);
 
   const [newItem, setNewItem] = useState({
     title: "",
@@ -76,6 +108,19 @@ export default function LibraryManagementPage() {
 
   useEffect(() => {
     fetchLibrary();
+    fetch("/api/settings/institution", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.institution?.school_type) {
+          const st = toPortalSchoolType(data.institution.school_type);
+          setSchoolType(st);
+          setNewItem((prev) => ({
+            ...prev,
+            publisher: getSchoolFormConfig(st).auxiliary.libraryPublisherPlaceholder,
+          }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleCreateBook = async (e: React.FormEvent) => {
@@ -122,11 +167,9 @@ export default function LibraryManagementPage() {
             <span className="text-[#1E293B] font-semibold">Library & Resources</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            University Library & Digital Repository
+            {auxSpec.libraryTitle}
           </h1>
-          <p className="text-xs text-[#64748B]">
-            Authoritative textbook catalog, research monographs, and loan circulations queried from database.
-          </p>
+          <p className="text-xs text-[#64748B]">{auxSpec.librarySubtitle}</p>
         </div>
 
         <button
@@ -260,11 +303,11 @@ export default function LibraryManagementPage() {
                     onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs"
                   >
-                    <option value="Computer Science">Computer Science</option>
-                    <option value="Information Technology">Information Technology</option>
-                    <option value="Engineering">Engineering</option>
-                    <option value="Business & Finance">Business & Finance</option>
-                    <option value="Medicine & Health">Medicine & Health</option>
+                    {libraryCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

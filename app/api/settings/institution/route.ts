@@ -4,6 +4,10 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { resolveTenantContextFromHeaders } from "@/lib/saas/tenant-context";
 import { getUniversities } from "@/lib/superadmin/service";
 import { normalizeSchoolType } from "@/lib/academics/school-terminology";
+import {
+  resolveAdminTenantRequest,
+  resolveTargetSchoolForMutation,
+} from "@/lib/admin/tenant-provisioning";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -224,6 +228,7 @@ export async function GET(request: NextRequest) {
       country: matchedSchool.country || "",
       currency: matchedSchool.default_currency || "",
       currency_symbol: matchedSchool.currency_symbol || "",
+      academic_settings: (matchedSchool as any).academic_settings || {},
       tenant_isolated: true,
       updated_at: matchedSchool.updated_at || matchedSchool.created_at,
     });
@@ -234,6 +239,109 @@ export async function GET(request: NextRequest) {
         tenant_isolated: true,
       },
       { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { tenant, errorResponse } = await resolveAdminTenantRequest(request);
+    if (errorResponse) return errorResponse;
+
+    const body = await request.json();
+    const targetSchool = await resolveTargetSchoolForMutation(
+      tenant,
+      body.school_id || body.id
+    );
+    if (targetSchool.errorResponse) return targetSchool.errorResponse;
+
+    const schoolId = targetSchool.schoolId;
+    const directAdmin = createDirectAdminClient();
+    const nowIso = new Date().toISOString();
+
+    const baseUpdate: Record<string, any> = {
+      updated_at: nowIso,
+    };
+    if (typeof body.name === "string" && body.name.trim()) {
+      baseUpdate.name = body.name.trim();
+    }
+    if (typeof body.email === "string") baseUpdate.email = body.email.trim();
+    if (typeof body.phone === "string") baseUpdate.phone = body.phone.trim();
+    if (typeof body.address === "string") baseUpdate.address = body.address.trim();
+    if (typeof body.currency === "string" && body.currency.trim()) {
+      baseUpdate.currency = body.currency.trim().toUpperCase();
+    }
+    if (typeof body.timezone === "string" && body.timezone.trim()) {
+      baseUpdate.timezone = body.timezone.trim();
+    }
+
+    const extendedUpdate: Record<string, any> = { ...baseUpdate };
+    if (typeof body.logo_url === "string") extendedUpdate.logo_url = body.logo_url.trim();
+    if (typeof body.motto === "string") extendedUpdate.motto = body.motto.trim();
+    if (typeof body.website === "string") extendedUpdate.website = body.website.trim();
+    if (body.academic_settings && typeof body.academic_settings === "object") {
+      extendedUpdate.academic_settings = body.academic_settings;
+    }
+
+    let { data: updatedSchool, error: updateErr } = await (directAdmin as any)
+      .from("schools")
+      .update(extendedUpdate)
+      .eq("id", schoolId)
+      .select("*")
+      .single();
+
+    if (
+      updateErr &&
+      (String(updateErr.code || "") === "42703" ||
+        String(updateErr.message || "").includes("column"))
+    ) {
+      // Fallback to base columns if optional school columns haven't been migrated yet
+      const retry = await (directAdmin as any)
+        .from("schools")
+        .update(baseUpdate)
+        .eq("id", schoolId)
+        .select("*")
+        .single();
+      updatedSchool = retry.data;
+      updateErr = retry.error;
+    }
+
+    if (updateErr) {
+      return NextResponse.json(
+        { error: updateErr.message || "Failed to update school settings." },
+        { status: 400 }
+      );
+    }
+
+    // Mirror institution & academic policy settings into virtual store if available
+    try {
+      const virtualAdmin = createAdminClient();
+      if (body.academic_settings && typeof body.academic_settings === "object") {
+        await (virtualAdmin as any).from("system_settings").upsert(
+          {
+            setting_key: `academic_policy_${schoolId}`,
+            setting_value: body.academic_settings,
+            category: "academics",
+            description: "School-specific grading scale and academic rules",
+            updated_at: nowIso,
+          },
+          { onConflict: "setting_key" }
+        );
+      }
+    } catch {
+      // Non-blocking mirror
+    }
+
+    return NextResponse.json({
+      success: true,
+      school: updatedSchool,
+      school_id: schoolId,
+    });
+  } catch (err: any) {
+    console.error("PUT /api/settings/institution error:", err);
+    return NextResponse.json(
+      { error: err?.message || "Failed to save school settings." },
+      { status: err?.statusCode || 500 }
     );
   }
 }

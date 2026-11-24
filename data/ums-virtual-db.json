@@ -1,16 +1,6 @@
 {
   "roles": [
     {
-      "id": "role-mwt49njd-yzr1",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.846Z",
-      "code": "teacher",
-      "name": "Teacher",
-      "description": "",
-      "typical_restrictions": "Actions logged and governed by least-privilege standards.",
-      "is_system_role": false
-    },
-    {
       "id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
       "code": "superadmin",
       "name": "Super Administrator",
@@ -479,48 +469,6 @@
     }
   ],
   "role_permissions": [
-    {
-      "id": "4bbd2c80-1e71-4376-b7db-1c2f91fff68b",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-res-pub"
-    },
-    {
-      "id": "dce6041d-8722-4874-811d-5d6ed01be551",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-res-sub"
-    },
-    {
-      "id": "27f16719-54ad-46e5-aa71-6d21c91816c9",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-res-amend"
-    },
-    {
-      "id": "217c7a1d-252c-494b-a33d-bd4d181de394",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-comm-ann"
-    },
-    {
-      "id": "4426fb9d-0fea-466b-98f5-89dbf9ce8082",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-att-rec"
-    },
-    {
-      "id": "a1b6f63b-89dc-49dc-97f7-9af452187d3e",
-      "created_at": "2026-11-23T10:22:12.839Z",
-      "updated_at": "2026-11-23T10:22:12.856Z",
-      "role_id": "role-mwt49njd-yzr1",
-      "permission_id": "perm-att-amend"
-    },
     {
       "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
       "permission_id": "perm-adm-read",
@@ -1184,38 +1132,6 @@
   ],
   "profiles": [
     {
-      "id": "d6e19fe0-e566-44e5-abad-f268d698ac74",
-      "created_at": "2026-11-23T07:25:04.334Z",
-      "updated_at": "2026-11-23T07:25:04.332Z",
-      "email": "cynthia@sps.edu.lr",
-      "full_name": "Cynthia Miller",
-      "phone": "+231886346789",
-      "account_status": "active"
-    },
-    {
-      "id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
-      "created_at": "2026-11-23T07:11:22.828Z",
-      "updated_at": "2026-11-23T07:11:22.828Z",
-      "email": "moses.admin@sps.edu.lr",
-      "full_name": "Moses Blay",
-      "phone": "+231886455667",
-      "role": "system_admin",
-      "account_status": "active",
-      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "is_mfa_enabled": false,
-      "metadata": {
-        "role": "system_admin",
-        "default_role": "system_admin",
-        "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-        "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-        "university_name": "Soltiamon Preparatory School",
-        "university_code": "SPS",
-        "university_status": "active",
-        "temp_password": "Moses1234"
-      }
-    },
-    {
       "id": "1440ed7e-cb23-4248-a372-f38b20d01554",
       "email": "superadmin@university.edu.gh",
       "full_name": "Master Super Administrator",
@@ -1235,105 +1151,15 @@
   ],
   "user_role_assignments": [
     {
-      "id": "d2c7ea92-4848-499b-a30c-19e83df0ff6e",
-      "created_at": "2026-11-23T07:25:04.378Z",
-      "updated_at": "2026-11-23T07:25:04.378Z",
-      "user_id": "d6e19fe0-e566-44e5-abad-f268d698ac74",
-      "role_id": "d2be4e20-7995-4a69-a8aa-b4ed2174002f",
-      "department_id": null,
-      "is_active": true
-    },
-    {
-      "id": "fea3f893-ba57-4894-8894-c8964497ed52",
-      "created_at": "2026-11-23T07:11:22.828Z",
-      "updated_at": "2026-11-23T07:11:24.420Z",
-      "user_id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
-      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
-      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "is_active": true
-    },
-    {
       "id": "ura-1",
       "user_id": "1440ed7e-cb23-4248-a372-f38b20d01554",
       "role_id": "9ff88ff1-e423-4ba4-8b98-f7473c98eaea",
       "is_active": true,
       "created_at": "2026-11-05T08:00:00.000Z"
-    },
-    {
-      "id": "ura-1795417884438",
-      "user_id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
-      "role_id": "f67d1b87-ec01-41db-b436-1d59c9d3fe25",
-      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "is_active": true,
-      "created_at": "2026-11-23T07:11:22.828Z"
     }
   ],
-  "universities": [
-    {
-      "name": "Soltiamon Preparatory School",
-      "code": "SPS",
-      "short_name": "SPS",
-      "school_type": "high_school",
-      "institution_type": "high_school",
-      "country": "Liberia",
-      "city": "Monrovia",
-      "address": "14 Street Sinkor, Tubman Boulevard, Monrovia, Liberia",
-      "postal_code": "",
-      "email": "info@sps.edu.lr",
-      "phone": "+231886566778",
-      "website": "",
-      "motto": "",
-      "logo_url": "",
-      "default_currency": "USD",
-      "currency_symbol": "$",
-      "accreditation_code": "",
-      "status": "active",
-      "full_access": true,
-      "max_users": null,
-      "max_departments": null,
-      "max_roles": null,
-      "allowed_roles": [
-        "system_admin",
-        "vice_chancellor",
-        "registrar",
-        "academic_affairs_officer",
-        "dean",
-        "head_of_department",
-        "admissions_officer",
-        "finance_officer",
-        "lecturer",
-        "academic_advisor",
-        "student",
-        "applicant",
-        "librarian",
-        "hostel_officer",
-        "hr_officer",
-        "auditor",
-        "parent_sponsor"
-      ],
-      "id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "current_users_count": 1,
-      "current_departments_count": 0,
-      "current_roles_count": 0,
-      "created_at": "2026-11-23T07:11:21.803Z",
-      "updated_at": "2026-11-23T07:11:21.803Z"
-    }
-  ],
-  "university_system_admins": [
-    {
-      "id": "6acfeb7e-5e75-491a-ba33-38dfeac06601",
-      "created_at": "2026-11-23T07:11:24.432Z",
-      "updated_at": "2026-11-23T07:11:24.432Z",
-      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "user_id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
-      "is_primary": true
-    },
-    {
-      "university_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "user_id": "d2d1a3bb-12a5-4a5c-ade2-387357ef87a7",
-      "is_primary": true
-    }
-  ],
+  "universities": [],
+  "university_system_admins": [],
   "superadmin_modules": [
     {
       "id": "m-dash",
@@ -1544,18 +1370,7 @@
       "created_at": "2026-11-05T08:00:00.000Z"
     }
   ],
-  "campuses": [
-    {
-      "id": "2645ff3f-6166-40d0-968a-1b35f9535df3",
-      "created_at": "2026-11-23T07:11:24.489Z",
-      "updated_at": "2026-11-23T07:11:24.489Z",
-      "school_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "code": "SPS_MAIN",
-      "name": "Soltiamon Preparatory School Main Campus",
-      "location": "Monrovia, Liberia",
-      "is_active": true
-    }
-  ],
+  "campuses": [],
   "faculties": [],
   "departments": [],
   "programmes": [],
@@ -1563,31 +1378,8 @@
   "terms": [],
   "courses": [],
   "course_offerings": [],
-  "staff": [
-    {
-      "id": "6cfdf2b4-4dbd-4941-a6e6-e2eb56ff4868",
-      "created_at": "2026-11-23T07:25:04.343Z",
-      "updated_at": "2026-11-23T07:25:04.343Z",
-      "profile_id": "d6e19fe0-e566-44e5-abad-f268d698ac74",
-      "staff_number": "STF20260001",
-      "department_id": null,
-      "employment_type": "full_time",
-      "job_title": "Accountant",
-      "hire_date": "2026-11-23",
-      "status": "active"
-    }
-  ],
-  "employment_records": [
-    {
-      "id": "b53276f0-2972-4383-8f96-83af1561acc5",
-      "created_at": "2026-11-23T07:25:04.354Z",
-      "updated_at": "2026-11-23T07:25:04.354Z",
-      "staff_id": "6cfdf2b4-4dbd-4941-a6e6-e2eb56ff4868",
-      "contract_type": "full_time",
-      "start_date": "2026-11-23",
-      "salary_grade": null
-    }
-  ],
+  "staff": [],
+  "employment_records": [],
   "teaching_assignments": [],
   "students": [],
   "course_enrolments": [],
@@ -1622,113 +1414,6 @@
   "service_requests": [],
   "audit_events": [
     {
-      "id": "bd938447-e638-4335-9485-282e1190d977",
-      "created_at": "2026-11-23T10:22:12.872Z",
-      "updated_at": "2026-11-23T10:22:12.872Z",
-      "action": "create_role",
-      "entity_type": "role",
-      "entity_id": "role-mwt49njd-yzr1",
-      "actor_role": "superadmin",
-      "outcome": "SUCCESS",
-      "new_values": {
-        "code": "teacher",
-        "name": "Teacher",
-        "permissions_count": 6
-      }
-    },
-    {
-      "id": "0a72d90b-ae6e-404d-b282-f1e053d0aaca",
-      "created_at": "2026-11-23T10:16:01.417Z",
-      "updated_at": "2026-11-23T10:16:01.417Z",
-      "action": "delete_user",
-      "entity_type": "user",
-      "entity_id": "b2932ac5-e020-4ac5-8d82-20dc38148d0d",
-      "actor_role": "superadmin",
-      "outcome": "SUCCESS"
-    },
-    {
-      "id": "80a0f648-6256-48cf-a741-f1409de1e63c",
-      "created_at": "2026-11-23T10:15:46.032Z",
-      "updated_at": "2026-11-23T10:15:46.032Z",
-      "action": "delete_user",
-      "entity_type": "user",
-      "entity_id": "d6275f2a-d128-4448-981a-956cae8a402f",
-      "actor_role": "superadmin",
-      "outcome": "SUCCESS"
-    },
-    {
-      "id": "e9b3311c-0bd9-49f9-a5a6-2d630784bcf4",
-      "created_at": "2026-11-23T07:25:04.388Z",
-      "updated_at": "2026-11-23T07:25:04.388Z",
-      "action": "STAFF_CREATED",
-      "entity_type": "staff",
-      "entity_id": "6cfdf2b4-4dbd-4941-a6e6-e2eb56ff4868",
-      "outcome": "success",
-      "metadata": {
-        "staff_number": "STF20260001",
-        "email": "cynthia@sps.edu.lr",
-        "full_name": "Cynthia Miller",
-        "job_title": "Accountant",
-        "role_code": "finance_officer"
-      }
-    },
-    {
-      "id": "26ddbe9f-dfb7-435f-9418-6cb488949757",
-      "created_at": "2026-11-23T07:23:03.066Z",
-      "updated_at": "2026-11-23T07:23:03.066Z",
-      "action": "FACULTY_DELETED",
-      "entity_type": "staff",
-      "entity_id": "4a424d00-8004-458f-8ebf-6e960fbfed63",
-      "outcome": "success",
-      "metadata": {
-        "staff_number": "FAC20260001",
-        "profile_id": "8e245a2e-5a0c-49b9-8a30-d8aedb1134cd"
-      }
-    },
-    {
-      "id": "e04dee7c-c371-4cb4-aa86-104c1701e901",
-      "created_at": "2026-11-23T07:21:02.343Z",
-      "updated_at": "2026-11-23T07:21:02.343Z",
-      "action": "FACULTY_CREATED",
-      "entity_type": "staff",
-      "entity_id": "4a424d00-8004-458f-8ebf-6e960fbfed63",
-      "outcome": "success",
-      "metadata": {
-        "staff_number": "FAC20260001",
-        "email": "mohammed@sps.edu.lr",
-        "full_name": "Mohammed Barry",
-        "job_title": "Lecturer",
-        "role_code": "lecturer"
-      }
-    },
-    {
-      "id": "8edef846-be5e-4140-8a96-3f5d5ed50952",
-      "created_at": "2026-11-23T07:11:24.513Z",
-      "updated_at": "2026-11-23T07:11:24.513Z",
-      "action": "create_university",
-      "entity_type": "university",
-      "entity_id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "actor_role": "superadmin",
-      "outcome": "SUCCESS",
-      "new_values": {
-        "code": "SPS",
-        "name": "Soltiamon Preparatory School",
-        "country": "Liberia",
-        "admin_email": "moses.admin@sps.edu.lr"
-      }
-    },
-    {
-      "id": "3e4b9e0f-22ce-4512-9dac-7e8b791a74da",
-      "created_at": "2026-11-23T07:05:26.346Z",
-      "updated_at": "2026-11-23T07:05:26.346Z",
-      "action": "delete_university",
-      "entity_type": "university",
-      "entity_id": "00000000-0000-0000-0000-000000000001",
-      "actor_role": "superadmin",
-      "outcome": "SUCCESS",
-      "details": "Decommissioned university Oakridge High School (OAKRIDGE-HIGH). Permanently deleted 0 associated accounts including system admin."
-    },
-    {
       "id": "aud-1",
       "event_time": "2026-11-05T08:00:00.000Z",
       "actor_id": "1440ed7e-cb23-4248-a372-f38b20d01554",
@@ -1757,141 +1442,6 @@
   "admission_decisions": [],
   "offers": [],
   "system_settings": [
-    {
-      "id": "a3a7b121-b470-4804-aac8-0fa2eeac4007",
-      "created_at": "2026-11-23T07:05:26.340Z",
-      "updated_at": "2026-11-23T07:05:06.436Z",
-      "setting_key": "deleted_universities",
-      "setting_value": [
-        {
-          "id": "00000000-0000-0000-0000-000000000001",
-          "code": "OAKRIDGE-HIGH",
-          "name": "Oakridge High School",
-          "deleted_at": "2026-11-23T07:05:06.436Z"
-        }
-      ],
-      "category": "superadmin",
-      "description": "List of decommissioned/deleted universities whose users must be blocked from system access",
-      "is_sensitive": false
-    },
-    {
-      "id": "aee2807a-5567-4f67-8dee-305bf8ffdb6f",
-      "created_at": "2026-11-23T07:05:08.061Z",
-      "updated_at": "2026-11-23T10:16:01.400Z",
-      "setting_key": "deleted_users",
-      "setting_value": [
-        {
-          "id": "d6275f2a-d128-4448-981a-956cae8a402f",
-          "email": "gair@jjs.edu.lr",
-          "deleted_at": "2026-11-23T10:15:46.011Z"
-        },
-        {
-          "id": "b2932ac5-e020-4ac5-8d82-20dc38148d0d",
-          "email": "mary.admin@jjs.edu.lr",
-          "deleted_at": "2026-11-23T10:16:01.395Z"
-        }
-      ],
-      "category": "superadmin",
-      "description": "Permanent blacklist of deleted users from decommissioned universities",
-      "is_sensitive": false
-    },
-    {
-      "id": "fae56df4-2655-4eb0-b632-fc5269d4dc39",
-      "created_at": "2026-11-23T03:46:07.379Z",
-      "updated_at": "2026-11-23T03:46:07.378Z",
-      "setting_key": "superadmin_communications",
-      "setting_value": [
-        {
-          "id": "c9a00001-0000-0000-0000-000000000004",
-          "direction": "inbound",
-          "is_read": true,
-          "parent_id": "c9a00001-0000-0000-0000-000000000001",
-          "sender_email": "admin@university.edu.gh",
-          "sender_name": "Andronicus Johnson (AIT System Admin)",
-          "recipient_to": "superadmin@university.edu.gh",
-          "recipient_cc": null,
-          "recipient_bcc": null,
-          "target_school": "Institutional Campus",
-          "subject": "Re: 2026/2027 Academic Year Governance & Quota Compliance Directive",
-          "body": "Dear Master Super Administrator,\n\nThank you for the directive. We have verified our institutional role quotas, confirmed MFA enrollment across all active system administrators, and reviewed our school portal sidebar modules.\n\nEverything is compliant and operational on our campus.\n\nWarm regards,\nAndronicus Johnson\nSystem Administrator • Institutional Campus",
-          "category": "Compliance",
-          "priority": "high",
-          "status": "received",
-          "attachments": [],
-          "resend_id": "re_in_44910b2c",
-          "sent_at": "2026-11-19T11:20:00.000Z",
-          "created_at": "2026-11-19T11:20:00.000Z"
-        },
-        {
-          "id": "c9a00001-0000-0000-0000-000000000001",
-          "direction": "outbound",
-          "is_read": true,
-          "parent_id": null,
-          "sender_email": "superadmin@university.edu.gh",
-          "sender_name": "Master Super Administrator",
-          "recipient_to": "admin@university.edu.gh, registrar@university.edu.gh",
-          "recipient_cc": "bursar@university.edu.gh",
-          "recipient_bcc": null,
-          "target_school": "Institutional Campus",
-          "subject": "2026/2027 Academic Year Governance & Quota Compliance Directive",
-          "body": "Dear Institutional Administrators,\n\nPlease be advised that the 2026/2027 multi-tenant governance quotas and sidebar module configurations have been finalized on the central platform.\n\nKey Action Items:\n1. Verify your institution's assigned role tiers and department limits.\n2. Confirm that all active system administrators have Multi-Factor Authentication (MFA) enabled.\n3. Review your portal sidebar navigation items under Settings.\n\nWarm regards,\nMaster Super Administrator\nUMS Global Platform Governance",
-          "category": "Compliance",
-          "priority": "high",
-          "status": "delivered",
-          "attachments": [
-            "2026_Governance_Policy.pdf"
-          ],
-          "resend_id": "re_msg_99201a8b",
-          "sent_at": "2026-11-18T09:30:00.000Z",
-          "created_at": "2026-11-18T09:30:00.000Z"
-        },
-        {
-          "id": "c9a00001-0000-0000-0000-000000000002",
-          "direction": "outbound",
-          "is_read": true,
-          "parent_id": null,
-          "sender_email": "superadmin@university.edu.gh",
-          "sender_name": "Master Super Administrator",
-          "recipient_to": "all-school-admins@university.edu.gh",
-          "recipient_cc": null,
-          "recipient_bcc": null,
-          "target_school": "All Registered Schools",
-          "subject": "Scheduled Cloud Storage Engine Maintenance & Zero-Downtime Sync",
-          "body": "Hello System Administrators,\n\nOur engineering team will perform a routine optimization on the multi-tenant database cluster this Saturday at 02:00 UTC. All institutional portals (Universities, High Schools, and Vocational Schools) will remain online with zero cold-start impact.\n\nNo action is required on your part.\n\nBest regards,\nPlatform Operations Team",
-          "category": "Maintenance",
-          "priority": "normal",
-          "status": "delivered",
-          "attachments": [],
-          "resend_id": "re_msg_88142c1d",
-          "sent_at": "2026-11-16T14:15:00.000Z",
-          "created_at": "2026-11-16T14:15:00.000Z"
-        },
-        {
-          "id": "c9a00001-0000-0000-0000-000000000003",
-          "direction": "outbound",
-          "is_read": true,
-          "parent_id": null,
-          "sender_email": "superadmin@university.edu.gh",
-          "sender_name": "Master Super Administrator",
-          "recipient_to": "eugenedoeteh@university.edu.gh",
-          "recipient_cc": "admin@university.edu.gh",
-          "recipient_bcc": null,
-          "target_school": "Institutional Campus",
-          "subject": "End-of-Semester Bursary Reconciliation & Settlement Verification",
-          "body": "Dear Chief Financial Officer,\n\nKindly ensure all pending fee waiver dual-control approvals and Paystack settlement batches for the First Semester are reconciled before the financial close deadline.\n\nThank you,\nMaster Super Administrator",
-          "category": "Billing",
-          "priority": "high",
-          "status": "delivered",
-          "attachments": [
-            "Settlement_Checklist_Sem1.xlsx"
-          ],
-          "resend_id": "re_msg_77319f4e",
-          "sent_at": "2026-11-14T11:00:00.000Z",
-          "created_at": "2026-11-14T11:00:00.000Z"
-        }
-      ],
-      "category": "communications"
-    },
     {
       "id": "267bb377-6b29-42fc-9fec-ccee63f7df8a",
       "setting_key": "institution_info",
@@ -1946,61 +1496,11 @@
     {
       "id": "set-univ-reg",
       "setting_key": "superadmin_universities",
-      "setting_value": [
-        {
-          "name": "Soltiamon Preparatory School",
-          "code": "SPS",
-          "short_name": "SPS",
-          "school_type": "high_school",
-          "institution_type": "high_school",
-          "country": "Liberia",
-          "city": "Monrovia",
-          "address": "14 Street Sinkor, Tubman Boulevard, Monrovia, Liberia",
-          "postal_code": "",
-          "email": "info@sps.edu.lr",
-          "phone": "+231886566778",
-          "website": "",
-          "motto": "",
-          "logo_url": "",
-          "default_currency": "USD",
-          "currency_symbol": "$",
-          "accreditation_code": "",
-          "status": "active",
-          "full_access": true,
-          "max_users": null,
-          "max_departments": null,
-          "max_roles": null,
-          "allowed_roles": [
-            "system_admin",
-            "vice_chancellor",
-            "registrar",
-            "academic_affairs_officer",
-            "dean",
-            "head_of_department",
-            "admissions_officer",
-            "finance_officer",
-            "lecturer",
-            "academic_advisor",
-            "student",
-            "applicant",
-            "librarian",
-            "hostel_officer",
-            "hr_officer",
-            "auditor",
-            "parent_sponsor"
-          ],
-          "id": "416e39ad-a548-4daa-91de-1c51443e2830",
-          "current_users_count": 1,
-          "current_departments_count": 0,
-          "current_roles_count": 0,
-          "created_at": "2026-11-23T07:11:21.803Z",
-          "updated_at": "2026-11-23T07:11:21.803Z"
-        }
-      ],
+      "setting_value": [],
       "category": "superadmin",
-      "description": "Master directory of all registered institutions in the multi-tenant system",
+      "description": "Master directory of all registered institutions",
       "is_sensitive": false,
-      "updated_at": "2026-11-23T07:11:24.462Z"
+      "updated_at": "2026-11-05T08:00:00.000Z"
     },
     {
       "id": "set-mod-reg",
@@ -2232,59 +1732,307 @@
   "student_status_history": [],
   "institutional_reports": [],
   "communications": [],
-  "schools": [
+  "platform_feature_flags": [
     {
-      "name": "Soltiamon Preparatory School",
-      "code": "SPS",
-      "short_name": "SPS",
-      "school_type": "high_school",
-      "institution_type": "high_school",
-      "country": "Liberia",
-      "city": "Monrovia",
-      "address": "14 Street Sinkor, Tubman Boulevard, Monrovia, Liberia",
-      "postal_code": "",
-      "email": "info@sps.edu.lr",
-      "phone": "+231886566778",
-      "website": "",
-      "motto": "",
-      "logo_url": "",
-      "default_currency": "USD",
-      "currency_symbol": "$",
-      "accreditation_code": "",
-      "status": "active",
-      "full_access": true,
-      "max_users": null,
-      "max_departments": null,
-      "max_roles": null,
-      "allowed_roles": [
+      "id": "c4bdd857-cdaf-43e2-95a7-8da9567e2253",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "lms_module",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "module",
+      "label": "LMS / E-Learning & Workshops",
+      "description": "Digital classrooms, practical vocational workshops, apprenticeship tracking, and online learning materials.",
+      "target_roles": [
         "system_admin",
+        "teacher",
+        "lecturer",
+        "student"
+      ],
+      "route_prefixes": [
+        "/admin/workshops",
+        "/teacher/workshops"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "7d0e7821-5024-4742-9caf-a647fa391e3e",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "transport_module",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "module",
+      "label": "Transport & Fleet Logistics",
+      "description": "School bus routes, vehicle fleet schedules, boarding passes, and campus transit logs.",
+      "target_roles": [
+        "system_admin",
+        "staff"
+      ],
+      "route_prefixes": [
+        "/admin/transport",
+        "/admin/transportation"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "6b33ffa5-2e91-4ce5-8cbb-a1f3045da988",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "hostels_module",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "module",
+      "label": "Hostels & Campus Housing",
+      "description": "Residence halls, room and bed capacity management, student accommodation requests, allocations, and maintenance.",
+      "target_roles": [
+        "hostel_officer",
+        "system_admin",
+        "student"
+      ],
+      "route_prefixes": [
+        "/admin/hostels",
+        "/student/hostel"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "30108a5e-9755-4a1b-9c8f-f00b6caba587",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "library_module",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "module",
+      "label": "Library Services",
+      "description": "Campus book catalog, circulation inventory, student loans, returns, and overdue fine tracking.",
+      "target_roles": [
+        "librarian",
+        "system_admin",
+        "student"
+      ],
+      "route_prefixes": [
+        "/admin/library",
+        "/student/library"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "36d56832-97fd-420f-98a5-a6d6d65962f2",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "exams_module",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "module",
+      "label": "Examinations & Grading",
+      "description": "Exam scheduling, marks entry, moderation workflows, GPA/CGPA computation, results publishing, and transcripts.",
+      "target_roles": [
+        "system_admin",
+        "lecturer",
+        "student",
+        "registrar"
+      ],
+      "route_prefixes": [
+        "/admin/exams",
+        "/lecturer/marks-entry",
+        "/lecturer/assessments",
+        "/lecturer/moderation",
+        "/student/results",
+        "/student/transcripts"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "ea977a75-08f8-4b77-91bd-ebc547e27dd5",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "advisor_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Academic Advisor Portal",
+      "description": "Academic advising dashboard for assigned student cohorts, credit loads, progression reviews, and case notes.",
+      "target_roles": [
+        "academic_advisor",
+        "advisor"
+      ],
+      "route_prefixes": [
+        "/advisor"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "e31a8721-f9ff-475a-8193-394300d3ea71",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "applicant_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Admissions & Applicant Portal",
+      "description": "Online admissions application tracker, document uploads, admission decisions, and institutional admissions pipeline.",
+      "target_roles": [
+        "applicant",
+        "admissions_officer"
+      ],
+      "route_prefixes": [
+        "/applicant",
+        "/admin/admissions"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "53406138-5362-46fd-a97f-695b3e67a141",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "parent_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Parent / Guardian Portal",
+      "description": "Family portal for ward attendance tracking, report cards, fee billing visibility, and PTA teacher messages.",
+      "target_roles": [
+        "parent",
+        "parent_sponsor",
+        "guardian"
+      ],
+      "route_prefixes": [
+        "/parent"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "e50ce554-f350-4a31-8f9b-2d05489046d4",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "student_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Student Portal",
+      "description": "Student self-service portal for course registration, timetables, attendance, grades, transcripts, and fee statements.",
+      "target_roles": [
+        "student"
+      ],
+      "route_prefixes": [
+        "/student"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "b6a6814a-b6fb-4ffb-b823-5307156e6d2c",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "teacher_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Teacher / Staff Portal",
+      "description": "High school and vocational instructor workspace for class roll call, gradebooks, parent messages, and workshops.",
+      "target_roles": [
+        "teacher"
+      ],
+      "route_prefixes": [
+        "/teacher"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "bb0c77fb-46fc-43a1-9314-f94d98833ac0",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "lecturer_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Lecturer / Faculty Portal",
+      "description": "University and college faculty workspace for courses, attendance, assessments, marks entry, and advising.",
+      "target_roles": [
+        "lecturer"
+      ],
+      "route_prefixes": [
+        "/lecturer"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "78aafa50-0039-42b4-8ac5-26507e18a62d",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "finance_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "Finance & Bursar Portal",
+      "description": "Fee schedules, student invoices, payment reconciliation, bursar receipts, waivers, and refunds.",
+      "target_roles": [
+        "finance_officer",
+        "bursar",
+        "accountant",
+        "auditor"
+      ],
+      "route_prefixes": [
+        "/finance",
+        "/bursar"
+      ],
+      "is_enabled": true,
+      "updated_by": null
+    },
+    {
+      "id": "e8979654-c17f-454e-83c6-7627c56ba63f",
+      "created_at": "2026-11-24T02:48:58.899Z",
+      "updated_at": "2026-11-24T02:48:58.899Z",
+      "portal_key": "admin_portal",
+      "scope_type": "global",
+      "school_id": null,
+      "scope_key": "global",
+      "category": "portal",
+      "label": "School / System Admin Portal",
+      "description": "Institutional administration workspace covering students, staff, academics, timetables, and school governance.",
+      "target_roles": [
+        "system_admin",
+        "admin",
+        "administrator",
         "vice_chancellor",
         "registrar",
         "academic_affairs_officer",
         "dean",
         "head_of_department",
         "admissions_officer",
-        "finance_officer",
-        "lecturer",
-        "academic_advisor",
-        "student",
-        "applicant",
         "librarian",
         "hostel_officer",
         "hr_officer",
-        "auditor",
-        "parent_sponsor"
+        "auditor"
       ],
-      "id": "416e39ad-a548-4daa-91de-1c51443e2830",
-      "current_users_count": 1,
-      "current_departments_count": 0,
-      "current_roles_count": 0,
-      "created_at": "2026-11-23T07:11:21.803Z",
-      "updated_at": "2026-11-23T07:11:21.803Z"
+      "route_prefixes": [
+        "/admin"
+      ],
+      "is_enabled": true,
+      "updated_by": null
     }
-  ],
-  "classes": [],
-  "timetables": [],
-  "academic_terms": [],
-  "grading_scales": []
+  ]
 }

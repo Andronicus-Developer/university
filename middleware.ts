@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { findDisabledFlagForPath } from "@/lib/superadmin/feature-flags-catalog";
+import { getEffectiveFeatureFlagMap } from "@/lib/superadmin/feature-flags-service";
 
 const ADMIN_STAFF_ROLES = [
   "system_admin",
@@ -137,6 +139,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/supabase") ||
     pathname.startsWith("/api/webhooks/resend-inbound") ||
     (pathname.startsWith("/api/settings/institution") && request.method === "GET") ||
@@ -147,8 +150,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const isLoginPage = pathname === "/" || pathname === "/login";
-  const isPublicPage = isLoginPage || pathname === "/not-found" || pathname === "/404";
+  const isLandingPage = pathname === "/";
+  const isLoginPage = pathname === "/login";
+  const isPublicPage =
+    isLandingPage ||
+    isLoginPage ||
+    pathname === "/portal-unavailable" ||
+    pathname === "/not-found" ||
+    pathname === "/404";
 
   // 2. Safe session resolution
   let supabaseResponse = NextResponse.next({ request });
@@ -173,7 +182,7 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("redirectedFrom", pathname);
     return createRedirectWithCookies(redirectUrl, supabaseResponse);
   }
@@ -255,6 +264,13 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  let resolvedSchoolId: string | null =
+    (user.app_metadata as any)?.school_id ||
+    (user.app_metadata as any)?.university_id ||
+    (user.user_metadata as any)?.school_id ||
+    (user.user_metadata as any)?.university_id ||
+    null;
+
   // 4.2. University Deletion & User Blacklist Barrier (Must run BEFORE login page redirect)
   // If user is NOT superadmin, verify their university and account have not been deleted
   if (!isSuperAdmin) {
@@ -333,6 +349,10 @@ export async function middleware(request: NextRequest) {
           (user.user_metadata as any)?.university_id ||
           (user.app_metadata as any)?.school_id ||
           (user.app_metadata as any)?.university_id;
+
+        if (userUnivId) {
+          resolvedSchoolId = String(userUnivId);
+        }
 
         const userUnivCode =
           metadata.university_code ||
@@ -428,14 +448,36 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // If already authenticated and visiting the login page, redirect to dashboard
+  // If already authenticated and visiting /login, redirect to role dashboard (unless portal disabled)
   if (isLoginPage) {
     const dashboardPath = isSuperAdmin
       ? "/superadmin/dashboard"
       : isSystemAdmin
       ? "/admin/dashboard"
       : getTargetDashboardForRoles(roles, normalizedEmail);
+
+    if (!isSuperAdmin) {
+      try {
+        const enabledMap = await getEffectiveFeatureFlagMap(resolvedSchoolId);
+        const blocked = findDisabledFlagForPath(dashboardPath, enabledMap);
+        if (blocked) {
+          const unavailableUrl = new URL("/portal-unavailable", request.url);
+          unavailableUrl.searchParams.set("portal", blocked.label);
+          unavailableUrl.searchParams.set("key", blocked.portal_key);
+          unavailableUrl.searchParams.set("from", dashboardPath);
+          return createRedirectWithCookies(unavailableUrl, supabaseResponse);
+        }
+      } catch {
+        // Proceed cleanly on transient error
+      }
+    }
+
     return NextResponse.redirect(new URL(dashboardPath, request.url));
+  }
+
+  // Allow authenticated visitors to browse the public marketing landing page `/` and `/portal-unavailable`
+  if (isLandingPage || pathname === "/portal-unavailable") {
+    return supabaseResponse;
   }
 
   // Enforce zero cache on all protected views so browser cannot serve from bfcache after logout
@@ -446,7 +488,7 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set("Pragma", "no-cache");
   supabaseResponse.headers.set("Expires", "0");
 
-  // 4.5. Super Admin Exclusive Barrier (ONLY superadmin can access /superadmin)
+  // 4.5. Super Admin Exclusive Barrier (ONLY superadmin can access /superadmin; permanently exempt from feature flag lockouts)
   if (
     pathname.startsWith("/superadmin") ||
     pathname.startsWith("/super-admin") ||
@@ -456,6 +498,32 @@ export async function middleware(request: NextRequest) {
       return respondNotFound(request, supabaseResponse);
     }
     return supabaseResponse;
+  }
+
+  // 4.6. Platform Feature Flags Portal & Module Access Enforcement (exempts superadmin)
+  if (!isSuperAdmin) {
+    try {
+      const enabledMap = await getEffectiveFeatureFlagMap(resolvedSchoolId);
+      const blockedFeature = findDisabledFlagForPath(pathname, enabledMap);
+      if (blockedFeature) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            {
+              error: `${blockedFeature.label} is currently unavailable.`,
+              portal_key: blockedFeature.portal_key,
+            },
+            { status: 403 }
+          );
+        }
+        const unavailableUrl = new URL("/portal-unavailable", request.url);
+        unavailableUrl.searchParams.set("portal", blockedFeature.label);
+        unavailableUrl.searchParams.set("key", blockedFeature.portal_key);
+        unavailableUrl.searchParams.set("from", pathname);
+        return createRedirectWithCookies(unavailableUrl, supabaseResponse);
+      }
+    } catch (flagErr) {
+      console.warn("Could not enforce portal feature flag in middleware:", flagErr);
+    }
   }
 
   // 5. Role-Based Access Control (RBAC) boundaries

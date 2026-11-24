@@ -3,6 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  getSchoolPortalConfig,
+  toPortalSchoolType,
+  type PortalSchoolType,
+  type SchoolPortalConfig,
+} from "@/config/schoolPortalConfig";
+import { getSchoolFormConfig } from "@/config/schoolFormConfig";
+import {
   Users,
   Plus,
   Search,
@@ -38,6 +45,7 @@ interface StaffRecord {
   role_code: string;
   role_name: string;
   salary_grade: string;
+  metadata?: Record<string, any>;
 }
 
 interface DepartmentOption {
@@ -67,6 +75,7 @@ interface StaffFormState {
   staff_number: string;
   job_title: string;
   department_id: string;
+  assigned_unit: string;
   employment_type: string;
   hire_date: string;
   status: string;
@@ -102,12 +111,13 @@ function statusBadgeStyle(status: string) {
   }
 }
 
-function generateNextStaffNumber(existing: StaffRecord[], year: number) {
-  const prefix = `STF${year}`;
+function generateNextStaffNumber(existing: StaffRecord[], year: number, idPrefix: string) {
+  const prefix = `${idPrefix}${year}`;
   let maxSeq = 0;
   for (const s of existing) {
-    if (s.staff_number.toUpperCase().startsWith(prefix)) {
-      const numPart = parseInt(s.staff_number.slice(prefix.length), 10);
+    const sn = String(s.staff_number || "").toUpperCase();
+    if (sn.startsWith(prefix)) {
+      const numPart = parseInt(sn.slice(prefix.length), 10);
       if (!Number.isNaN(numPart) && numPart > maxSeq) {
         maxSeq = numPart;
       }
@@ -120,6 +130,17 @@ export default function StaffDirectoryPage() {
   const [staffList, setStaffList] = useState<StaffRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
+
+  const portalConfig: SchoolPortalConfig = useMemo(
+    () => getSchoolPortalConfig(schoolType),
+    [schoolType]
+  );
+  const formSpec = useMemo(
+    () => getSchoolFormConfig(schoolType).adminStaff,
+    [schoolType]
+  );
+
   const [stats, setStats] = useState<StaffStats>({
     total: 0,
     active: 0,
@@ -160,10 +181,11 @@ export default function StaffDirectoryPage() {
     staff_number: "",
     job_title: "",
     department_id: "",
+    assigned_unit: "",
     employment_type: "full_time",
     hire_date: todayIso,
     status: "active",
-    role_code: "hr_officer",
+    role_code: "bursar",
     salary_grade: "",
     password: "",
   });
@@ -183,6 +205,9 @@ export default function StaffDirectoryPage() {
         return;
       }
 
+      if (data.school_type) {
+        setSchoolType(toPortalSchoolType(data.school_type));
+      }
       setStaffList(data.staff || []);
       setDepartments(data.departments || []);
       setRoles(data.roles || []);
@@ -200,19 +225,32 @@ export default function StaffDirectoryPage() {
     fetchStaff();
   }, [fetchStaff]);
 
+  const roleChoices = useMemo(() => {
+    const merged = [...formSpec.roleOptions];
+    for (const r of roles) {
+      if (!merged.some((m) => m.code === r.code)) {
+        merged.push({ code: r.code, name: r.name });
+      }
+    }
+    return formSpec.roleOptions;
+  }, [formSpec.roleOptions, roles]);
+
   const openCreateModal = () => {
     setEditingStaff(null);
-    const defaultRole =
-      roles.find((r) => r.code === "hr_officer")?.code ||
-      roles[0]?.code ||
-      "hr_officer";
+    const defaultRole = formSpec.roleOptions[0]?.code || "bursar";
     setFormData({
       full_name: "",
       email: "",
       phone: "",
-      staff_number: generateNextStaffNumber(staffList, currentYear),
-      job_title: "",
-      department_id: departments[0]?.id || "",
+      staff_number: generateNextStaffNumber(staffList, currentYear, formSpec.idPrefix),
+      job_title: formSpec.roleOptions[0]?.name || "",
+      department_id:
+        formSpec.showDepartmentDropdown && schoolType === "university"
+          ? departments[0]?.id || ""
+          : "",
+      assigned_unit:
+        formSpec.officeOptions[0] ||
+        (departments[0]?.name ? departments[0].name : "Central Administration"),
       employment_type: "full_time",
       hire_date: todayIso,
       status: "active",
@@ -224,6 +262,7 @@ export default function StaffDirectoryPage() {
   };
 
   const openEditModal = (staff: StaffRecord) => {
+    const meta = staff.metadata || {};
     setEditingStaff(staff);
     setFormData({
       full_name: staff.full_name,
@@ -232,10 +271,12 @@ export default function StaffDirectoryPage() {
       staff_number: staff.staff_number,
       job_title: staff.job_title,
       department_id: staff.department_id || "",
+      assigned_unit:
+        meta.assigned_unit || staff.department_name || formSpec.officeOptions[0] || "",
       employment_type: staff.employment_type,
       hire_date: staff.hire_date || todayIso,
       status: staff.status,
-      role_code: staff.role_code || "hr_officer",
+      role_code: staff.role_code || formSpec.roleOptions[0]?.code || "hr_officer",
       salary_grade: staff.salary_grade || "",
       password: "",
     });
@@ -245,6 +286,17 @@ export default function StaffDirectoryPage() {
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    const selectedRoleSpec = formSpec.roleOptions.find((r) => r.code === formData.role_code);
+    const resolvedUnit = formData.department_id
+      ? departments.find((d) => d.id === formData.department_id)?.name || formData.assigned_unit
+      : formData.assigned_unit;
+
+    const metadataPayload = {
+      school_type: schoolType,
+      assigned_unit: resolvedUnit || "Central Administration",
+      school_type_role_label: selectedRoleSpec?.name || formData.job_title,
+    };
+
     try {
       const isEdit = modalMode === "edit" && editingStaff;
       const res = await fetch("/api/admin/staff", {
@@ -263,6 +315,7 @@ export default function StaffDirectoryPage() {
           status: formData.status,
           role_code: formData.role_code,
           salary_grade: formData.salary_grade,
+          metadata: metadataPayload,
           password: formData.password,
         }),
       });
@@ -308,7 +361,7 @@ export default function StaffDirectoryPage() {
 
       showNotification(
         "success",
-        `Staff member "${deleteTarget.full_name}" (${deleteTarget.staff_number}) deleted from database.`
+        `Staff member "${deleteTarget.full_name}" (${deleteTarget.staff_number}) deleted.`
       );
       setDeleteTarget(null);
       await fetchStaff();
@@ -322,6 +375,7 @@ export default function StaffDirectoryPage() {
   const filteredStaff = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return staffList.filter((s) => {
+      const unitLabel = s.metadata?.assigned_unit || s.department_name || "";
       const matchesSearch =
         !q ||
         s.full_name.toLowerCase().includes(q) ||
@@ -329,9 +383,11 @@ export default function StaffDirectoryPage() {
         s.email.toLowerCase().includes(q) ||
         s.job_title.toLowerCase().includes(q) ||
         s.role_name.toLowerCase().includes(q) ||
-        s.department_name.toLowerCase().includes(q);
+        unitLabel.toLowerCase().includes(q);
       const matchesDept =
-        departmentFilter === "all" || s.department_id === departmentFilter;
+        departmentFilter === "all" ||
+        s.department_id === departmentFilter ||
+        unitLabel === departmentFilter;
       const matchesRole = roleFilter === "all" || s.role_code === roleFilter;
       const matchesStatus = statusFilter === "all" || s.status === statusFilter;
       return matchesSearch && matchesDept && matchesRole && matchesStatus;
@@ -340,18 +396,18 @@ export default function StaffDirectoryPage() {
 
   const exportCSV = () => {
     const headers =
-      "Staff ID,Full Name,Email,Phone,Job Title,RBAC Role,Department,Employment Type,Salary Grade,Hire Date,Status\n";
+      "Staff ID,Full Name,Email,Phone,Position,Portal Role,Unit,Employment Type,Salary Grade,Hire Date,Status\n";
     const rows = filteredStaff
       .map(
         (s) =>
-          `"${s.staff_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${s.job_title.replace(/"/g, '""')}","${s.role_name}","${(s.department_name || "Unassigned").replace(/"/g, '""')}","${s.employment_type}","${s.salary_grade}","${s.hire_date}","${s.status}"`
+          `"${s.staff_number}","${s.full_name.replace(/"/g, '""')}","${s.email}","${s.phone}","${s.job_title.replace(/"/g, '""')}","${s.role_name}","${(s.metadata?.assigned_unit || s.department_name || "Central Administration").replace(/"/g, '""')}","${s.employment_type}","${s.salary_grade}","${s.hire_date}","${s.status}"`
       )
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `institutional_staff_${todayIso}.csv`;
+    a.download = `staff_${schoolType}_${todayIso}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -366,14 +422,21 @@ export default function StaffDirectoryPage() {
               Dashboard
             </Link>
             <span>/</span>
-            <span className="text-[#1E293B] font-semibold">Institutional Staff</span>
+            <span className="text-[#1E293B] font-semibold">
+              {formSpec.breadcrumbLabel}
+            </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] mt-1">
-            Institutional Staff Directory
-          </h1>
-          <p className="text-xs text-[#64748B]">
-            Create, edit, and delete administrative, registry, finance, library, hostel, HR, and operational staff.
-          </p>
+          <div className="flex flex-wrap items-center gap-2.5 mt-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B]">
+              {formSpec.pageTitle}
+            </h1>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${portalConfig.badgeClasses}`}
+            >
+              {portalConfig.portalBadge}
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">{formSpec.pageSubtitle}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -391,7 +454,7 @@ export default function StaffDirectoryPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0D9488] hover:bg-teal-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add Staff Member</span>
+            <span>{formSpec.addTitle}</span>
           </button>
         </div>
       </div>
@@ -404,9 +467,7 @@ export default function StaffDirectoryPage() {
               Total Staff
             </p>
             <p className="text-2xl font-bold text-[#1E293B] mt-1">{stats.total}</p>
-            <p className="text-[11px] text-[#64748B] mt-0.5">
-              Administrative & support
-            </p>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Administrative & support</p>
           </div>
           <div className="h-11 w-11 rounded-xl bg-teal-50 text-[#0D9488] flex items-center justify-center">
             <Users className="h-5 w-5" />
@@ -489,7 +550,7 @@ export default function StaffDirectoryPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by staff name, employee ID, email, job title, or role..."
+            placeholder={`Search by name, ${formSpec.idLabel.toLowerCase()}, email, title, or role...`}
             className="w-full pl-9 pr-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
           />
         </div>
@@ -502,10 +563,16 @@ export default function StaffDirectoryPage() {
               onChange={(e) => setDepartmentFilter(e.target.value)}
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="all">All Departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              <option value="all">All Units / Offices</option>
+              {formSpec.showDepartmentDropdown &&
+                departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              {formSpec.officeOptions.map((off) => (
+                <option key={off} value={off}>
+                  {off}
                 </option>
               ))}
             </select>
@@ -518,7 +585,7 @@ export default function StaffDirectoryPage() {
               className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
             >
               <option value="all">All Roles</option>
-              {roles.map((r) => (
+              {roleChoices.map((r) => (
                 <option key={r.code} value={r.code}>
                   {r.name}
                 </option>
@@ -558,9 +625,9 @@ export default function StaffDirectoryPage() {
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
                 <th className="py-3 px-4">Staff Member</th>
-                <th className="py-3 px-4">Staff ID</th>
-                <th className="py-3 px-4">Position & RBAC Role</th>
-                <th className="py-3 px-4">Department</th>
+                <th className="py-3 px-4">{formSpec.idLabel}</th>
+                <th className="py-3 px-4">Position & Role</th>
+                <th className="py-3 px-4">{formSpec.unitLabel}</th>
                 <th className="py-3 px-4">Type & Hire Date</th>
                 <th className="py-3 px-4">Salary Grade</th>
                 <th className="py-3 px-4">Status</th>
@@ -573,7 +640,7 @@ export default function StaffDirectoryPage() {
                   <td colSpan={8} className="py-12 text-center text-xs text-[#64748B]">
                     <div className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-[#0D9488]" />
-                      <span>Loading live institutional staff records...</span>
+                      <span>Loading live staff records...</span>
                     </div>
                   </td>
                 </tr>
@@ -587,6 +654,8 @@ export default function StaffDirectoryPage() {
                         .slice(0, 2)
                         .toUpperCase()
                     : "SF";
+                  const unitText =
+                    s.metadata?.assigned_unit || s.department_name || "Central Administration";
 
                   return (
                     <tr key={s.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
@@ -616,18 +685,12 @@ export default function StaffDirectoryPage() {
                           {s.role_name}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-[#475569]">
-                        {s.department_name || (
-                          <span className="text-[#94A3B8]">Central Administration</span>
-                        )}
-                      </td>
+                      <td className="py-3.5 px-4 text-[#475569]">{unitText}</td>
                       <td className="py-3.5 px-4">
                         <div className="uppercase text-[10px] font-bold text-[#475569]">
                           {s.employment_type.replace(/_/g, " ")}
                         </div>
-                        <div className="text-[11px] text-[#64748B]">
-                          Hired {s.hire_date}
-                        </div>
+                        <div className="text-[11px] text-[#64748B]">Hired {s.hire_date}</div>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-[#475569]">
                         {s.salary_grade || <span className="text-[#94A3B8]">—</span>}
@@ -645,7 +708,6 @@ export default function StaffDirectoryPage() {
                         <div className="inline-flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => openEditModal(s)}
-                            title="Edit Staff Member"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-[#F0FDFA] text-[#334155] hover:text-[#0D9488] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -653,7 +715,6 @@ export default function StaffDirectoryPage() {
                           </button>
                           <button
                             onClick={() => setDeleteTarget(s)}
-                            title="Delete Staff Member"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-red-50 text-[#64748B] hover:text-red-600 border border-[#E2E8F0] hover:border-red-200 text-xs font-semibold transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -668,7 +729,7 @@ export default function StaffDirectoryPage() {
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-xs text-[#94A3B8]">
                     {staffList.length === 0
-                      ? 'No institutional staff registered yet. Click "Add Staff Member" to create the first staff record.'
+                      ? `No staff registered yet. Click "${formSpec.addTitle}" above.`
                       : "No staff records match your active search or filters."}
                   </td>
                 </tr>
@@ -682,17 +743,15 @@ export default function StaffDirectoryPage() {
       {modalMode && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0">
+            <div className="px-6 py-4 border-b border-[#F1F5F9] flex items-center justify-between shrink-0 bg-slate-50/70">
               <div>
                 <h3 className="text-sm font-bold text-[#1E293B]">
                   {modalMode === "edit"
-                    ? `Edit Staff Member — ${editingStaff?.staff_number}`
-                    : "Register New Staff Member"}
+                    ? `${formSpec.editTitlePrefix} — ${editingStaff?.staff_number}`
+                    : formSpec.addTitle}
                 </h3>
                 <p className="text-[11px] text-[#64748B]">
-                  {modalMode === "edit"
-                    ? "Update employment record, administrative role, and portal login details."
-                    : "Provisions a live Supabase Auth account, HR staff record, and administrative RBAC role."}
+                  {modalMode === "edit" ? formSpec.editSubtitle : formSpec.addSubtitle}
                 </p>
               </div>
               <button
@@ -706,10 +765,7 @@ export default function StaffDirectoryPage() {
               </button>
             </div>
 
-            <form
-              onSubmit={handleSaveStaff}
-              className="p-6 space-y-4 overflow-y-auto"
-            >
+            <form onSubmit={handleSaveStaff} className="p-6 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -723,18 +779,18 @@ export default function StaffDirectoryPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, full_name: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Employee / Staff ID <span className="text-red-500">*</span>
+                    {formSpec.idLabel} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. STF20260001"
+                    placeholder={formSpec.idPlaceholder}
                     value={formData.staff_number}
                     onChange={(e) =>
                       setFormData({
@@ -742,7 +798,7 @@ export default function StaffDirectoryPage() {
                         staff_number: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs font-mono text-[#1E293B]"
                   />
                 </div>
               </div>
@@ -755,12 +811,10 @@ export default function StaffDirectoryPage() {
                   <input
                     type="email"
                     required
-                    placeholder="e.g. c.boateng@university.edu.gh"
+                    placeholder={formSpec.emailPlaceholder}
                     value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
@@ -772,15 +826,42 @@ export default function StaffDirectoryPage() {
                     type="tel"
                     placeholder="e.g. +233 24 000 0000"
                     value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-1">
+                    {getSchoolFormConfig(schoolType).portalLabel} Role <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.role_code}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      const match = formSpec.roleOptions.find((r) => r.code === nextRole);
+                      setFormData((prev) => ({
+                        ...prev,
+                        role_code: nextRole,
+                        job_title:
+                          !prev.job_title ||
+                          formSpec.roleOptions.some((ro) => ro.name === prev.job_title)
+                            ? match?.name || prev.job_title
+                            : prev.job_title,
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                  >
+                    {roleChoices.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
                     Position / Job Title <span className="text-red-500">*</span>
@@ -788,70 +869,96 @@ export default function StaffDirectoryPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Senior Admissions Officer"
+                    placeholder={formSpec.jobTitlePlaceholder}
                     value={formData.job_title}
                     onChange={(e) =>
                       setFormData({ ...formData, job_title: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    System RBAC Role <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.role_code}
-                    onChange={(e) =>
-                      setFormData({ ...formData, role_code: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
-                  >
-                    {roles.length > 0 ? (
-                      roles.map((r) => (
-                        <option key={r.code} value={r.code}>
-                          {r.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="hr_officer">HR Officer</option>
-                        <option value="registrar">Registrar</option>
-                        <option value="admissions_officer">Admissions Officer</option>
-                        <option value="finance_officer">Finance Officer</option>
-                        <option value="academic_affairs_officer">
-                          Academic Affairs Officer
-                        </option>
-                        <option value="librarian">Librarian</option>
-                        <option value="hostel_officer">Hostel Officer</option>
-                        <option value="auditor">Auditor</option>
-                      </>
-                    )}
-                  </select>
                 </div>
               </div>
 
+              {/* Dynamic Unit / Department / Office Assignment */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#334155] mb-1">
-                    Department / Unit
-                  </label>
-                  <select
-                    value={formData.department_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, department_id: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
-                  >
-                    <option value="">Central Administration</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {schoolType === "university" ? (
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      {formSpec.unitLabel}
+                    </label>
+                    <select
+                      value={formData.department_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, department_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      <option value="">Central Administration</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : schoolType === "high_school" ? (
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      {formSpec.unitLabel}
+                    </label>
+                    <select
+                      value={formData.assigned_unit}
+                      onChange={(e) =>
+                        setFormData({ ...formData, assigned_unit: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      {formSpec.officeOptions.map((off) => (
+                        <option key={off} value={off}>
+                          {off}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-[#334155] mb-1">
+                      {formSpec.unitLabel}
+                    </label>
+                    <select
+                      value={formData.department_id || formData.assigned_unit}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const isDept = departments.some((d) => d.id === val);
+                        setFormData({
+                          ...formData,
+                          department_id: isDept ? val : "",
+                          assigned_unit: isDept
+                            ? departments.find((d) => d.id === val)?.name || ""
+                            : val,
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
+                    >
+                      <optgroup label="Center Offices">
+                        {formSpec.officeOptions.map((off) => (
+                          <option key={off} value={off}>
+                            {off}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {departments.length > 0 && (
+                        <optgroup label="Trade Workshops / Classes">
+                          {departments.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-[#334155] mb-1">
@@ -864,7 +971,7 @@ export default function StaffDirectoryPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, salary_grade: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
               </div>
@@ -879,7 +986,7 @@ export default function StaffDirectoryPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, employment_type: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
                     {EMPLOYMENT_TYPES.map((t) => (
                       <option key={t.value} value={t.value}>
@@ -900,7 +1007,7 @@ export default function StaffDirectoryPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, hire_date: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   />
                 </div>
 
@@ -913,7 +1020,7 @@ export default function StaffDirectoryPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, status: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                   >
                     {STAFF_STATUSES.map((s) => (
                       <option key={s.value} value={s.value}>
@@ -942,7 +1049,7 @@ export default function StaffDirectoryPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, password: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B] focus:outline-none focus:border-[#0D9488] focus:bg-white"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#1E293B]"
                 />
               </div>
 
@@ -968,7 +1075,7 @@ export default function StaffDirectoryPage() {
                       ? "Saving..."
                       : modalMode === "edit"
                       ? "Save Changes"
-                      : "Add Staff Member"}
+                      : formSpec.addTitle}
                   </span>
                 </button>
               </div>

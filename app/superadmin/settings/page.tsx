@@ -55,6 +55,7 @@ import {
   Hammer,
 } from "lucide-react";
 import type { SchoolSidebarMenuItem, SchoolType } from "@/lib/superadmin/school-menu-service";
+import { LandingPageEditor } from "@/components/superadmin/LandingPageEditor";
 
 const ICON_COMPONENTS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutGrid,
@@ -100,7 +101,7 @@ const CATEGORY_OPTIONS = [
 
 export default function PlatformSettingsPage() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"menu" | "platform">("menu");
+  const [activeTab, setActiveTab] = useState<"menu" | "platform" | "landing">("menu");
 
   // School Menu Items State
   const [menuItems, setMenuItems] = useState<SchoolSidebarMenuItem[]>([]);
@@ -176,6 +177,10 @@ export default function PlatformSettingsPage() {
       const urlSearch = params.get("search");
       if (urlSearch) {
         setSearchQuery(urlSearch);
+      }
+      const urlTab = params.get("tab");
+      if (urlTab === "landing" || urlTab === "platform" || urlTab === "menu") {
+        setActiveTab(urlTab);
       }
     }
 
@@ -475,7 +480,11 @@ export default function PlatformSettingsPage() {
           <span>System Settings</span>
           <span className="text-slate-300">/</span>
           <span className="text-slate-800 font-semibold">
-            {activeTab === "menu" ? "Schools Sidebar Menu & Modules" : "Maintenance & Platform Policies"}
+            {activeTab === "menu"
+              ? "Schools Sidebar Menu & Modules"
+              : activeTab === "landing"
+              ? "Landing Page Content"
+              : "Maintenance & Platform Policies"}
           </span>
         </div>
 
@@ -497,6 +506,14 @@ export default function PlatformSettingsPage() {
               <span>Add Sidebar Module</span>
             </button>
           </div>
+        ) : activeTab === "landing" ? (
+          <Link
+            href="/super-admin/settings/landing-page"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all"
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-blue-600" />
+            <span>Open Dedicated CMS View</span>
+          </Link>
         ) : (
           <button
             onClick={handleSavePlatformSettings}
@@ -509,10 +526,10 @@ export default function PlatformSettingsPage() {
       </div>
 
       {/* Main Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-slate-200">
+      <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200">
         <button
           onClick={() => setActiveTab("menu")}
-          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === "menu"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -527,7 +544,7 @@ export default function PlatformSettingsPage() {
 
         <button
           onClick={() => setActiveTab("platform")}
-          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === "platform"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -535,6 +552,21 @@ export default function PlatformSettingsPage() {
         >
           <Sliders className="h-4 w-4" />
           <span>Maintenance & Security Policies</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("landing")}
+          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
+            activeTab === "landing"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Globe className="h-4 w-4" />
+          <span>Landing Page Content</span>
+          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+            CMS
+          </span>
         </button>
       </div>
 
@@ -1114,6 +1146,9 @@ export default function PlatformSettingsPage() {
           </div>
         </div>
       )}
+
+      {/* TAB 3: DYNAMIC LANDING PAGE CMS EDITOR */}
+      {activeTab === "landing" && <LandingPageEditor />}
 
       {/* ADD / EDIT MODAL */}
       {isModalOpen && (
