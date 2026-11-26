@@ -12,6 +12,7 @@ import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
+import { CountryFlagBadge } from "@/components/ui/CountryFlagBadge";
 import {
   getAcademicStaffPortalConfig,
   isAcademicStaffRouteAllowedForSchoolType,
@@ -42,6 +43,7 @@ import {
   Loader2,
   LogOut,
   Search,
+  Bell,
 } from "lucide-react";
 
 const STAFF_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -84,6 +86,8 @@ export default function AcademicStaffLayoutShell({
   const [schoolName, setSchoolName] = useState("");
   const [schoolAbbr, setSchoolAbbr] = useState("");
   const [schoolLogo, setSchoolLogo] = useState("");
+  const [schoolCountry, setSchoolCountry] = useState("");
+  const [schoolCountryCode, setSchoolCountryCode] = useState("");
   const [schoolType, setSchoolType] = useState<PortalSchoolType>(
     portalMount === "lecturer" ? "university" : "high_school"
   );
@@ -162,6 +166,8 @@ export default function AcademicStaffLayoutShell({
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
       setSchoolLogo(tenantRes.schoolLogo);
+      setSchoolCountry(tenantRes.country || "");
+      setSchoolCountryCode(tenantRes.countryCode || "");
       setSchoolType(getAcademicStaffPortalConfig(tenantRes.schoolType).schoolType);
 
       try {
@@ -218,6 +224,8 @@ export default function AcademicStaffLayoutShell({
       if (e.detail?.abbreviation) setSchoolAbbr(e.detail.abbreviation);
       if (e.detail?.logoUrl !== undefined) setSchoolLogo(e.detail.logoUrl);
       if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
+      if (e.detail?.country !== undefined) setSchoolCountry(e.detail.country || "");
+      if (e.detail?.country_code !== undefined) setSchoolCountryCode(e.detail.country_code || "");
       if (e.detail?.school_type) {
         setSchoolType(getAcademicStaffPortalConfig(e.detail.school_type).schoolType);
       }
@@ -481,8 +489,29 @@ export default function AcademicStaffLayoutShell({
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <ThemeToggle variant="compact" align="right" />
+
+            <CountryFlagBadge
+              country={schoolCountry}
+              countryCode={schoolCountryCode}
+              schoolName={schoolName}
+            />
+
+            <Link
+              href={
+                schoolType === "high_school"
+                  ? "/teacher/messages"
+                  : schoolType === "university"
+                  ? "/lecturer/dashboard"
+                  : "/teacher/dashboard"
+              }
+              title="Notifications"
+              aria-label="Notifications"
+              className="relative h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <Bell className="h-4 w-4" />
+            </Link>
 
             <div className="relative">
               <button

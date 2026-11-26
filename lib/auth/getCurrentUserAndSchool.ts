@@ -5,6 +5,7 @@ import {
   toPortalSchoolType,
   type PortalSchoolType,
 } from "@/config/schoolPortalConfig";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 
 export interface CurrentUserAndSchool {
   user: any;
@@ -20,6 +21,8 @@ export interface CurrentUserAndSchool {
   schoolAbbr: string;
   schoolLogo: string;
   schoolType: PortalSchoolType;
+  country: string;
+  countryCode: string;
   currency: string;
   currencySymbol: string;
   academicSettings: Record<string, any>;
@@ -167,16 +170,40 @@ export const getCurrentUserAndSchool = cache(
 
       let schoolRow: any = null;
       if (schoolId && UUID_REGEX.test(schoolId)) {
-        const { data } = await directAdmin
+        const resWithCountry = await directAdmin
           .from("schools")
           .select(
-            "id, name, short_name, slug, tenant_slug, school_type, currency, logo_url, status, academic_settings"
+            "id, name, short_name, slug, tenant_slug, school_type, country, country_code, address, currency, logo_url, status, academic_settings"
           )
           .eq("id", schoolId)
           .maybeSingle()
-          .then((r: any) => r, () => ({ data: null }));
-        schoolRow = data || null;
+          .then((r: any) => r, (err: any) => ({ data: null, error: err }));
+
+        if (
+          resWithCountry?.error &&
+          (resWithCountry.error.code === "42703" ||
+            resWithCountry.error.code === "PGRST204" ||
+            String(resWithCountry.error.message || "").includes("column"))
+        ) {
+          const fallbackRes = await directAdmin
+            .from("schools")
+            .select(
+              "id, name, short_name, slug, tenant_slug, school_type, address, currency, logo_url, status, academic_settings"
+            )
+            .eq("id", schoolId)
+            .maybeSingle()
+            .then((r: any) => r, () => ({ data: null }));
+          schoolRow = fallbackRes?.data || null;
+        } else {
+          schoolRow = resWithCountry?.data || null;
+        }
       }
+
+      const resolvedCountry = resolveSchoolCountry({
+        country: schoolRow?.country,
+        countryCode: schoolRow?.country_code,
+        address: schoolRow?.address,
+      });
 
       const currency = String(schoolRow?.currency || "USD");
       const schoolName = String(schoolRow?.name || "");
@@ -217,6 +244,8 @@ export const getCurrentUserAndSchool = cache(
         schoolAbbr,
         schoolLogo: String(schoolRow?.logo_url || ""),
         schoolType: toPortalSchoolType(schoolRow?.school_type),
+        country: resolvedCountry.country,
+        countryCode: resolvedCountry.countryCode,
         currency,
         currencySymbol: currencySymbolFor(currency),
         academicSettings:

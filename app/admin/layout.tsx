@@ -17,6 +17,7 @@ import {
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
+import { CountryFlagBadge } from "@/components/ui/CountryFlagBadge";
 import {
   LayoutGrid,
   GraduationCap,
@@ -125,6 +126,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
   const [schoolType, setSchoolType] = useState<string>("");
+  const [schoolCountry, setSchoolCountry] = useState<string>("");
+  const [schoolCountryCode, setSchoolCountryCode] = useState<string>("");
   const [adminSchoolId, setAdminSchoolId] = useState<string | null>(null);
   const [tenantLoaded, setTenantLoaded] = useState<boolean>(false);
   const { loaded: flagsLoaded, isHrefEnabled, findDisabledForPath } =
@@ -250,6 +253,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             if (data?.name) setSchoolName(data.name);
             if (data?.abbreviation) setSchoolAbbr(data.abbreviation);
             if (data?.logo_url) setSchoolLogo(data.logo_url);
+            if (data?.country) setSchoolCountry(data.country);
+            if (data?.country_code) setSchoolCountryCode(data.country_code);
             if (data?.school_type) {
               currentSchoolType = normalizeSchoolType(data.school_type);
               setSchoolType(currentSchoolType);
@@ -336,6 +341,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       if (e.detail?.abbreviation) setSchoolAbbr(e.detail.abbreviation);
       if (e.detail?.logoUrl !== undefined) setSchoolLogo(e.detail.logoUrl);
       if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
+      if (e.detail?.country !== undefined) setSchoolCountry(e.detail.country || "");
+      if (e.detail?.country_code !== undefined) setSchoolCountryCode(e.detail.country_code || "");
     };
 
     const handleSchoolMenuUpdate = () => {
@@ -725,10 +732,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <div className="flex items-center gap-1.5">
               <ThemeToggle variant="compact" align="right" />
 
+              <CountryFlagBadge
+                country={schoolCountry}
+                countryCode={schoolCountryCode}
+                schoolName={schoolName}
+              />
+
               {/* Notifications */}
               <Link
                 href="/admin/settings#notifications"
-                className="relative h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                className="relative h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
                 title="Notifications"
               >
                 <Bell className="h-4 w-4" />

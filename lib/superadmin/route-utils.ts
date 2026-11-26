@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { normalizeSchoolType } from "@/lib/academics/school-terminology";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 
 export interface ParsedSchoolAdminInput {
   full_name: string;
@@ -128,13 +129,19 @@ export function normalizeSchoolPayload(body: any, isCreate: boolean) {
 
   if (isCreate) {
     const resolvedType = normalizeSchoolType(schoolType);
+    const resolvedCountry = resolveSchoolCountry({
+      country: body.country,
+      countryCode: body.country_code,
+      address: body.address,
+    });
     return {
       name: body.name.trim(),
       code: body.code.trim().toUpperCase(),
       short_name: body.short_name?.trim() || "",
       school_type: resolvedType,
       institution_type: resolvedType,
-      country: body.country?.trim() || "",
+      country: resolvedCountry.country || body.country?.trim() || "",
+      country_code: resolvedCountry.countryCode || body.country_code?.trim().toUpperCase() || "",
       city: body.city?.trim() || "",
       address: body.address?.trim() || "",
       postal_code: body.postal_code?.trim() || "",
@@ -161,13 +168,27 @@ export function normalizeSchoolPayload(body: any, isCreate: boolean) {
       ? normalizeSchoolType(schoolType)
       : undefined;
 
+  const hasCountryUpdate =
+    body.country !== undefined || body.country_code !== undefined;
+  const resolvedCountryUpdate = hasCountryUpdate
+    ? resolveSchoolCountry({
+        country: body.country,
+        countryCode: body.country_code,
+      })
+    : null;
+
   return {
     name: body.name?.trim(),
     code: body.code?.trim() ? body.code.trim().toUpperCase() : undefined,
     short_name: body.short_name?.trim(),
     school_type: normalizedType,
     institution_type: normalizedType,
-    country: body.country?.trim(),
+    country: hasCountryUpdate
+      ? resolvedCountryUpdate?.country || body.country?.trim() || ""
+      : undefined,
+    country_code: hasCountryUpdate
+      ? resolvedCountryUpdate?.countryCode || body.country_code?.trim().toUpperCase() || ""
+      : undefined,
     city: body.city?.trim(),
     address: body.address?.trim(),
     postal_code: body.postal_code?.trim(),

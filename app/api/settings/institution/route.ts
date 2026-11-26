@@ -4,6 +4,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { resolveTenantContextFromHeaders } from "@/lib/saas/tenant-context";
 import { getUniversities } from "@/lib/superadmin/service";
 import { normalizeSchoolType } from "@/lib/academics/school-terminology";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 import {
   resolveAdminTenantRequest,
   resolveTargetSchoolForMutation,
@@ -165,15 +166,36 @@ export async function GET(request: NextRequest) {
     if (UUID_REGEX.test(resolvedSchoolId)) {
       try {
         const directAdmin = createDirectAdminClient();
-        const { data: liveSchool } = await (directAdmin as any)
+        let { data: liveSchool, error: liveSchoolErr } = await (directAdmin as any)
           .from("schools")
           .select(
-            "id, name, short_name, slug, tenant_slug, school_type, country, city, address, email, phone, website, logo_url, motto, currency, status, academic_settings, created_at, updated_at"
+            "id, name, short_name, slug, tenant_slug, school_type, country, country_code, city, address, email, phone, website, logo_url, motto, currency, status, academic_settings, created_at, updated_at"
           )
           .eq("id", resolvedSchoolId)
           .maybeSingle();
 
+        if (
+          liveSchoolErr &&
+          (liveSchoolErr.code === "42703" ||
+            liveSchoolErr.code === "PGRST204" ||
+            String(liveSchoolErr.message || "").includes("column"))
+        ) {
+          const fallback = await (directAdmin as any)
+            .from("schools")
+            .select(
+              "id, name, short_name, slug, tenant_slug, school_type, country, city, address, email, phone, website, logo_url, motto, currency, status, academic_settings, created_at, updated_at"
+            )
+            .eq("id", resolvedSchoolId)
+            .maybeSingle();
+          liveSchool = fallback.data;
+        }
+
         if (liveSchool?.id) {
+          const resolvedCountry = resolveSchoolCountry({
+            country: liveSchool.country,
+            countryCode: liveSchool.country_code,
+            address: liveSchool.address,
+          });
           matchedSchool = {
             id: liveSchool.id,
             code: String(liveSchool.tenant_slug || liveSchool.slug || "SCH").toUpperCase(),
@@ -181,7 +203,8 @@ export async function GET(request: NextRequest) {
             short_name: liveSchool.short_name || liveSchool.name,
             school_type: liveSchool.school_type || "university",
             institution_type: liveSchool.school_type || "university",
-            country: liveSchool.country || "",
+            country: resolvedCountry.country || liveSchool.country || "",
+            country_code: resolvedCountry.countryCode || liveSchool.country_code || "",
             city: liveSchool.city || "",
             address: liveSchool.address || "",
             email: liveSchool.email || "",
@@ -219,6 +242,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const resolvedOutCountry = resolveSchoolCountry({
+      country: matchedSchool.country,
+      countryCode: (matchedSchool as any).country_code,
+      address: matchedSchool.address,
+    });
     const sType = normalizeSchoolType(
       matchedSchool.school_type || matchedSchool.institution_type
     );
@@ -241,7 +269,9 @@ export async function GET(request: NextRequest) {
       phone: matchedSchool.phone || "",
       address: matchedSchool.address || "",
       city: matchedSchool.city || "",
-      country: matchedSchool.country || "",
+      country: resolvedOutCountry.country || matchedSchool.country || "",
+      country_code:
+        resolvedOutCountry.countryCode || (matchedSchool as any).country_code || "",
       currency: matchedSchool.default_currency || "",
       currency_symbol: matchedSchool.currency_symbol || "",
       academic_settings: (matchedSchool as any).academic_settings || {},

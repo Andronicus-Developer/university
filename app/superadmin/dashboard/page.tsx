@@ -47,6 +47,9 @@ import {
   AVAILABLE_UNIVERSITY_ROLES,
 } from "@/lib/superadmin/service";
 import { InitialSchoolAdminFields } from "@/components/superadmin/InitialSchoolAdminFields";
+import { AfricanCountrySelect } from "@/components/superadmin/AfricanCountrySelect";
+import { CountryFlagBadge } from "@/components/ui/CountryFlagBadge";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 
 export default function SuperAdminDashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -91,6 +94,7 @@ export default function SuperAdminDashboardPage() {
   const [univShortName, setUnivShortName] = useState("");
   const [univSchoolType, setUnivSchoolType] = useState<"university" | "high_school" | "vocational_school">("university");
   const [univCountry, setUnivCountry] = useState("");
+  const [univCountryCode, setUnivCountryCode] = useState("");
   const [univCity, setUnivCity] = useState("");
   const [univAddress, setUnivAddress] = useState("");
   const [univEmail, setUnivEmail] = useState("");
@@ -128,6 +132,7 @@ export default function SuperAdminDashboardPage() {
     setUnivShortName("");
     setUnivSchoolType("university");
     setUnivCountry("");
+    setUnivCountryCode("");
     setUnivCity("");
     setUnivAddress("");
     setUnivEmail("");
@@ -308,8 +313,16 @@ export default function SuperAdminDashboardPage() {
         );
 
     list.sort((a, b) => {
-      const countryA = (a.country || "Ghana").toLowerCase();
-      const countryB = (b.country || "Ghana").toLowerCase();
+      const countryA = resolveSchoolCountry({
+        country: a.country,
+        countryCode: a.country_code,
+        address: a.address,
+      }).country.toLowerCase();
+      const countryB = resolveSchoolCountry({
+        country: b.country,
+        countryCode: b.country_code,
+        address: b.address,
+      }).country.toLowerCase();
       const nameA = (a.name || "").toLowerCase();
       const nameB = (b.name || "").toLowerCase();
       const cmp =
@@ -330,6 +343,11 @@ export default function SuperAdminDashboardPage() {
 
     if (!univName || !univCode) {
       setUnivError("School name and code are required.");
+      return;
+    }
+
+    if (!univCountry.trim()) {
+      setUnivError("Please select the school's country.");
       return;
     }
 
@@ -368,6 +386,7 @@ export default function SuperAdminDashboardPage() {
         school_type: univSchoolType,
         institution_type: univSchoolType,
         country: univCountry.trim(),
+        country_code: univCountryCode || undefined,
         city: univCity.trim(),
         address: univAddress.trim(),
         email: univEmail.trim(),
@@ -879,7 +898,20 @@ export default function SuperAdminDashboardPage() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4 font-medium text-slate-700">
-                          {u.city}, {u.country}
+                          <div className="flex flex-col gap-1">
+                            <span>{u.city || "—"}</span>
+                            {u.country ? (
+                              <CountryFlagBadge
+                                country={u.country}
+                                countryCode={u.country_code}
+                                schoolName={u.name}
+                                showName
+                                className="w-fit"
+                              />
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Country unset</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="font-semibold text-slate-800">
@@ -1484,12 +1516,17 @@ export default function SuperAdminDashboardPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Country</label>
-                    <input
-                      type="text"
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Country <span className="text-red-500">*</span>
+                    </label>
+                    <AfricanCountrySelect
                       value={univCountry}
-                      onChange={(e) => setUnivCountry(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 shadow-2xs"
+                      countryCode={univCountryCode}
+                      required
+                      onChange={(countryName, codeVal) => {
+                        setUnivCountry(countryName);
+                        setUnivCountryCode(codeVal);
+                      }}
                     />
                   </div>
 

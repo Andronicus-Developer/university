@@ -3,13 +3,14 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, X } from "lucide-react";
+import { Bell, LogOut, Menu, X } from "lucide-react";
 import { resolveClientTenantContext } from "@/lib/saas/useTenantInstitution";
 import { signOutUser } from "@/lib/auth/signout";
 import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
+import { CountryFlagBadge } from "@/components/ui/CountryFlagBadge";
 
 export interface ClassicNavItem {
   id: string;
@@ -45,6 +46,8 @@ export function ClassicPortalShell({
   const [schoolName, setSchoolName] = useState<string>("");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [schoolCountry, setSchoolCountry] = useState<string>("");
+  const [schoolCountryCode, setSchoolCountryCode] = useState<string>("");
   const [userName, setUserName] = useState<string>(defaultUserTitle);
   const [userEmail, setUserEmail] = useState<string>("");
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
@@ -85,10 +88,23 @@ export function ClassicPortalShell({
       setSchoolName(tenantRes.schoolName || "");
       setSchoolAbbr(tenantRes.schoolAbbr || "");
       setSchoolLogo(tenantRes.schoolLogo || "");
+      setSchoolCountry(tenantRes.country || "");
+      setSchoolCountryCode(tenantRes.countryCode || "");
     }
     load();
+
+    const handleInstitutionUpdate = (e: any) => {
+      if (e.detail?.name) setSchoolName(e.detail.name);
+      if (e.detail?.abbreviation) setSchoolAbbr(e.detail.abbreviation);
+      if (e.detail?.logoUrl !== undefined) setSchoolLogo(e.detail.logoUrl);
+      if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
+      if (e.detail?.country !== undefined) setSchoolCountry(e.detail.country || "");
+      if (e.detail?.country_code !== undefined) setSchoolCountryCode(e.detail.country_code || "");
+    };
+    window.addEventListener("institution_updated", handleInstitutionUpdate);
     return () => {
       mounted = false;
+      window.removeEventListener("institution_updated", handleInstitutionUpdate);
     };
   }, [defaultUserTitle]);
 
@@ -271,8 +287,21 @@ export function ClassicPortalShell({
             </div>
             {headerSlot}
           </div>
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <ThemeToggle />
+            <CountryFlagBadge
+              country={schoolCountry}
+              countryCode={schoolCountryCode}
+              schoolName={schoolName}
+            />
+            <Link
+              href={homeHref}
+              title="Notifications"
+              aria-label="Notifications"
+              className="relative h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <Bell className="h-4 w-4" />
+            </Link>
             <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-700">
               <UserAvatar src={avatarUrl} name={userName} size="sm" />
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-[120px] truncate">

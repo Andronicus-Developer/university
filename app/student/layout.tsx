@@ -12,6 +12,7 @@ import { UnlinkedSchoolNotice } from "@/components/saas/UnlinkedSchoolNotice";
 import { useFeatureFlags } from "@/lib/superadmin/useFeatureFlags";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { UserAvatar, useCurrentUserAvatar } from "@/components/profile/UserAvatar";
+import { CountryFlagBadge } from "@/components/ui/CountryFlagBadge";
 import {
   getStudentPortalConfig,
   isStudentRouteAllowedForSchoolType,
@@ -44,6 +45,7 @@ import {
   Loader2,
   LogOut,
   Boxes,
+  Bell,
 } from "lucide-react";
 
 interface StudentLayoutProps {
@@ -87,6 +89,8 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   const [schoolName, setSchoolName] = useState<string>("");
   const [schoolAbbr, setSchoolAbbr] = useState<string>("");
   const [schoolLogo, setSchoolLogo] = useState<string>("");
+  const [schoolCountry, setSchoolCountry] = useState<string>("");
+  const [schoolCountryCode, setSchoolCountryCode] = useState<string>("");
   const [schoolType, setSchoolType] = useState<PortalSchoolType>("university");
   const [tenantLoaded, setTenantLoaded] = useState<boolean>(false);
   const [tenantError, setTenantError] = useState<string | null>(null);
@@ -169,6 +173,8 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       setSchoolName(tenantRes.schoolName);
       setSchoolAbbr(tenantRes.schoolAbbr);
       setSchoolLogo(tenantRes.schoolLogo);
+      setSchoolCountry(tenantRes.country || "");
+      setSchoolCountryCode(tenantRes.countryCode || "");
       const initialCfg = getStudentPortalConfig(tenantRes.schoolType);
       setSchoolType(initialCfg.schoolType);
 
@@ -237,6 +243,8 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       if (e.detail?.abbreviation) setSchoolAbbr(e.detail.abbreviation);
       if (e.detail?.logoUrl !== undefined) setSchoolLogo(e.detail.logoUrl);
       if (e.detail?.logo_url !== undefined) setSchoolLogo(e.detail.logo_url);
+      if (e.detail?.country !== undefined) setSchoolCountry(e.detail.country || "");
+      if (e.detail?.country_code !== undefined) setSchoolCountryCode(e.detail.country_code || "");
       if (e.detail?.school_type) {
         setSchoolType(getStudentPortalConfig(e.detail.school_type).schoolType);
       }
@@ -493,6 +501,21 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             </div>
 
             <ThemeToggle variant="compact" align="right" />
+
+            <CountryFlagBadge
+              country={schoolCountry}
+              countryCode={schoolCountryCode}
+              schoolName={schoolName}
+            />
+
+            <Link
+              href="/student/dashboard"
+              title="Notifications"
+              aria-label="Notifications"
+              className="relative h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <Bell className="h-4 w-4" />
+            </Link>
 
             {/* Profile Dropdown */}
             <div className="relative">

@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 
 export type ClientTenantResolution =
   | { status: "unauthenticated" }
@@ -13,6 +14,8 @@ export type ClientTenantResolution =
       schoolAbbr: string;
       schoolLogo: string;
       schoolType: string;
+      country: string;
+      countryCode: string;
       currency: string;
       currencySymbol: string;
       isSuperAdmin: boolean;
@@ -109,6 +112,12 @@ export async function resolveClientTenantContext(
         };
       }
 
+      const resolvedCountry = resolveSchoolCountry({
+        country: data?.country,
+        countryCode: data?.country_code,
+        address: data?.address,
+      });
+
       const okResult: ClientTenantResolution = {
         status: "ok",
         user: currentUser,
@@ -117,6 +126,8 @@ export async function resolveClientTenantContext(
         schoolAbbr: String(data?.abbreviation || data?.code || ""),
         schoolLogo: String(data?.logo_url || ""),
         schoolType: String(data?.school_type || data?.institution_type || ""),
+        country: resolvedCountry.country,
+        countryCode: resolvedCountry.countryCode,
         currency: String(data?.currency || ""),
         currencySymbol: String(data?.currency_symbol || ""),
         isSuperAdmin,

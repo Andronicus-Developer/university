@@ -5,6 +5,7 @@ import {
   unregisterDynamicUser,
   unregisterDynamicUsersForSchool,
 } from "@/lib/supabase/fetch";
+import { resolveSchoolCountry } from "@/lib/africanCountries";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -279,6 +280,7 @@ async function insertLiveSchoolRow(
     default_currency: string;
     city?: string;
     country?: string;
+    country_code?: string;
     address?: string;
     phone?: string;
     email?: string;
@@ -286,7 +288,14 @@ async function insertLiveSchoolRow(
 ): Promise<{ id: string }> {
   const dbStatus = payload.status === "maintenance" ? "active" : payload.status || "active";
   const slug = payload.code.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
-  const addressParts = [payload.address, payload.city, payload.country].map((v) => String(v || "").trim()).filter(Boolean);
+  const resolvedCountry = resolveSchoolCountry({
+    country: payload.country,
+    countryCode: payload.country_code,
+    address: payload.address,
+  });
+  const countryName = resolvedCountry.country || payload.country?.trim() || "";
+  const countryCode = resolvedCountry.countryCode || payload.country_code?.trim().toUpperCase() || "";
+  const addressParts = [payload.address, payload.city, countryName].map((v) => String(v || "").trim()).filter(Boolean);
   const fullAddress = addressParts.join(", ") || null;
 
   const richInsert: Record<string, any> = {
@@ -296,6 +305,8 @@ async function insertLiveSchoolRow(
     school_type: payload.school_type || "university",
     status: dbStatus,
     currency: payload.default_currency || "USD",
+    country: countryName || null,
+    country_code: countryCode || null,
     address: fullAddress,
     phone: payload.phone || null,
     email: payload.email || null,
@@ -574,6 +585,7 @@ export interface UniversityItem {
   school_type?: SchoolType;
   institution_type?: SchoolType;
   country: string;
+  country_code?: string;
   city: string;
   address?: string;
   postal_code?: string;
@@ -903,11 +915,18 @@ export async function updateUniversity(
 
   const existing = universities[index];
   const targetSchoolType = updates.school_type || updates.institution_type || existing.school_type || existing.institution_type || "university";
+  const resolvedCountry = resolveSchoolCountry({
+    country: updates.country !== undefined ? updates.country : existing.country,
+    countryCode:
+      updates.country_code !== undefined ? updates.country_code : existing.country_code,
+  });
 
   const updatedUniv: UniversityItem = {
     ...existing,
     ...updates,
     id: existing.id,
+    country: resolvedCountry.country || updates.country || existing.country || "",
+    country_code: resolvedCountry.countryCode || updates.country_code || existing.country_code || "",
     school_type: targetSchoolType,
     institution_type: targetSchoolType,
     full_access: updates.full_access !== undefined ? Boolean(updates.full_access) : (existing.full_access ?? true),
@@ -929,6 +948,7 @@ export async function updateUniversity(
         school_type: targetSchoolType,
         institution_type: targetSchoolType,
         country: updatedUniv.country,
+        country_code: updatedUniv.country_code || null,
         city: updatedUniv.city,
         address: updatedUniv.address,
         postal_code: updatedUniv.postal_code,
@@ -960,7 +980,7 @@ export async function updateUniversity(
     .join(", ");
   try {
     const directAdmin = createDirectAdminClient();
-    await (directAdmin as any)
+    const { error: liveUpdateErr } = await (directAdmin as any)
       .from("schools")
       .update({
         name: updatedUniv.name,
@@ -969,12 +989,38 @@ export async function updateUniversity(
         school_type: targetSchoolType,
         status: dbSchoolStatus,
         currency: updatedUniv.default_currency,
+        country: updatedUniv.country || null,
+        country_code: updatedUniv.country_code || null,
         address: schoolAddress || null,
         phone: updatedUniv.phone || null,
         email: updatedUniv.email || null,
         updated_at: now,
       })
       .eq("id", existing.id);
+
+    if (
+      liveUpdateErr &&
+      (liveUpdateErr.code === "42703" ||
+        liveUpdateErr.code === "PGRST204" ||
+        String(liveUpdateErr.message || "").includes("column") ||
+        String(liveUpdateErr.message || "").includes("schema cache"))
+    ) {
+      await (directAdmin as any)
+        .from("schools")
+        .update({
+          name: updatedUniv.name,
+          slug: updatedUniv.code.toLowerCase(),
+          tenant_slug: updatedUniv.code.toLowerCase(),
+          school_type: targetSchoolType,
+          status: dbSchoolStatus,
+          currency: updatedUniv.default_currency,
+          address: schoolAddress || null,
+          phone: updatedUniv.phone || null,
+          email: updatedUniv.email || null,
+          updated_at: now,
+        })
+        .eq("id", existing.id);
+    }
   } catch (liveErr) {
     console.warn("Could not update live public.schools table:", liveErr);
   }
@@ -2362,6 +2408,12 @@ export async function getUniversities(): Promise<UniversityItem[]> {
         seenLiveIds.add(sId.toLowerCase());
         if (vMatch?.id) seenBaseIds.add(String(vMatch.id).toLowerCase());
 
+        const resolvedCountry = resolveSchoolCountry({
+          country: s.country || vMatch?.country,
+          countryCode: s.country_code || vMatch?.country_code,
+          address: s.address || vMatch?.address,
+        });
+
         merged.push({
           ...(vMatch || {}),
           id: s.id,
@@ -2370,7 +2422,8 @@ export async function getUniversities(): Promise<UniversityItem[]> {
           short_name: vMatch?.short_name || s.name || "",
           school_type: sType,
           institution_type: sType,
-          country: vMatch?.country || "",
+          country: resolvedCountry.country || vMatch?.country || "",
+          country_code: resolvedCountry.countryCode || vMatch?.country_code || "",
           city: vMatch?.city || "",
           address: s.address || vMatch?.address || "",
           email: s.email || vMatch?.email || "",
@@ -2740,6 +2793,7 @@ export async function createUniversity(
     default_currency: payload.default_currency || "USD",
     city: payload.city,
     country: payload.country,
+    country_code: (payload as any).country_code,
     address: payload.address,
     phone: payload.phone,
     email: payload.email,
