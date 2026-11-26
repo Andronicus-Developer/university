@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { LoginIllustration } from "@/app/components/LoginIllustration";
 import { ErudianLogo } from "@/components/brand/ErudianLogo";
@@ -14,6 +14,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -365,9 +366,9 @@ export default function LoginPage() {
                 </div>
 
                 {/* Password */}
-                <div>
+                <div className="relative">
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     name="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -375,8 +376,21 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     aria-label="Password"
                     required
-                    className="w-full bg-transparent pb-2 text-[13px] font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-medium border-b-[1.5px] border-slate-200 dark:border-slate-700 focus:border-[#7C3AED] focus:outline-none transition-colors"
+                    className="w-full bg-transparent pb-2 pr-10 text-[13px] font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-medium border-b-[1.5px] border-slate-200 dark:border-slate-700 focus:border-[#7C3AED] focus:outline-none transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute right-0 top-0 bottom-2 inline-flex items-center justify-center px-1.5 rounded text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED] transition-colors cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
                 </div>
 
                 {/* Remember me & Forgot password */}
