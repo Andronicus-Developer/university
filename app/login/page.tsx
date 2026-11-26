@@ -392,14 +392,6 @@ export default function LoginPage() {
                       Remember me
                     </span>
                   </label>
-
-                  <a
-                    href="#forgot-password"
-                    onClick={(e) => e.preventDefault()}
-                    className="text-blue-600 hover:text-blue-800 transition-colors font-semibold"
-                  >
-                    Forgot password?
-                  </a>
                 </div>
 
                 {/* Login Button */}
