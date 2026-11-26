@@ -24,6 +24,9 @@ export type LandingActionResult<T> =
 function revalidateAllLandingPaths() {
   updateTag(LANDING_CONTENT_CACHE_TAG);
   revalidatePath("/");
+  revalidatePath("/login");
+  revalidatePath("/sitemap.xml");
+  revalidatePath("/robots.txt");
   revalidatePath("/superadmin/settings");
   revalidatePath("/super-admin/settings");
   revalidatePath("/superadmin/settings/landing-page");

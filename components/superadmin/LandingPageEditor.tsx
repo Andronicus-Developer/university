@@ -189,6 +189,7 @@ export function LandingPageEditor() {
     faq: null,
     cta_banner: null,
     footer: null,
+    seo: null,
   });
 
   const [activeSection, setActiveSection] = useState<LandingSectionKey>("hero");

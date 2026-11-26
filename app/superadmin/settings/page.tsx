@@ -73,6 +73,21 @@ const LandingPageEditor = dynamic(
   }
 );
 
+const SeoSettingsPanel = dynamic(
+  () =>
+    import("@/components/superadmin/SeoSettingsPanel").then(
+      (m) => m.SeoSettingsPanel
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="p-8 text-sm text-slate-500">
+        Loading SEO &amp; Search Visibility Settings...
+      </div>
+    ),
+  }
+);
+
 const ICON_COMPONENTS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutGrid,
   GraduationCap,
@@ -117,7 +132,7 @@ const CATEGORY_OPTIONS = [
 
 export default function PlatformSettingsPage() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"menu" | "platform" | "landing">("menu");
+  const [activeTab, setActiveTab] = useState<"menu" | "platform" | "landing" | "seo">("menu");
 
   // School Menu Items State
   const [menuItems, setMenuItems] = useState<SchoolSidebarMenuItem[]>([]);
@@ -195,7 +210,7 @@ export default function PlatformSettingsPage() {
         setSearchQuery(urlSearch);
       }
       const urlTab = params.get("tab");
-      if (urlTab === "landing" || urlTab === "platform" || urlTab === "menu") {
+      if (urlTab === "landing" || urlTab === "platform" || urlTab === "menu" || urlTab === "seo") {
         setActiveTab(urlTab);
       }
     }
@@ -500,6 +515,8 @@ export default function PlatformSettingsPage() {
               ? "Schools Sidebar Menu & Modules"
               : activeTab === "landing"
               ? "Landing Page Content"
+              : activeTab === "seo"
+              ? "SEO & Search Visibility"
               : "Maintenance & Platform Policies"}
           </span>
         </div>
@@ -529,6 +546,16 @@ export default function PlatformSettingsPage() {
           >
             <ExternalLink className="h-3.5 w-3.5 text-blue-600" />
             <span>Open Dedicated CMS View</span>
+          </Link>
+        ) : activeTab === "seo" ? (
+          <Link
+            href="/sitemap.xml"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all"
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Inspect Live Sitemap</span>
           </Link>
         ) : (
           <button
@@ -582,6 +609,21 @@ export default function PlatformSettingsPage() {
           <span>Landing Page Content</span>
           <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
             CMS
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("seo")}
+          className={`flex items-center gap-2 pb-3.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
+            activeTab === "seo"
+              ? "border-emerald-600 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Search className="h-4 w-4" />
+          <span>SEO &amp; Metadata</span>
+          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            SEO
           </span>
         </button>
       </div>
@@ -1170,6 +1212,9 @@ export default function PlatformSettingsPage() {
 
       {/* TAB 3: DYNAMIC LANDING PAGE CMS EDITOR */}
       {activeTab === "landing" && <LandingPageEditor />}
+
+      {/* TAB 4: SEO & SEARCH VISIBILITY SETTINGS */}
+      {activeTab === "seo" && <SeoSettingsPanel />}
 
       {/* ADD / EDIT MODAL */}
       {isModalOpen && (

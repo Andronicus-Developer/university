@@ -147,6 +147,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/webhooks/resend-inbound") ||
     (pathname.startsWith("/api/settings/institution") && request.method === "GET") ||
     pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/opengraph-image" ||
+    pathname === "/twitter-image" ||
+    pathname === "/icon" ||
+    pathname === "/apple-icon" ||
+    pathname === "/manifest.webmanifest" ||
     isStaticAsset;
 
   if (isStaticOrAuthApi) {
@@ -658,8 +665,9 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - SEO / crawler / metadata routes (robots.txt, sitemap.xml, opengraph-image, icon, apple-icon)
      * - static image/asset extensions
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots\\.txt|sitemap\\.xml|opengraph-image|twitter-image|icon|apple-icon|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

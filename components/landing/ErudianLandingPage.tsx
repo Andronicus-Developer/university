@@ -493,7 +493,7 @@ export function ErudianLandingPage({
                 <span className="inline-flex items-center gap-2.5">
                   <img
                     src={navbar.logoUrl}
-                    alt={`${navbar.brandPrimary}${navbar.brandAccent}`}
+                    alt={`${navbar.brandPrimary || "Erudian"}${navbar.brandAccent || "360"} logo`}
                     className="h-8 w-auto max-w-[140px] object-contain"
                   />
                   {(navbar.brandPrimary || navbar.brandAccent) && (
@@ -607,6 +607,7 @@ export function ErudianLandingPage({
         </header>
       )}
 
+      <main>
       {visibility.hero && (
         <section
           id="home"
@@ -689,7 +690,10 @@ export function ErudianLandingPage({
                 <div className="rounded-3xl overflow-hidden shadow-2xl bg-white/80 dark:bg-slate-900/80">
                   <img
                     src={hero.heroImageUrl}
-                    alt={hero.headlineLine1}
+                    alt={
+                      [hero.headlineLine1, hero.headlineLine2].filter(Boolean).join(" ") ||
+                      "Erudian360 multi-tenant school management dashboard preview"
+                    }
                     className="w-full max-h-[420px] object-cover"
                   />
                 </div>
@@ -1159,7 +1163,10 @@ export function ErudianLandingPage({
               <div className="rounded-[28px] overflow-hidden shadow-xl border border-slate-200/80 dark:border-slate-800 aspect-[4/3] bg-slate-100 dark:bg-slate-900">
                 <img
                   src={about_stats.imageUrl || "/images/classroom-showcase.png"}
-                  alt={about_stats.imageAlt}
+                  alt={
+                    about_stats.imageAlt ||
+                    "Students learning in a connected African classroom powered by Erudian360"
+                  }
                   className="h-full w-full object-cover"
                 />
               </div>
@@ -1575,6 +1582,7 @@ export function ErudianLandingPage({
           </div>
         </section>
       )}
+      </main>
 
       {/* ===================================================================== */}
       {/* 8. DARK OBSIDIAN FOOTER + OVERSIZED ERUDIAN360 WORDMARK                */}

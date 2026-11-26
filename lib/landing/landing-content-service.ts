@@ -30,6 +30,7 @@ function emptyUpdatedAtMap(): Record<LandingSectionKey, string | null> {
     faq: null,
     cta_banner: null,
     footer: null,
+    seo: null,
   };
 }
 
@@ -124,4 +125,35 @@ export async function getCachedLandingPageContent(): Promise<LandingPageContent>
 
   const result = await fetchLandingPageContentFromDb();
   return result.content;
+}
+
+const FALLBACK_LAST_MODIFIED = "2026-11-26T00:00:00.000Z";
+
+/**
+ * Cached metadata + newest `updated_at` timestamp across landing & SEO sections
+ * for `sitemap.xml` and `generateMetadata`.
+ */
+export async function getCachedLandingPageMeta(): Promise<{
+  content: LandingPageContent;
+  lastModified: string;
+}> {
+  "use cache";
+  cacheTag(LANDING_CONTENT_CACHE_TAG);
+  cacheLife("hours");
+
+  const result = await fetchLandingPageContentFromDb();
+  let newestMs = 0;
+  let newestIso = FALLBACK_LAST_MODIFIED;
+  for (const val of Object.values(result.updatedAtMap)) {
+    if (!val) continue;
+    const ms = Date.parse(val);
+    if (Number.isFinite(ms) && ms > newestMs) {
+      newestMs = ms;
+      newestIso = new Date(ms).toISOString();
+    }
+  }
+  return {
+    content: result.content,
+    lastModified: newestIso,
+  };
 }

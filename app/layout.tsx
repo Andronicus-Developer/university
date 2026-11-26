@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { getCachedLandingPageContent } from "@/lib/landing/landing-content-service";
+import { buildPublicSiteMetadata } from "@/lib/seo/seo-config";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -10,11 +12,10 @@ const poppins = Poppins({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "Erudian360 — Smart School Management Platform",
-  description:
-    "All-in-one multi-tenant school management platform for universities, high schools, and vocational institutions.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const content = await getCachedLandingPageContent();
+  return buildPublicSiteMetadata(content);
+}
 
 export default function RootLayout({
   children,

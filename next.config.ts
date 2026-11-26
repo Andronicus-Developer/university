@@ -22,6 +22,30 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
+    const privateNoIndexHeader = [
+      {
+        key: "X-Robots-Tag",
+        value: "noindex, nofollow, noarchive",
+      },
+    ];
+    const privateRouteSources = [
+      "/super-admin/:path*",
+      "/superadmin/:path*",
+      "/admin/:path*",
+      "/teacher/:path*",
+      "/lecturer/:path*",
+      "/student/:path*",
+      "/parent/:path*",
+      "/finance/:path*",
+      "/bursar/:path*",
+      "/registrar/:path*",
+      "/applicant/:path*",
+      "/advisor/:path*",
+      "/api/:path*",
+      "/unauthorized",
+      "/portal-unavailable",
+    ];
+
     return [
       {
         source: "/(.*)",
@@ -48,6 +72,10 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      ...privateRouteSources.map((source) => ({
+        source,
+        headers: privateNoIndexHeader,
+      })),
     ];
   },
 };

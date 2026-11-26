@@ -10,6 +10,7 @@ export const LANDING_SECTION_KEYS = [
   "faq",
   "cta_banner",
   "footer",
+  "seo",
 ] as const;
 
 export type LandingSectionKey = (typeof LANDING_SECTION_KEYS)[number];
@@ -228,6 +229,21 @@ export interface FooterSectionContent {
   wordmark: string;
 }
 
+export interface SeoSectionContent {
+  siteName: string;
+  metaTitle: string;
+  metaDescription: string;
+  keywords: string[];
+  ogTitle: string;
+  ogDescription: string;
+  ogImageUrl: string;
+  twitterHandle: string;
+  googleSiteVerification: string;
+  bingSiteVerification: string;
+  organizationLogoUrl: string;
+  socialLinks: string[];
+}
+
 export interface LandingPageContent {
   navbar: NavbarSectionContent;
   hero: HeroSectionContent;
@@ -240,6 +256,7 @@ export interface LandingPageContent {
   faq: FaqSectionContent;
   cta_banner: CtaBannerSectionContent;
   footer: FooterSectionContent;
+  seo: SeoSectionContent;
   visibility: Record<LandingSectionKey, boolean>;
 }
 
@@ -745,6 +762,31 @@ export const DEFAULT_LANDING_PAGE_CONTENT: LandingPageContent = {
     ],
     wordmark: "Erudian360",
   },
+  seo: {
+    siteName: "Erudian360",
+    metaTitle: "Erudian360 — Smart Multi-Tenant School Management SaaS Platform",
+    metaDescription:
+      "All-in-one multi-tenant school management SaaS for African universities, high schools, and vocational institutions. Unify admissions, attendance, exams, fees, and campus governance.",
+    keywords: [
+      "school management system Africa",
+      "multi-tenant school ERP",
+      "university management software",
+      "high school management SaaS",
+      "vocational school software",
+      "student portal software",
+      "school fee management system",
+      "academic transcript software",
+      "Erudian360",
+    ],
+    ogTitle: "",
+    ogDescription: "",
+    ogImageUrl: "",
+    twitterHandle: "",
+    googleSiteVerification: "",
+    bingSiteVerification: "",
+    organizationLogoUrl: "",
+    socialLinks: [],
+  },
   visibility: {
     navbar: true,
     hero: true,
@@ -757,6 +799,7 @@ export const DEFAULT_LANDING_PAGE_CONTENT: LandingPageContent = {
     faq: true,
     cta_banner: true,
     footer: true,
+    seo: true,
   },
 };
 
@@ -772,6 +815,13 @@ const OPTIONAL_EMPTY_STRING_FIELDS = new Set([
   "demoModule",
   "headlineLine2",
   "headlineLine3",
+  "ogTitle",
+  "ogDescription",
+  "ogImageUrl",
+  "twitterHandle",
+  "googleSiteVerification",
+  "bingSiteVerification",
+  "organizationLogoUrl",
 ]);
 
 function cloneDefaultContent(): LandingPageContent {
@@ -855,6 +905,7 @@ export function mergeLandingContentRows(rows: LandingDbRow[] | null | undefined)
     faq: null,
     cta_banner: null,
     footer: null,
+    seo: null,
   };
 
   if (!Array.isArray(rows)) {
